@@ -13,7 +13,7 @@ const schema = z.object({
   IMAGE_MODEL: z.string().default("muse-image-1.0"),
   BASETEN_API_KEY: z.string().optional(),
   BASETEN_PE_URL: z.string().optional(),
-  BASETEN_SPARK_OPEN_MODEL: z.string().default("meta-models/muse-spark-open"),
+  BASETEN_SPARK_OPEN_MODEL: z.string().default("meta-models/muse-spark-open-1026"),
   LLM_PROVIDER: z.enum(["meta", "baseten"]).default("meta"),
   ASR_PROVIDER: z.enum(["transcribe", "spark-open"]).default("transcribe"),
   MATCHER: z.enum(["vector", "all"]).default("vector"),
