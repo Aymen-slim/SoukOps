@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# wassalha
+.ai-cassettes/
+demo-pack/out/
+worker/.auth/
+test-results/
+playwright-report/
