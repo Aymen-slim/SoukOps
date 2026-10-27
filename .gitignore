@@ -46,3 +46,5 @@ demo-pack/out/
 worker/.auth/
 test-results/
 playwright-report/
+
+__pycache__/
