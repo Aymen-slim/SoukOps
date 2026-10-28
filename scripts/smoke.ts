@@ -104,7 +104,7 @@ async function main(): Promise<void> {
   });
 
   await check("4. PE image+text embeddings (self-match)", async () => {
-    if (!env.BASETEN_API_KEY || !env.BASETEN_PE_URL) skip("BASETEN_API_KEY + BASETEN_PE_URL (deploy baseten/pe-embed first)");
+    if (!env.peEmbedUrl) skip("PE_EMBED_URL (deploy modal/pe_embed.py or baseten/pe-embed first)");
     if (!productPhoto) skip("demo-pack/products/*.(jpg|png)");
     const bytes = await readFile(productPhoto);
     const [imgVec] = await embedImages([bytes.toString("base64")]);

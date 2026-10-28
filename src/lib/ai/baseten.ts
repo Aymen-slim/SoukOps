@@ -16,24 +16,32 @@ export function basetenConfigured(): boolean {
 
 export function peConfigured(): boolean {
   const env = getServerEnv();
-  return Boolean(env.BASETEN_API_KEY && env.BASETEN_PE_URL);
+  return Boolean(env.peEmbedUrl);
 }
 
-/** Raw predict call to the Perception Encoder Truss. Server-only (no CORS). */
+/**
+ * Raw predict call to the Perception Encoder endpoint (Baseten Truss or Modal
+ * web endpoint — same {images|texts} -> {embeddings} contract). Server-only.
+ * PE_EMBED_URL/PE_EMBED_API_KEY take precedence; BASETEN_PE_URL/BASETEN_API_KEY
+ * remain as fallbacks. The Modal endpoint also checks `_secret` in the body.
+ */
 export async function pePredict(body: Record<string, unknown>): Promise<unknown> {
   const env = getServerEnv();
-  requireEnv("BASETEN_API_KEY");
-  requireEnv("BASETEN_PE_URL");
-  const res = await fetch(env.BASETEN_PE_URL as string, {
+  if (!env.peEmbedUrl) {
+    throw new Error("Missing required env var: PE_EMBED_URL (or BASETEN_PE_URL)");
+  }
+  const res = await fetch(env.peEmbedUrl, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${env.BASETEN_API_KEY}`,
+      ...(env.peEmbedApiKey ? { Authorization: `Bearer ${env.peEmbedApiKey}` } : {}),
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify(
+      env.peEmbedApiKey ? { ...body, _secret: env.peEmbedApiKey } : body,
+    ),
   });
   if (!res.ok) {
-    throw new Error(`Baseten PE predict failed: ${res.status} ${await res.text()}`);
+    throw new Error(`PE predict failed: ${res.status} ${await res.text()}`);
   }
   return res.json();
 }

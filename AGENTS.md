@@ -22,7 +22,7 @@ WhatsApp commerce agent for Tunisian Instagram/WhatsApp sellers: screenshot + De
 
 ## Non-negotiable rules
 
-- Only Meta models: Meta Model API, or Meta open-weight models on Baseten. Never add another model or embedding API.
+- Only Meta models: Meta Model API, Muse Spark Open on Baseten, or Meta open-weight Perception Encoder self-hosted (Modal primary — hackathon credit — Baseten Truss in `baseten/pe-embed/` as fallback). Never add another model or embedding API.
 - Model proposes, code decides. State machine, money, stock, address and order decisions are TypeScript in `src/lib/domain/` and `src/lib/pipeline/`. Prompt injection must never trigger a DB write.
 - Money only from `src/lib/domain/pricing.ts`, stored as integer millimes. Model text never invents an amount; every reply passes the price firewall.
 - No order without: phone, confirmed pin, and explicit buyer Akked.

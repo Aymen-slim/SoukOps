@@ -13,6 +13,8 @@ const schema = z.object({
   IMAGE_MODEL: z.string().default("muse-image-1.0"),
   BASETEN_API_KEY: z.string().optional(),
   BASETEN_PE_URL: z.string().optional(),
+  PE_EMBED_URL: z.string().optional(),
+  PE_EMBED_API_KEY: z.string().optional(),
   BASETEN_SPARK_OPEN_MODEL: z.string().default("meta-models/muse-spark-open-1026"),
   LLM_PROVIDER: z.enum(["meta", "baseten"]).default("meta"),
   ASR_PROVIDER: z.enum(["transcribe", "spark-open"]).default("transcribe"),
@@ -34,6 +36,8 @@ export type ServerEnv = z.infer<typeof schema> & {
   supabaseUrl?: string;
   supabasePublishableKey?: string;
   supabaseSecretKey?: string;
+  peEmbedUrl?: string;
+  peEmbedApiKey?: string;
 };
 
 let cached: ServerEnv | null = null;
@@ -47,6 +51,8 @@ export function getServerEnv(): ServerEnv {
     supabasePublishableKey:
       parsed.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? parsed.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     supabaseSecretKey: parsed.SUPABASE_SECRET_KEY ?? parsed.SUPABASE_SERVICE_ROLE_KEY,
+    peEmbedUrl: parsed.PE_EMBED_URL ?? parsed.BASETEN_PE_URL,
+    peEmbedApiKey: parsed.PE_EMBED_API_KEY ?? parsed.BASETEN_API_KEY,
   };
   return cached;
 }
@@ -70,7 +76,7 @@ export function providerStatus() {
   return {
     metaModelApi: Boolean(env.MODEL_API_KEY),
     baseten: Boolean(env.BASETEN_API_KEY),
-    basetenPe: Boolean(env.BASETEN_PE_URL),
+    basetenPe: Boolean(env.peEmbedUrl),
     supabase: Boolean(env.supabaseUrl && env.supabasePublishableKey),
     supabaseAdmin: Boolean(env.supabaseUrl && env.supabaseSecretKey),
     llmProvider: env.LLM_PROVIDER,

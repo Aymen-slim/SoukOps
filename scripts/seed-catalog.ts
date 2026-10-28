@@ -32,7 +32,7 @@ async function main(): Promise<void> {
   const env = getServerEnv();
   const missing: string[] = [];
   if (!env.MODEL_API_KEY) missing.push("MODEL_API_KEY");
-  if (!env.BASETEN_API_KEY || !env.BASETEN_PE_URL) missing.push("BASETEN_API_KEY + BASETEN_PE_URL");
+  if (!env.peEmbedUrl) missing.push("PE_EMBED_URL (deploy modal/pe_embed.py first)");
   if (!hasAdminConfig()) missing.push("Supabase URL + SUPABASE_SECRET_KEY (and migration applied)");
 
   let catalog: z.infer<typeof catalogSchema> = [];
