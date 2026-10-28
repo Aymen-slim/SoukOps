@@ -12,6 +12,8 @@ modal secret create wassalha-pe PE_SHARED_SECRET=<random-long-value>
 
 Put the same value in `.env.local` as `PE_EMBED_API_KEY`.
 
+> Billing note (verified 2026-10-28): Modal requires a payment method on file to run L4 GPU functions, even with hackathon credit — deploys in a workspace without one fail with "Please add a payment method to use L4 GPU functions". Make sure the token belongs to the workspace holding the $100 hackathon credit (workspace switcher in the Modal console), redeem any promo code under Settings → Billing, and add a card only in that credited workspace; credit is consumed before the card is charged.
+
 ## Deploy
 
 ```powershell
