@@ -1,17 +1,15 @@
 model_name: wassalha-pe-embed
-model_framework: pytorch
-model_type: custom
 python_version: py311
-resources:
-  accelerator: L4
-  cpu: "2"
-  memory: 8Gi
-requirements:
+python_requirements:
   - torch
   - open_clip_torch
   - timm
   - pillow
-# Autoscaling: scale to zero while developing (default max 1 replica).
-# Set min_replicas to 1 only for rehearsals and demo day, then back to 0.
+resources:
+  accelerator: L4
+  cpu: "2"
+  memory: 8Gi
 runtime:
-  predict_concurrency: 4
+  predict_concurrency_per_worker: 4
+# Autoscaling is set in the Baseten console after deploy: min 0 (scale to
+# zero) while developing; min 1 only for rehearsals and demo day.
