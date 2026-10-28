@@ -1,1 +1,18 @@
-[]
+[
+  { "file": "product-01.jpeg", "name": "Hoodie noir", "categoryPhrase": "hoodie", "priceMillimes": 0, "floorMillimes": 0, "stock": 0 },
+  { "file": "product-02.jpeg", "name": "Sweat vert", "categoryPhrase": "sweatshirt", "priceMillimes": 0, "floorMillimes": 0, "stock": 0 },
+  { "file": "product-03.jpeg", "name": "Sweat rose", "categoryPhrase": "sweatshirt", "priceMillimes": 0, "floorMillimes": 0, "stock": 0 },
+  { "file": "product-04.jpeg", "name": "T-shirt couple", "categoryPhrase": "t-shirt", "priceMillimes": 0, "floorMillimes": 0, "stock": 0 },
+  { "file": "product-05.jpeg", "name": "T-shirt blanc", "categoryPhrase": "t-shirt", "priceMillimes": 0, "floorMillimes": 0, "stock": 0 },
+  { "file": "product-06.jpeg", "name": "T-shirt blanc imprime rouge", "categoryPhrase": "t-shirt", "priceMillimes": 0, "floorMillimes": 0, "stock": 0 },
+  { "file": "product-07.jpeg", "name": "Sweat jaune", "categoryPhrase": "sweatshirt", "priceMillimes": 0, "floorMillimes": 0, "stock": 0 },
+  { "file": "product-08.jpeg", "name": "Hoodie bleu clair", "categoryPhrase": "hoodie", "priceMillimes": 0, "floorMillimes": 0, "stock": 0 },
+  { "file": "product-09.jpeg", "name": "Hoodie bleu clair (vue 2)", "categoryPhrase": "hoodie", "priceMillimes": 0, "floorMillimes": 0, "stock": 0 },
+  { "file": "product-10.jpeg", "name": "T-shirt imprime rouge (rue)", "categoryPhrase": "t-shirt", "priceMillimes": 0, "floorMillimes": 0, "stock": 0 },
+  { "file": "product-11.jpeg", "name": "Sweat rose (duo)", "categoryPhrase": "sweatshirt", "priceMillimes": 0, "floorMillimes": 0, "stock": 0 },
+  { "file": "product-12.jpeg", "name": "Hoodie jaune", "categoryPhrase": "hoodie", "priceMillimes": 0, "floorMillimes": 0, "stock": 0 },
+  { "file": "product-13.jpeg", "name": "Casquette blanche", "categoryPhrase": "cap", "priceMillimes": 0, "floorMillimes": 0, "stock": 0 },
+  { "file": "product-14.jpeg", "name": "Hoodie rose (dos)", "categoryPhrase": "hoodie", "priceMillimes": 0, "floorMillimes": 0, "stock": 0 },
+  { "file": "product-15.jpeg", "name": "Hoodie jaune (nuit)", "categoryPhrase": "hoodie", "priceMillimes": 0, "floorMillimes": 0, "stock": 0 },
+  { "file": "product-16.jpeg", "name": "T-shirt Mindset", "categoryPhrase": "t-shirt", "priceMillimes": 0, "floorMillimes": 0, "stock": 0 }
+]

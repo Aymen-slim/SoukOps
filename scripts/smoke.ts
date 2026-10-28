@@ -74,7 +74,19 @@ async function main(): Promise<void> {
     if (!productPhoto) skip("demo-pack/products/*.(jpg|png) — add a pilot product photo");
     const bytes = await readFile(productPhoto);
     const dataUrl = `data:image/jpeg;base64,${bytes.toString("base64")}`;
-    const result = await segmentImage({ imageDataUrl: dataUrl, nounPhrase: "dress" });
+    // Use the catalog category phrase for this photo when available (SAM gets
+    // a short English category like "hoodie", never a product name).
+    let nounPhrase = "hoodie";
+    try {
+      const catalog = JSON.parse(await readFile(path.join("demo-pack", "products.json"), "utf8")) as Array<{
+        file: string;
+        categoryPhrase: string;
+      }>;
+      nounPhrase = catalog.find((c) => c.file === path.basename(productPhoto))?.categoryPhrase ?? nounPhrase;
+    } catch {
+      // products.json absent/invalid: fall back to the default phrase.
+    }
+    const result = await segmentImage({ imageDataUrl: dataUrl, nounPhrase });
     if (result.objects.length === 0) {
       return "SAM returned zero objects (valid empty result) — try a clearer photo/phrase";
     }
