@@ -62,20 +62,46 @@ function mergeSlots(current: Record<string, unknown>, u: Understanding): Record<
   return next;
 }
 
-/** Day 2 interim reply: fixed Derja template echoing what was understood. Negotiation arrives Day 4. */
-function buildAck(slots: Record<string, unknown>, hadImage: boolean, hadAudio: boolean): string {
+/**
+ * Interim reply (until the Day 4 conversation engine): deterministic Derja
+ * template that echoes what was understood and asks for the NEXT missing
+ * piece of information, so consecutive turns never read identically.
+ * No prices are ever stated here — pricing belongs to Day 4 pricing.ts.
+ */
+export function buildAck(
+  slots: Record<string, unknown>,
+  hadImage: boolean,
+  hadAudio: boolean,
+): string {
   const understood: string[] = [];
   if (typeof slots.productDescriptionEn === "string") understood.push(slots.productDescriptionEn);
-  if (typeof slots.color === "string" && slots.productDescriptionEn !== slots.color) understood.push(slots.color as string);
   if (typeof slots.size === "string") understood.push(`taille ${slots.size as string}`);
-  if (typeof slots.quantity === "number") understood.push(`x${slots.quantity as number}`);
+  if (typeof slots.quantity === "number" && (slots.quantity as number) > 1) understood.push(`x${slots.quantity as number}`);
   if (typeof slots.governorate === "string") understood.push(slots.governorate as string);
 
-  const parts = ["Ahlen!"];
+  const parts: string[] = [];
   if (hadAudio) parts.push("Sma3t el vocal mte3ek.");
   if (hadImage) parts.push("Wesletni el taswira.");
   if (understood.length) parts.push(`Fhemt: ${understood.join(", ")}.`);
-  parts.push("Kam mel ma3loumet w nkammlou el commande.");
+
+  const hasProduct = typeof slots.productDescriptionEn === "string" || typeof slots.samNounPhrase === "string" || hadImage;
+  const intent = typeof slots.primaryIntent === "string" ? (slots.primaryIntent as string) : "other";
+
+  let next: string;
+  if (!hasProduct && intent === "greeting") {
+    next = "Ahlen bik! Ab3atli taswirt el produit elli n7eb alih, walla o9olli chnowa t7eb techri.";
+  } else if (!hasProduct) {
+    next = "Chnowa el produit elli t7eb alih? Ab3atli taswira walla ousifhou.";
+  } else if (typeof slots.size !== "string") {
+    next = "Chnowa el taille mte3ek? (S, M, L, XL)";
+  } else if (typeof slots.governorate !== "string") {
+    next = "Win toskon? Aatini el wilaya w a9reb landmark le dar kom.";
+  } else if (typeof slots.phone !== "string") {
+    next = "Ab3atli numero el telephone mte3ek bch nkammlou el commande.";
+  } else {
+    next = "Kemmelna el ma3loumet el asasya. Zid aatini a9reb landmark w el etage elli toskon fih.";
+  }
+  parts.push(next);
   return parts.join(" ");
 }
 
