@@ -31,9 +31,16 @@ web_image = modal.Image.debian_slim(python_version="3.11").pip_install(
 )
 
 
+# GPU is preferred but Modal requires a payment method for GPU functions.
+# Deploy CPU with:  $env:PE_USE_GPU="0"; modal deploy modal/pe_embed.py
+USE_GPU = os.environ.get("PE_USE_GPU", "1") == "1"
+
+
 @app.cls(
     image=model_image,
-    gpu="L4",
+    gpu="L4" if USE_GPU else None,
+    cpu=2 if USE_GPU else 8,
+    memory=8192,
     scaledown_window=300,
     timeout=900,
     volumes={"/root/.cache/huggingface": hf_cache},
@@ -45,16 +52,17 @@ class PerceptionEncoder:
         import torch
 
         self.torch = torch
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model, _, self.preprocess = open_clip.create_model_and_transforms(MODEL_ID)
         self.tokenizer = open_clip.get_tokenizer(MODEL_ID)
-        self.model = self.model.eval().cuda()
+        self.model = self.model.eval().to(self.device)
 
     @modal.method()
     def embed(self, request: dict) -> dict:
         import torch
         from PIL import Image
 
-        with torch.no_grad(), torch.autocast("cuda"):
+        with torch.no_grad():
             if request.get("images"):
                 batch = torch.stack(
                     [
@@ -63,12 +71,12 @@ class PerceptionEncoder:
                         )
                         for b in request["images"]
                     ]
-                ).cuda()
+                ).to(self.device)
                 vectors = self.model.encode_image(batch, normalize=True)
             else:
                 tokens = self.tokenizer(
                     request["texts"], context_length=self.model.context_length
-                ).cuda()
+                ).to(self.device)
                 vectors = self.model.encode_text(tokens, normalize=True)
         return {"embeddings": vectors.float().cpu().tolist()}
 

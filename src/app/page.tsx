@@ -28,7 +28,7 @@ async function StatusSection() {
             <StatusBadge ok={status.baseten} />
           </div>
           <div className="flex items-center justify-between">
-            <span>Baseten — Perception Encoder (URL de prédiction)</span>
+            <span>Perception Encoder (Modal, CPU — GPU quand la facturation le permet)</span>
             <StatusBadge ok={status.basetenPe} />
           </div>
           <div className="flex items-center justify-between">

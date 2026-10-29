@@ -41,7 +41,7 @@ Extensions `vector`, `pg_trgm`, `unaccent`; RLS on every table (merchant-scoped)
 - [x] AI clients in `src/lib/ai/` with cassette + trace; `llm.ts` provider switch
 - [x] `scripts/smoke.ts` (7 checks), `scripts/bakeoff.ts`, `scripts/seed-catalog.ts`
 - [x] Migration + buckets defined in `supabase/migrations/0001_init.sql` — apply pending Supabase keys
-- [ ] `npm run smoke` green for every provider *(needs `.env.local`)*
+- [x] `npm run smoke` green for every provider — 7/7 PASS on 2026-10-29 (PE on Modal CPU; Baseten workspace had $0 credit and an inference-only key, Modal GPU needs a payment method the user does not have — redeploy with `PE_USE_GPU=1` if billing opens)
 - [ ] Bake-off winner -> `ASR_PROVIDER` *(needs `demo-pack/voice/*.wav`)*
 - [ ] 20 cropped + embedded products in Supabase *(needs `demo-pack/products/`)*
 - [ ] Live on Vercel *(needs Vercel link + env vars)*
