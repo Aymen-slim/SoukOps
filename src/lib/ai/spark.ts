@@ -59,6 +59,7 @@ export async function sparkJson<T>(req: SparkJsonRequest<T>): Promise<T> {
         for (let attempt = 0; attempt < 2; attempt++) {
           const completion = await client.chat.completions.create({
             model,
+            reasoning_effort: "low",
             messages: [
               ...(req.system ? [{ role: "system" as const, content: req.system }] : []),
               { role: "user" as const, content: buildUserContent(req as SparkJsonRequest<unknown>) },
@@ -97,6 +98,7 @@ export async function sparkText(req: {
       traced({ kind: "spark.text", model, provider, conversationId: req.conversationId }, async () => {
         const completion = await client.chat.completions.create({
           model,
+          reasoning_effort: "low",
           messages: [
             ...(req.system ? [{ role: "system" as const, content: req.system }] : []),
             { role: "user" as const, content: req.user },
