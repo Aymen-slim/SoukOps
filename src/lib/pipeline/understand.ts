@@ -99,11 +99,15 @@ Return only the JSON schema. Rules:
 export async function understand(req: {
   text: string;
   imageCount: number;
+  /** Buyer images as data URLs — Spark vision identifies the garment in them. */
+  images?: string[];
   conversationId?: string;
 }): Promise<Understanding> {
   const user = [
     `Buyer message (transcribed/typed): ${req.text}`,
-    req.imageCount > 0 ? `The buyer also attached ${req.imageCount} image(s) in this burst.` : "No image attached.",
+    req.imageCount > 0
+      ? `The buyer attached ${req.imageCount} image(s), included in this request. Identify the main clothing item worn/shown in the image (ignore phone UI, captions and other people if several) and fill samNounPhrase, productDescriptionEn, color and spatialHint from what you SEE.`
+      : "No image attached.",
   ].join("\n");
   return sparkJson({
     schema: understandSchema,
@@ -111,6 +115,7 @@ export async function understand(req: {
     schemaName: "understand_turn",
     system: SYSTEM,
     user,
+    images: req.images,
     conversationId: req.conversationId,
   });
 }

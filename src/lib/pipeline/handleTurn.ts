@@ -146,6 +146,7 @@ export async function runTurn(conversationId: string): Promise<void> {
     const keywords = [...new Set((products ?? []).flatMap((p) => [p.name, p.category_phrase]))];
 
     const textParts: string[] = [];
+    const imageDataUrls: string[] = [];
     let imageCount = 0;
     let hadAudio = false;
     for (const message of burst) {
@@ -162,6 +163,17 @@ export async function runTurn(conversationId: string): Promise<void> {
       } else if (message.kind === "image") {
         imageCount++;
         if (message.body) textParts.push(message.body); // image caption counts as buyer text
+        // Load the photo so Spark vision can identify the garment (Day 3 adds
+        // SAM crop + PE catalog matching on top of this).
+        if (message.media_path && imageDataUrls.length < 2) {
+          const { data: file } = await supabase.storage.from("buyer-media").download(message.media_path);
+          if (file) {
+            const bytes = Buffer.from(await file.arrayBuffer());
+            const ext = message.media_path.split(".").pop()?.toLowerCase();
+            const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+            imageDataUrls.push(`data:${mime};base64,${bytes.toString("base64")}`);
+          }
+        }
       } else if (message.body) {
         textParts.push(message.body);
       }
@@ -179,6 +191,7 @@ export async function runTurn(conversationId: string): Promise<void> {
     const result = await understand({
       text: combinedText || "(image only, no text)",
       imageCount,
+      images: imageDataUrls,
       conversationId,
     });
     await logEvent(conversationId, "understand", { understanding: result });
