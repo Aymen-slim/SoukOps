@@ -135,6 +135,7 @@ export async function runTurn(conversationId: string): Promise<void> {
         await logEvent(conversationId, "asr.transcript", { transcript });
       } else if (message.kind === "image") {
         imageCount++;
+        if (message.body) textParts.push(message.body); // image caption counts as buyer text
       } else if (message.body) {
         textParts.push(message.body);
       }
