@@ -55,12 +55,28 @@ async function main(): Promise<void> {
   }
 
   const supabase = createAdminClient();
-  const { data: merchant, error: merchantError } = await supabase
+  // Idempotent: reuse the demo merchant and replace its catalog on re-runs,
+  // so fixing prices in products.json and re-seeding never duplicates data.
+  const merchantName = "Demo Shop (pilot seller)";
+  const { data: existing } = await supabase
     .from("merchants")
-    .insert({ name: "Demo Shop (pilot seller)" })
     .select("id")
-    .single();
-  if (merchantError || !merchant) throw new Error(`merchant insert failed: ${merchantError?.message}`);
+    .eq("name", merchantName)
+    .maybeSingle();
+  let merchant = existing;
+  if (!merchant) {
+    const { data, error: merchantError } = await supabase
+      .from("merchants")
+      .insert({ name: merchantName })
+      .select("id")
+      .single();
+    if (merchantError || !data) throw new Error(`merchant insert failed: ${merchantError?.message}`);
+    merchant = data;
+  } else {
+    const { error: clearError } = await supabase.from("products").delete().eq("merchant_id", merchant.id);
+    if (clearError) throw new Error(`catalog clear failed: ${clearError.message}`);
+    console.log(`Re-seeding existing merchant ${merchant.id} (previous catalog cleared)`);
+  }
 
   let seeded = 0;
   for (const item of catalog) {
