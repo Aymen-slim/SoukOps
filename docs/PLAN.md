@@ -43,7 +43,7 @@ Extensions `vector`, `pg_trgm`, `unaccent`; RLS on every table (merchant-scoped)
 - [x] Migration + buckets defined in `supabase/migrations/0001_init.sql` — apply pending Supabase keys
 - [x] `npm run smoke` green for every provider — 7/7 PASS on 2026-10-29 (PE on Modal CPU; Baseten workspace had $0 credit and an inference-only key, Modal GPU needs a payment method the user does not have — redeploy with `PE_USE_GPU=1` if billing opens)
 - [ ] Bake-off winner -> `ASR_PROVIDER` *(needs `demo-pack/voice/*.wav`)*
-- [ ] 20 cropped + embedded products in Supabase *(needs `demo-pack/products/`)*
+- [x] Products cropped + embedded in Supabase — 16/16 seeded 2026-10-29 (`match_products` RPC verified). **Prices/floors/stock are still 0 placeholders in `demo-pack/products.json` — fill them and re-run seed before Day 4 pricing work. Catalog has 16 unique products, not 20.**
 - [ ] Live on Vercel *(needs Vercel link + env vars)*
 
 **Day 2: Simulator, pipeline, understanding (steps 1–2).** Public simulator (persona picker, text/image/WAV/recorder, buttons, location bubbles, typing indicator, `dir="auto"`); `ChannelAdapter`; `/api/messages` with zod + `after()` + 2.5s debounce + `run_token` CAS; `transcribe()`; `understand()` strict schema; `derja.ts` parsers. Done when: transcript + JSON in trace < ~6s and replay reproduces offline.
