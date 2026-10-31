@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { z } from "zod";
 import { withCassette } from "./cassette";
 import { getLlmClient } from "./llm";
@@ -47,8 +48,10 @@ export async function sparkJson<T>(req: SparkJsonRequest<T>): Promise<T> {
     system: req.system ?? null,
     user: req.user,
     imageCount: req.images?.length ?? 0,
-    // Image bytes can be large; their hash keeps replay keys stable without storing them in the key input.
-    imageHashes: (req.images ?? []).map((u) => u.length),
+    // Content hash (not byte length, which collides) keeps replay keys stable.
+    imageHashes: (req.images ?? []).map((u) =>
+      createHash("sha256").update(u.slice(0, 512_000)).digest("hex").slice(0, 16),
+    ),
   };
 
   return withCassette(`spark.json.${req.schemaName}`, cassetteInput, () =>

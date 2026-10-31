@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { pePredict } from "./baseten";
 import { withCassette } from "./cassette";
@@ -18,9 +19,13 @@ function assertNormalizedBatch(vectors: number[][], label: string): number[][] {
   return vectors;
 }
 
+function contentHash(base64: string): string {
+  return createHash("sha256").update(base64.slice(0, 512_000)).digest("hex").slice(0, 16);
+}
+
 /** Image embeddings from the Baseten PE-Core-L14-336 Truss. Input: base64 (no data: prefix). */
 export async function embedImages(base64Images: string[], conversationId?: string): Promise<number[][]> {
-  return withCassette("pe.embedImages", { count: base64Images.length, sizes: base64Images.map((b) => b.length) }, () =>
+  return withCassette("pe.embedImages", { count: base64Images.length, hashes: base64Images.map(contentHash) }, () =>
     traced({ kind: "pe.embedImages", model: "PE-Core-L14-336", provider: "baseten", conversationId }, async () => {
       const raw = await pePredict({ images: base64Images });
       const parsed = peResponseSchema.parse(raw);

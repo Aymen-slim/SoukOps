@@ -2,7 +2,7 @@ import { createAdminClient, hasAdminConfig } from "@/lib/supabase/admin";
 
 /** Pipeline-level trace event (the "Behind the scenes" panel reads agent_events). */
 export async function logEvent(
-  conversationId: string,
+  conversationId: string | null,
   kind: string,
   detail: Record<string, unknown>,
   model?: string,

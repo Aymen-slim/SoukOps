@@ -20,11 +20,21 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/sim/convers
     .limit(200);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Signed URLs for buyer media so the simulator can render images/audio.
+  // Signed URLs for media so the simulator can render images/audio.
+  // Outbound catalog photos use "product-media:<path>" (original, model kept)
+  // or "crops:<path>" (garment cutout). Everything else lives in buyer-media.
   const signed = await Promise.all(
     (messages ?? []).map(async (m) => {
       if (!m.media_path) return m;
-      const { data } = await supabase.storage.from("buyer-media").createSignedUrl(m.media_path, 3600);
+      const isCrop = m.media_path.startsWith("crops:");
+      const isCatalog = m.media_path.startsWith("product-media:");
+      const bucket = isCrop ? "crops" : isCatalog ? "product-media" : "buyer-media";
+      const path = isCrop
+        ? m.media_path.slice("crops:".length)
+        : isCatalog
+          ? m.media_path.slice("product-media:".length)
+          : m.media_path;
+      const { data } = await supabase.storage.from(bucket).createSignedUrl(path, 3600);
       return { ...m, mediaUrl: data?.signedUrl ?? null };
     }),
   );

@@ -1,45 +1,84 @@
 /**
- * Browser WAV recorder: captures mic audio, downsamples to 16 kHz mono
- * 16-bit WAV — the only format the transcription API accepts.
- * Client-side only (uses Web Audio APIs).
+ * Browser voice-note recorder. Captures the mic with MediaRecorder, then
+ * re-encodes to mono 16-bit 16 kHz WAV — the only format transcription accepts.
+ * Client-side only.
  */
 
+const MIN_SAMPLES = Math.floor(16000 * 0.4);
+
 export class WavRecorder {
-  private context: AudioContext | null = null;
   private stream: MediaStream | null = null;
-  private processor: ScriptProcessorNode | null = null;
-  private chunks: Float32Array[] = [];
-  private inputRate = 44100;
+  private recorder: MediaRecorder | null = null;
+  private chunks: Blob[] = [];
 
   async start(): Promise<void> {
-    this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    this.context = new AudioContext();
-    this.inputRate = this.context.sampleRate;
-    const source = this.context.createMediaStreamSource(this.stream);
-    this.processor = this.context.createScriptProcessor(4096, 1, 1);
     this.chunks = [];
-    this.processor.onaudioprocess = (event) => {
-      this.chunks.push(new Float32Array(event.inputBuffer.getChannelData(0)));
-    };
-    source.connect(this.processor);
-    this.processor.connect(this.context.destination);
+    this.stream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+    });
+    const mimeType = pickMimeType();
+    this.recorder = mimeType ? new MediaRecorder(this.stream, { mimeType }) : new MediaRecorder(this.stream);
+    this.recorder.addEventListener("dataavailable", (event) => {
+      if (event.data.size > 0) this.chunks.push(event.data);
+    });
+    this.recorder.start(250);
   }
 
-  async stop(): Promise<Blob> {
-    this.processor?.disconnect();
-    this.stream?.getTracks().forEach((t) => t.stop());
-    await this.context?.close();
+  /** Stops the mic and returns a 16 kHz WAV, or null when the clip is too short. */
+  async stop(): Promise<Blob | null> {
+    const recorder = this.recorder;
+    const raw = await finishRecording(recorder, this.chunks);
+    this.release();
+    if (!raw || raw.size < 800) return null;
 
-    const total = this.chunks.reduce((n, c) => n + c.length, 0);
-    const merged = new Float32Array(total);
-    let offset = 0;
-    for (const chunk of this.chunks) {
-      merged.set(chunk, offset);
-      offset += chunk.length;
+    const context = new AudioContext();
+    try {
+      const decoded = await context.decodeAudioData(await raw.arrayBuffer());
+      const pcm16 = downsampleTo16kPcm(decoded.getChannelData(0), decoded.sampleRate);
+      if (pcm16.length < MIN_SAMPLES) return null;
+      return new Blob([encodeWav(pcm16, 16000)], { type: "audio/wav" });
+    } finally {
+      await context.close();
     }
-    const pcm16 = downsampleTo16kPcm(merged, this.inputRate);
-    return new Blob([encodeWav(pcm16, 16000)], { type: "audio/wav" });
   }
+
+  cancel(): void {
+    const recorder = this.recorder;
+    try {
+      if (recorder && recorder.state !== "inactive") recorder.stop();
+    } catch {
+      // The recorder can already be inactive if the mic was released.
+    }
+    this.release();
+  }
+
+  private release(): void {
+    this.stream?.getTracks().forEach((track) => track.stop());
+    this.stream = null;
+    this.recorder = null;
+    this.chunks = [];
+  }
+}
+
+function pickMimeType(): string {
+  if (typeof MediaRecorder === "undefined") return "";
+  const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+  return candidates.find((type) => MediaRecorder.isTypeSupported(type)) ?? "";
+}
+
+function finishRecording(recorder: MediaRecorder | null, chunks: Blob[]): Promise<Blob | null> {
+  if (!recorder) return Promise.resolve(null);
+  if (recorder.state === "inactive") {
+    return Promise.resolve(chunks.length ? new Blob(chunks, { type: recorder.mimeType || "audio/webm" }) : null);
+  }
+  return new Promise((resolve) => {
+    recorder.addEventListener(
+      "stop",
+      () => resolve(chunks.length ? new Blob(chunks, { type: recorder.mimeType || "audio/webm" }) : null),
+      { once: true },
+    );
+    recorder.stop();
+  });
 }
 
 function downsampleTo16kPcm(input: Float32Array, inputRate: number): Int16Array {

@@ -13,17 +13,19 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Wassalha",
-  description: "Agent WhatsApp pour vendeurs tunisiens: produit, négociation, pin GPS, risque, bordereau.",
+  title: "Wassalha — Tunisian WhatsApp Commerce & Dispatch",
+  description: "WhatsApp selling for Tunisian shops: match the product, hold the floor price, pin the door, send the waybill.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
-      lang="fr"
+      lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col bg-background text-foreground selection:bg-[#ffc244]/40 selection:text-foreground">
+        {children}
+      </body>
     </html>
   );
 }

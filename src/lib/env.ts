@@ -30,6 +30,8 @@ const schema = z.object({
   SIMULATOR_PUBLIC: z.string().default("true"),
   FD_API_BASE_URL: z.string().optional(),
   FD_API_TOKEN: z.string().optional(),
+  COURIER_CLONE_USER: z.string().default("agent"),
+  COURIER_CLONE_PASSWORD: z.string().default("wassalha"),
 });
 
 export type ServerEnv = z.infer<typeof schema> & {

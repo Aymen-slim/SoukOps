@@ -1,6 +1,6 @@
 import { after, NextResponse } from "next/server";
 import { z } from "zod";
-import { runTurn } from "@/lib/pipeline/handleTurn";
+import { burstDelayMs, runTurn } from "@/lib/pipeline/handleTurn";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const bodySchema = z.object({
@@ -65,10 +65,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `message insert failed: ${insertError?.message}` }, { status: 500 });
   }
 
-  // Debounce inside after(): the function stays alive for the 2.5s window,
-  // and runTurn is single-flight, so a burst produces exactly one real turn.
+  // The wait stays inside after() so the invocation lives long enough to run
+  // the turn. Text starts in a few hundred milliseconds. Media waits a bit
+  // longer so a photo and a voice note still share one turn.
   after(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 2500));
+    await new Promise((resolve) => setTimeout(resolve, burstDelayMs(input.kind)));
     await runTurn(input.conversationId).catch((err) => {
       console.error(`[handleTurn] ${input.conversationId}:`, err);
     });
