@@ -107,6 +107,8 @@ export function SettingsClient() {
 
       <WhatsAppConnect />
 
+      <FacebookConnect />
+
       <div className="grid gap-6 lg:grid-cols-[1fr_1.15fr]">
         <Card className="h-fit">
           <CardHeader className="border-b border-border/70">
@@ -602,6 +604,237 @@ function WhatsAppConnect() {
           </div>
         </CardContent>
       ) : null}
+    </Card>
+  );
+}
+
+interface FacebookStatus {
+  oauthConfigured: boolean;
+  appId: string | null;
+  webhookUrl: string;
+  messenger: { connected: boolean; pageId?: string; pageName?: string | null };
+  instagram: { connected: boolean; igUserId?: string; username?: string | null };
+}
+
+interface PageOption {
+  pageId: string;
+  pageName: string;
+  instagram: { id: string; username: string | null } | null;
+}
+
+const PLATFORM_SCOPES: Record<"messenger" | "instagram", string> = {
+  messenger: "pages_messaging,pages_show_list,pages_manage_metadata,pages_read_engagement",
+  instagram: "instagram_business_basic,instagram_business_manage_messages,pages_show_list,pages_manage_metadata",
+};
+
+/**
+ * One-click Messenger / Instagram link: same Facebook popup as WhatsApp,
+ * then the seller picks which of his Pages to connect. Page tokens are
+ * cached server-side during the pick — the browser never sees a token.
+ */
+function FacebookConnect() {
+  const [status, setStatus] = useState<FacebookStatus | null>(null);
+  const [platform, setPlatform] = useState<"messenger" | "instagram" | null>(null);
+  const [pages, setPages] = useState<PageOption[] | null>(null);
+  const [selectedPage, setSelectedPage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const [fbError, setFbError] = useState<string | null>(null);
+
+  async function load() {
+    const res = await fetch("/api/dashboard/facebook");
+    const body = (await res.json().catch(() => null)) as (FacebookStatus & { error?: string }) | null;
+    if (!res.ok || !body || body.error) {
+      setFbError(body?.error ?? "Could not load Messenger/Instagram status.");
+      return;
+    }
+    setStatus(body);
+  }
+
+  useEffect(() => {
+    const timer = setTimeout(() => void load(), 0);
+    return () => clearTimeout(timer);
+  }, []);
+
+  async function link(target: "messenger" | "instagram") {
+    if (!status?.appId) return;
+    setBusy(true);
+    setFbError(null);
+    setNote(null);
+    setPages(null);
+    setPlatform(target);
+    try {
+      const FB = await loadFacebookSdk(status.appId);
+      const code = await new Promise<string | null>((resolve) => {
+        FB.login((res) => resolve(res.authResponse?.code ?? null), {
+          scope: PLATFORM_SCOPES[target],
+          response_type: "code",
+          override_default_response_type: true,
+        });
+      });
+      if (!code) throw new Error("Facebook login cancelled.");
+      const res = await fetch("/api/dashboard/facebook", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "exchange", code }),
+      });
+      const body = (await res.json().catch(() => null)) as { error?: string; pages?: PageOption[] } | null;
+      if (!res.ok || !body?.pages) throw new Error(body?.error ?? "Could not list your Pages.");
+      if (body.pages.length === 0) throw new Error("No Facebook Page found on this account. Create a Page first, then retry.");
+      setPages(body.pages);
+      setSelectedPage(body.pages[0].pageId);
+    } catch (err) {
+      setFbError(err instanceof Error ? err.message : "Connection failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function connect() {
+    if (!platform || !selectedPage) return;
+    setBusy(true);
+    setFbError(null);
+    try {
+      const res = await fetch("/api/dashboard/facebook", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "connect", platform, pageId: selectedPage }),
+      });
+      const body = (await res.json().catch(() => null)) as { error?: string; pageName?: string; username?: string | null } | null;
+      if (!res.ok) throw new Error(body?.error ?? "Connection failed.");
+      setNote(
+        platform === "messenger"
+          ? `Messenger connected to ${body?.pageName ?? "your Page"}. Buyers can now DM the Page.`
+          : `Instagram connected${body?.username ? ` (@${body.username})` : ""}. Buyers can now DM the account.`,
+      );
+      setPages(null);
+      await load();
+    } catch (err) {
+      setFbError(err instanceof Error ? err.message : "Connection failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function disconnect(target: "messenger" | "instagram") {
+    setBusy(true);
+    setFbError(null);
+    await fetch("/api/dashboard/facebook", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "disconnect", platform: target }),
+    }).catch(() => undefined);
+    setBusy(false);
+    await load();
+  }
+
+  return (
+    <Card>
+      <CardHeader className="border-b border-border/70">
+        <CardTitle className="flex items-center gap-2">
+          <MessageCircle className="size-4 text-brand-terracotta" />
+          Messenger &amp; Instagram
+        </CardTitle>
+        <CardDescription>
+          Same one-click Facebook link as WhatsApp: pick a Page, buyers DM it, the agent answers.
+          Webhook for both objects: <code className="font-mono text-xs">{status?.webhookUrl ?? ""}</code>
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        {fbError ? (
+          <p role="alert" className="rounded-xl border border-status-danger-border bg-status-danger-bg px-4 py-2.5 text-sm text-status-danger-fg">
+            {fbError}
+          </p>
+        ) : null}
+        {note ? (
+          <p className="flex items-center gap-2 rounded-xl border border-status-success-border bg-status-success-bg px-4 py-2.5 text-sm font-medium text-status-success-fg">
+            <CheckCircle2 className="size-4" />
+            {note}
+          </p>
+        ) : null}
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="flex flex-col gap-2 rounded-xl border border-border bg-muted/40 p-4">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-foreground">Messenger</p>
+              <Badge variant={status?.messenger.connected ? "success" : "outline"}>
+                {status?.messenger.connected ? `Connected · ${status.messenger.pageName ?? status.messenger.pageId}` : "Not connected"}
+              </Badge>
+            </div>
+            <div className="flex gap-2">
+              <Button type="button" disabled={busy || !status?.oauthConfigured} onClick={() => void link("messenger")}>
+                <Link2 className="size-3.5" />
+                Link Messenger
+              </Button>
+              {status?.messenger.connected ? (
+                <Button type="button" variant="outline" disabled={busy} onClick={() => void disconnect("messenger")}>
+                  Disconnect
+                </Button>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2 rounded-xl border border-border bg-muted/40 p-4">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-foreground">Instagram</p>
+              <Badge variant={status?.instagram.connected ? "success" : "outline"}>
+                {status?.instagram.connected ? `Connected${status.instagram.username ? ` · @${status.instagram.username}` : ""}` : "Not connected"}
+              </Badge>
+            </div>
+            <div className="flex gap-2">
+              <Button type="button" disabled={busy || !status?.oauthConfigured} onClick={() => void link("instagram")}>
+                <Link2 className="size-3.5" />
+                Link Instagram
+              </Button>
+              {status?.instagram.connected ? (
+                <Button type="button" variant="outline" disabled={busy} onClick={() => void disconnect("instagram")}>
+                  Disconnect
+                </Button>
+              ) : null}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Needs an Instagram Business/Creator account linked to the Facebook Page — personal accounts cannot be connected.
+            </p>
+          </div>
+        </div>
+
+        {status && !status.oauthConfigured ? (
+          <p className="text-xs text-muted-foreground">
+            Not enabled on this server yet: set <code>META_APP_ID</code> and <code>META_APP_SECRET</code> in{" "}
+            <code>.env.local</code> (the same Meta app as WhatsApp), add the Messenger and Instagram products to it,
+            and subscribe both the Page and Instagram webhook objects to the URL above.
+          </p>
+        ) : null}
+
+        {pages && platform ? (
+          <div className="flex flex-col gap-2 rounded-xl border border-border p-4">
+            <p className="text-sm font-semibold text-foreground">
+              Choose the Page to connect for {platform === "messenger" ? "Messenger" : "Instagram"}:
+            </p>
+            {pages.map((page) => (
+              <label key={page.pageId} className="flex cursor-pointer items-center gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="fb-page"
+                  value={page.pageId}
+                  checked={selectedPage === page.pageId}
+                  onChange={() => setSelectedPage(page.pageId)}
+                />
+                <span className="font-medium text-foreground">{page.pageName}</span>
+                {platform === "instagram" ? (
+                  <span className="text-xs text-muted-foreground">
+                    {page.instagram ? `@${page.instagram.username ?? page.instagram.id}` : "no Instagram linked"}
+                  </span>
+                ) : null}
+              </label>
+            ))}
+            <Button type="button" className="mt-1 w-fit" disabled={busy} onClick={() => void connect()}>
+              <PlugZap className="size-3.5" />
+              Connect this Page
+            </Button>
+          </div>
+        ) : null}
+      </CardContent>
     </Card>
   );
 }

@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { instagramAdapter, messengerAdapter } from "./facebook";
 import { simulatorAdapter } from "./simulator";
 import type { ChannelAdapter } from "./types";
 import { whatsappAdapter } from "./whatsapp";
@@ -12,7 +13,10 @@ import { whatsappAdapter } from "./whatsapp";
 async function adapterFor(conversationId: string): Promise<ChannelAdapter> {
   const supabase = createAdminClient();
   const { data } = await supabase.from("conversations").select("channel").eq("id", conversationId).maybeSingle();
-  return data?.channel === "whatsapp" ? whatsappAdapter : simulatorAdapter;
+  if (data?.channel === "whatsapp") return whatsappAdapter;
+  if (data?.channel === "messenger") return messengerAdapter;
+  if (data?.channel === "instagram") return instagramAdapter;
+  return simulatorAdapter;
 }
 
 export const channelAdapter: ChannelAdapter = {

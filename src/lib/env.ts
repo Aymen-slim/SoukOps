@@ -43,6 +43,13 @@ const schema = z.object({
   META_APP_ID: z.string().optional(),
   META_APP_SECRET: z.string().optional(),
   WHATSAPP_EMBEDDED_CONFIG_ID: z.string().optional(),
+  // Messenger / Instagram (fallback when no DB-saved page config; Settings
+  // Link buttons save to merchants columns from migration 0003).
+  FACEBOOK_VERIFY_TOKEN: z.string().optional(),
+  MESSENGER_PAGE_ID: z.string().optional(),
+  MESSENGER_PAGE_ACCESS_TOKEN: z.string().optional(),
+  INSTAGRAM_BUSINESS_ID: z.string().optional(),
+  INSTAGRAM_ACCESS_TOKEN: z.string().optional(),
   COURIER_CLONE_USER: z.string().default("agent"),
   COURIER_CLONE_PASSWORD: z.string().default("wassalha"),
 });
