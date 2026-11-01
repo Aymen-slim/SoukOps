@@ -20,37 +20,7 @@ import { Input } from "@/components/ui/input";
 import { blobToBase64, fileToBase64, WavRecorder } from "@/lib/media/wav-recorder";
 import { getPersona, PERSONAS, type PersonaId } from "@/lib/sim/personas";
 
-type Lang = "fr" | "en";
-
-const T = {
-  fr: {
-    title: "Simulateur WhatsApp",
-    subtitle: "Chaque persona crée une nouvelle conversation avec la boutique démo.",
-    shop: "Boutique démo",
-    online: "en ligne",
-    typing: "écrit...",
-    sellerOnline: "vendeur en ligne (IA en pause)",
-    placeholder: "Message...",
-    captionPlaceholder: "Ajouter un texte à l'image...",
-    traceTitle: "Behind the scenes",
-    traceSub: "Pipeline déterministe · Meta Model API + Baseten",
-    aiActive: "IA active",
-    aiPaused: "IA en pause",
-    slots: "Informations comprises",
-    emptyTrace: "Envoyez un message: chaque étape IA apparaîtra ici avec son modèle, son fournisseur et sa latence.",
-    remove: "Retirer",
-    imageAttached: "Image jointe — vous pouvez encore ajouter un vocal.",
-    voiceAttached: "Vocal joint — vous pouvez encore ajouter une image.",
-    recordVoice: "Enregistrer un vocal",
-    stageVoice: "Joindre le vocal",
-    cancelVoice: "Annuler le vocal",
-    recordingHint: "Parlez, puis joignez",
-    micDenied: "Micro bloqué. Autorisez-le dans le navigateur, puis réessayez.",
-    tooShort: "Vocal trop court. Parlez un peu plus longtemps.",
-    recordFailed: "Enregistrement impossible. Réessayez.",
-    confirmPin: "Confirmer ma position",
-  },
-  en: {
+const t = {
     title: "WhatsApp Simulator",
     subtitle: "Each persona starts a new conversation with the demo shop.",
     shop: "Demo Shop",
@@ -76,7 +46,6 @@ const T = {
     tooShort: "Voice note too short. Speak a little longer.",
     recordFailed: "Couldn't record. Try again.",
     confirmPin: "Confirm my location",
-  },
 } as const;
 
 interface SimMessage {
@@ -121,8 +90,6 @@ function formatElapsed(seconds: number): string {
 }
 
 export default function SimulatorClient({ initialConversationId = null }: { initialConversationId?: string | null }) {
-  const [lang, setLang] = useState<Lang>("en");
-  const t = T[lang];
   const [persona, setPersona] = useState<PersonaId>("new");
   const [conversationId, setConversationId] = useState<string | null>(initialConversationId);
   const [messages, setMessages] = useState<SimMessage[]>([]);
@@ -461,20 +428,6 @@ export default function SimulatorClient({ initialConversationId = null }: { init
             <h1 className="text-lg font-semibold tracking-tight text-foreground">{t.title}</h1>
             <p className="text-xs text-muted-foreground">Buyer preview · Live session</p>
           </div>
-          <div className="flex rounded-full bg-card p-0.5 text-xs ring-1 ring-border shadow-2xs">
-            {(["en", "fr"] as Lang[]).map((l) => (
-              <button
-                key={l}
-                type="button"
-                onClick={() => setLang(l)}
-                className={`cursor-pointer rounded-full px-3 py-1 font-medium uppercase transition-colors ${
-                  lang === l ? "bg-surface-ink text-white" : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {l}
-              </button>
-            ))}
-          </div>
         </div>
 
         {/* Persona Switcher */}
@@ -486,7 +439,7 @@ export default function SimulatorClient({ initialConversationId = null }: { init
               variant={persona === p.id ? "default" : "outline"}
               onClick={() => void startConversation(p.id)}
             >
-              {lang === "fr" ? p.label : p.labelEn}
+              {p.labelEn}
             </Button>
           ))}
         </div>

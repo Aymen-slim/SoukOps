@@ -253,7 +253,7 @@ export function OrderDetail({ id }: { id: string }) {
             <p className="flex items-center gap-2">
               <span>Reconfirmation avant envoi :</span>
               <Badge variant={reconfirmStatus === "confirmed" ? "success" : reconfirmStatus === "declined" ? "destructive" : "warning"}>
-                {reconfirmStatus === "confirmed" ? "Confirmée par l'acheteur" : reconfirmStatus === "declined" ? "Acheteur: attendre" : "En attente de l'acheteur"}
+                {reconfirmStatus === "confirmed" ? "Confirmed by buyer" : reconfirmStatus === "declined" ? "Buyer asked to wait" : "Waiting for buyer"}
               </Badge>
             </p>
           ) : null}
@@ -264,7 +264,7 @@ export function OrderDetail({ id }: { id: string }) {
                 <span>
                   Code <span className="font-mono font-semibold">{order.shipment.barcode}</span>
                   {order.shipment.fdState != null ? (
-                    <span className="ml-2 font-mono text-xs">état FD {order.shipment.fdState}</span>
+                    <span className="ml-2 font-mono text-xs">FD state {order.shipment.fdState}</span>
                   ) : null}
                 </span>
               </p>
@@ -310,7 +310,7 @@ export function OrderDetail({ id }: { id: string }) {
                 disabled={busy}
                 onClick={() => void post(`/api/orders/${id}/reconfirm`)}
               >
-                Demander reconfirmation
+                Ask reconfirmation
               </Button>
             ) : null}
             {canSync ? (
@@ -320,7 +320,7 @@ export function OrderDetail({ id }: { id: string }) {
                 disabled={busy}
                 onClick={() => void post(`/api/orders/${id}/sync-status`)}
               >
-                Synchroniser FD
+                Sync FD status
               </Button>
             ) : null}
           </div>

@@ -52,7 +52,7 @@ describe("parcel validation", () => {
   it("rejects a phone that is not Tunisian", () => {
     const result = validateParcel({ ...sample(), phone: "12345" });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toMatch(/Téléphone/);
+    if (!result.ok) expect(result.reason).toMatch(/Invalid phone/);
   });
 });
 

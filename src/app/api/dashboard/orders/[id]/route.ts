@@ -9,10 +9,10 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/dashboard/o
   if ("error" in gate) return gate.error;
   try {
     const order = await loadOrderDetail(gate.supabase, gate.merchant.id, id);
-    if (!order) return NextResponse.json({ error: "Commande introuvable." }, { status: 404 });
+    if (!order) return NextResponse.json({ error: "Order not found." }, { status: 404 });
     return NextResponse.json({ order });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "lecture impossible";
+    const message = err instanceof Error ? err.message : "could not load";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

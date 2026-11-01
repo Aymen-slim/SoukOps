@@ -33,7 +33,7 @@ async function openForm(page: PortalPage, base: string, user: string, password: 
   if (await page.locator('[name="user"]').isVisible()) {
     await page.locator('[name="user"]').fill(user);
     await page.locator('[name="password"]').fill(password);
-    await page.getByRole("button", { name: "Se connecter" }).click();
+    await page.getByRole("button", { name: "Log in" }).click();
     await page.locator('[name="clientName"]').waitFor({ state: "visible", timeout: 20_000 });
   }
 }
@@ -71,7 +71,7 @@ export async function executeCourierJob(page: PortalPage, jobId: string): Promis
   const payload = job.payload as CourierJobPayload | null;
   const parsed = parcelFieldsSchema.safeParse(payload?.parcel);
   if (!parsed.success) {
-    await markJobFailed(jobId, { diffs: [], readback: {}, error: "Payload colis invalide." });
+    await markJobFailed(jobId, { diffs: [], readback: {}, error: "Invalid parcel payload." });
     throw new Error("payload invalide");
   }
   const parcel: ParcelFields = parsed.data;
@@ -89,7 +89,7 @@ export async function executeCourierJob(page: PortalPage, jobId: string): Promis
   const diffs = diffParcel(parcel, readback);
 
   if (diffs.length) {
-    await markJobFailed(jobId, { diffs, readback, screenshotPath, error: "Relecture différente du colis." });
+    await markJobFailed(jobId, { diffs, readback, screenshotPath, error: "Parcel read-back differs." });
     await logEvent(conversationId, "courier.mismatch", { orderId: parcel.orderId, diffs });
     throw new Error(`read-back: ${diffs.join(" | ")}`);
   }
@@ -108,7 +108,7 @@ export async function executeCourierJob(page: PortalPage, jobId: string): Promis
     throw new Error("confirmation vendeur absente");
   }
 
-  await page.getByRole("button", { name: "Créer le colis" }).click();
+  await page.getByRole("button", { name: "Create parcel" }).click();
   const deadline = Date.now() + 30_000;
   let barcode: string | undefined;
   while (Date.now() < deadline) {

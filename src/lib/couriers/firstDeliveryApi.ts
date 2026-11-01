@@ -64,19 +64,19 @@ export async function getShipmentState(barcode: string): Promise<{ state: number
   if (isLocalFdMock()) {
     if (!takeEtatSlot()) {
       await new Promise((resolve) => setTimeout(resolve, 1000));
-      if (!takeEtatSlot()) throw new Error("etat: maximum 1 requête par seconde");
+      if (!takeEtatSlot()) throw new Error("etat: maximum 1 request per second");
     }
     const row = await readFdEtat(createAdminClient(), barcode);
     if (!row) throw new Error("code-barres inconnu");
-    if (!isFdState(row.state)) throw new Error(`état FD inconnu: ${row.state}`);
+    if (!isFdState(row.state)) throw new Error(`unknown FD state: ${row.state}`);
     return row;
   }
   const res = await fetch(`${fdBase()}/etat?barcode=${encodeURIComponent(barcode)}`, { headers: authHeaders() });
   const body = await res.json().catch(() => null);
-  if (res.status === 429) throw new Error("etat: maximum 1 requête par seconde");
+  if (res.status === 429) throw new Error("etat: maximum 1 request per second");
   if (!res.ok) throw new Error(typeof body?.error === "string" ? body.error : `FD etat failed (${res.status})`);
   const parsed = etatResponseSchema.parse(body);
-  if (!isFdState(parsed.state)) throw new Error(`état FD inconnu: ${parsed.state}`);
+  if (!isFdState(parsed.state)) throw new Error(`unknown FD state: ${parsed.state}`);
   return parsed;
 }
 

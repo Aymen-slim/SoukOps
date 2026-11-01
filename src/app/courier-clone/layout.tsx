@@ -13,7 +13,7 @@ export default function CourierLayout({ children }: { children: ReactNode }) {
             <div>
               <span className="text-sm font-semibold tracking-wide">First Delivery</span>
               <span className="ml-2 rounded bg-sky-900/80 px-1.5 py-0.5 font-mono text-[10px] text-sky-200">
-                TN · EXPÉDITEUR
+                TN · SENDER
               </span>
             </div>
           </div>

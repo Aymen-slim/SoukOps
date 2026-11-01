@@ -259,13 +259,13 @@ function loadFacebookSdk(appId: string): Promise<FbSdk> {
     script.async = true;
     script.onload = () => {
       if (!window.FB) {
-        reject(new Error("Facebook SDK illisible"));
+        reject(new Error("Facebook SDK could not load"));
         return;
       }
       window.FB.init({ appId, autoLogAppEvents: true, xfbml: true, version: "v21.0" });
       resolve(window.FB);
     };
-    script.onerror = () => reject(new Error("Facebook SDK illisible (réseau?)"));
+    script.onerror = () => reject(new Error("Facebook SDK could not load (network?)"));
     document.body.appendChild(script);
   });
 }
@@ -292,7 +292,7 @@ function WhatsAppConnect() {
     const res = await fetch("/api/dashboard/whatsapp");
     const body = (await res.json().catch(() => null)) as (WhatsAppStatus & { error?: string }) | null;
     if (!res.ok || !body || body.error) {
-      setWaError(body?.error ?? "Statut WhatsApp illisible.");
+      setWaError(body?.error ?? "Could not load WhatsApp status.");
       return;
     }
     setStatus(body);
@@ -347,11 +347,11 @@ function WhatsAppConnect() {
           },
         );
       });
-      if (!code) throw new Error("Connexion Facebook annulée.");
+      if (!code) throw new Error("Facebook login cancelled.");
       for (let i = 0; i < 20 && !session; i++) {
         await new Promise((resolve) => setTimeout(resolve, 250));
       }
-      if (!session) throw new Error("Facebook n'a pas renvoyé le numéro WhatsApp. Réessayez.");
+      if (!session) throw new Error("Facebook did not return the WhatsApp number. Try again.");
       const found: { wabaId: string; phoneNumberId: string } = session;
       const res = await fetch("/api/dashboard/whatsapp", {
         method: "POST",
@@ -363,14 +363,14 @@ function WhatsAppConnect() {
         displayPhoneNumber?: string | null;
         verifiedName?: string | null;
       } | null;
-      if (!res.ok) throw new Error(body?.error ?? "Connexion impossible.");
+      if (!res.ok) throw new Error(body?.error ?? "Connection failed.");
       setConnectedName(body?.displayPhoneNumber ?? found.phoneNumberId);
       setNote(
-        `WhatsApp connecté en un clic${body?.displayPhoneNumber ? ` : ${body.displayPhoneNumber}` : ""}${body?.verifiedName ? ` · ${body.verifiedName}` : ""}. Webhook abonné automatiquement — recopiez le Verify Token ci-dessous dans Meta si demandé.`,
+        `WhatsApp linked in one click${body?.displayPhoneNumber ? ` : ${body.displayPhoneNumber}` : ""}${body?.verifiedName ? ` · ${body.verifiedName}` : ""}. Webhook subscribed automatically — paste the Verify Token below into Meta if it asks.`,
       );
       await load();
     } catch (err) {
-      setWaError(err instanceof Error ? err.message : "Connexion impossible.");
+      setWaError(err instanceof Error ? err.message : "Connection failed.");
     } finally {
       window.removeEventListener("message", onMessage);
       setBusy(false);
@@ -399,14 +399,14 @@ function WhatsAppConnect() {
     } | null;
     setBusy(false);
     if (!res.ok) {
-      setWaError(body?.error ?? "Test impossible.");
+      setWaError(body?.error ?? "Test failed.");
       return;
     }
     setConnectedName(body?.displayPhoneNumber ?? body?.verifiedName ?? phoneNumberId);
     setNote(
       body?.testSent
-        ? `Connecté${body.displayPhoneNumber ? ` (${body.displayPhoneNumber})` : ""} — message test envoyé.`
-        : `Connecté${body?.displayPhoneNumber ? ` : ${body.displayPhoneNumber}` : ""}${body?.verifiedName ? ` · ${body.verifiedName}` : ""}. Pensez à sauvegarder.`,
+        ? `Connected${body.displayPhoneNumber ? ` (${body.displayPhoneNumber})` : ""} — test message sent.`
+        : `Connected${body?.displayPhoneNumber ? ` : ${body.displayPhoneNumber}` : ""}${body?.verifiedName ? ` · ${body.verifiedName}` : ""}. Remember to save.`,
     );
   }
 
@@ -427,11 +427,11 @@ function WhatsAppConnect() {
     const body = (await res.json().catch(() => null)) as { error?: string } | null;
     setBusy(false);
     if (!res.ok) {
-      setWaError(body?.error ?? "Sauvegarde impossible.");
+      setWaError(body?.error ?? "Save failed.");
       return;
     }
     setAccessToken("");
-    setNote("WhatsApp sauvegardé. Collez le webhook ci-dessous dans Meta, puis testez depuis votre téléphone.");
+    setNote("WhatsApp saved. Paste the webhook below into Meta, then test from your phone.");
     await load();
   }
 
@@ -445,12 +445,12 @@ function WhatsAppConnect() {
               WhatsApp
             </CardTitle>
             <CardDescription>
-              Recevez les commandes sur votre vrai numéro WhatsApp Business (Cloud API Meta).
+              Receive orders on your real WhatsApp Business number (Meta Cloud API).
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
             <Badge variant={status?.configured ? "success" : "outline"}>
-              {status?.configured ? `Connecté${connectedName ? ` · ${connectedName}` : ""}` : "Non connecté"}
+              {status?.configured ? `Connected${connectedName ? ` · ${connectedName}` : ""}` : "Not connected"}
             </Badge>
             <Button type="button" onClick={() => setOpen((value) => !value)}>
               <Link2 className="size-3.5" />
@@ -474,10 +474,10 @@ function WhatsAppConnect() {
           ) : null}
 
           <div className="flex flex-col gap-2 rounded-xl border border-border bg-muted/40 p-4">
-            <p className="text-sm font-semibold text-foreground">Le plus simple : un clic avec Facebook</p>
+            <p className="text-sm font-semibold text-foreground">Easiest: one click with Facebook</p>
             <p className="text-sm text-muted-foreground">
-              Connectez-vous avec le compte Facebook de la boutique, choisissez le numéro WhatsApp, validez.
-              Aucun ID ni token à copier — Wassalha échange et abonne le webhook automatiquement.
+              Log in with the shop&apos;s Facebook account, pick the WhatsApp number, confirm.
+              No IDs or tokens to copy — Wassalha exchanges the code and subscribes the webhook automatically.
             </p>
             <Button
               type="button"
@@ -490,17 +490,17 @@ function WhatsAppConnect() {
             </Button>
             {status && !status.embedded.configured ? (
               <p className="text-xs text-muted-foreground">
-                Pas encore activé sur ce serveur : renseignez <code>META_APP_ID</code>, <code>META_APP_SECRET</code> et{" "}
+                Not enabled on this server yet: set <code>META_APP_ID</code>, <code>META_APP_SECRET</code> et{" "}
                 <code>WHATSAPP_EMBEDDED_CONFIG_ID</code> dans <code>.env.local</code> (app Meta → Facebook Login for
-                Business), ou utilisez la méthode manuelle ci-dessous.
+                Business), or use the manual method below.
               </p>
             ) : null}
           </div>
 
           <div className="flex flex-col gap-2">
-            <p className="text-sm font-semibold text-foreground">Méthode manuelle · 1 · Créez votre numéro chez Meta</p>
+            <p className="text-sm font-semibold text-foreground">Manual method · 1 · Create your number at Meta</p>
             <p className="text-sm text-muted-foreground">
-              Ouvrez Meta for Developers, ajoutez le produit WhatsApp à une app, puis copiez le{" "}
+              Open Meta for Developers, add the WhatsApp product to an app, then copy the{" "}
               <strong>Phone Number ID</strong> et un <strong>Access Token</strong> depuis « API Setup ».
             </p>
             <a
@@ -509,7 +509,7 @@ function WhatsAppConnect() {
               target="_blank"
               rel="noreferrer"
             >
-              Ouvrir le guide WhatsApp Cloud API
+              Open the WhatsApp Cloud API guide
             </a>
           </div>
 
@@ -523,11 +523,11 @@ function WhatsAppConnect() {
               <Input id="wa-waba" value={wabaId} onChange={(e) => setWabaId(e.target.value)} className="font-mono" placeholder="1098…" />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="wa-token">Access Token {status?.tokenSet ? "(déjà sauvegardé — laisser vide pour garder)" : ""}</Label>
+              <Label htmlFor="wa-token">Access Token {status?.tokenSet ? "(already saved — leave empty to keep it)" : ""}</Label>
               <Input id="wa-token" type="password" value={accessToken} onChange={(e) => setAccessToken(e.target.value)} className="font-mono" placeholder="EAA…" />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="wa-verify">Verify Token (à recopier dans Meta)</Label>
+              <Label htmlFor="wa-verify">Verify Token (paste it into Meta)</Label>
               <div className="flex gap-2">
                 <Input id="wa-verify" value={verifyToken} onChange={(e) => setVerifyToken(e.target.value)} className="font-mono" placeholder="wassalha-…" />
                 <Button
@@ -535,7 +535,7 @@ function WhatsAppConnect() {
                   variant="outline"
                   onClick={() => setVerifyToken(`wassalha-${Math.random().toString(36).slice(2, 10)}`)}
                 >
-                  Générer
+                  Generate
                 </Button>
               </div>
             </div>
@@ -553,10 +553,10 @@ function WhatsAppConnect() {
           </div>
 
           <div className="flex flex-col gap-2">
-            <p className="text-sm font-semibold text-foreground">Méthode manuelle · 2 · Collez le webhook dans Meta</p>
+            <p className="text-sm font-semibold text-foreground">Manual method · 2 · Paste the webhook into Meta</p>
             <p className="text-sm text-muted-foreground">
-              Dans l&apos;app Meta : WhatsApp → Configuration → Webhook → Edit. Collez l&apos;URL et le Verify Token,
-              sauvegardez, puis abonnez le champ <code>messages</code>.
+              In the Meta app: WhatsApp → Configuration → Webhook → Edit. Paste the URL and the Verify Token,
+              save, then subscribe to the <code>messages</code>.
             </p>
             <div className="grid gap-2">
               <div className="flex gap-2">
@@ -575,19 +575,19 @@ function WhatsAppConnect() {
               </div>
             </div>
             <p className="text-xs text-muted-foreground">
-              Astuce démo locale : exposez temporairement ce poste avec un tunnel HTTPS et mettez cette URL publique
-              dans <code>APP_BASE_URL</code>, sinon Meta ne peut pas appeler le webhook.
+              Local demo tip: expose this machine temporarily with an HTTPS tunnel and put that public URL
+              dans <code>APP_BASE_URL</code>, otherwise Meta cannot call the webhook.
             </p>
           </div>
 
           <div className="flex flex-col gap-2">
-            <p className="text-sm font-semibold text-foreground">Méthode manuelle · 3 · Recevez un message test</p>
+            <p className="text-sm font-semibold text-foreground">Manual method · 3 · Get a test message</p>
             <div className="flex flex-wrap gap-2">
               <Input
                 value={testRecipient}
                 onChange={(e) => setTestRecipient(e.target.value)}
                 className="w-56 font-mono"
-                placeholder="Votre mobile, ex. 21622123456"
+                placeholder="Your mobile, e.g. 21622123456"
                 inputMode="tel"
               />
               <Button type="button" variant="outline" disabled={busy || !testRecipient.trim()} onClick={() => void test(true)}>
@@ -596,8 +596,8 @@ function WhatsAppConnect() {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Ensuite, écrivez à votre numéro WhatsApp Business depuis un autre téléphone : la conversation arrive
-              dans Inbox et l&apos;agent répond comme dans le simulateur.
+              Then message your WhatsApp Business number from another phone: the conversation lands
+              in Inbox and the agent replies just like in the simulator.
             </p>
           </div>
         </CardContent>

@@ -10,7 +10,7 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/fd-mock/v2/
     return NextResponse.json({ error: "code-barres invalide" }, { status: 400 });
   }
   const { data, error } = await createAdminClient().storage.from("waybills").download(`${barcode}.pdf`);
-  if (error || !data) return NextResponse.json({ error: "bordereau introuvable" }, { status: 404 });
+  if (error || !data) return NextResponse.json({ error: "waybill not found" }, { status: 404 });
   const bytes = Buffer.from(await data.arrayBuffer());
   return new NextResponse(bytes, {
     headers: {

@@ -8,6 +8,6 @@ export async function GET() {
   try {
     return NextResponse.json(await loadDemand(gate.supabase, gate.merchant.id));
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : "lecture impossible" }, { status: 500 });
+    return NextResponse.json({ error: err instanceof Error ? err.message : "could not load" }, { status: 500 });
   }
 }

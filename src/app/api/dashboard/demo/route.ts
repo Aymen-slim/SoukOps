@@ -60,6 +60,6 @@ export async function POST() {
     const counts = await resetDemoData(gate.supabase, gate.merchant.id);
     return NextResponse.json({ ok: true, counts });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : "reset impossible" }, { status: 500 });
+    return NextResponse.json({ error: err instanceof Error ? err.message : "reset failed" }, { status: 500 });
   }
 }

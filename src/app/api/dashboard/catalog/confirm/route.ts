@@ -28,7 +28,7 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     const floor = parsed.error.issues.some((issue) => issue.message === "floor");
     return NextResponse.json(
-      { error: floor ? "Le prix plancher ne peut pas dépasser le prix." : "Fiche produit incomplète." },
+      { error: floor ? "The floor price cannot exceed the price." : "Incomplete product sheet." },
       { status: 400 },
     );
   }
@@ -44,7 +44,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Image illisible." }, { status: 400 });
   }
   if (await isBlurry(original)) {
-    return NextResponse.json({ error: "Photo trop floue. Reprenez la photo plus près, sans bouger." }, { status: 422 });
+    return NextResponse.json({ error: "Photo too blurry. Retake it closer, without moving." }, { status: 422 });
   }
 
   let embedding: number[];
@@ -54,8 +54,8 @@ export async function POST(request: Request) {
     if (!first) return NextResponse.json({ error: "Embedding vide." }, { status: 502 });
     embedding = first;
   } catch (err) {
-    const message = err instanceof Error ? err.message : "embedding impossible";
-    return NextResponse.json({ error: `Embedding impossible : ${message}` }, { status: 502 });
+    const message = err instanceof Error ? err.message : "embedding failed";
+    return NextResponse.json({ error: `Embedding failed: ${message}` }, { status: 502 });
   }
 
   const id = randomUUID();

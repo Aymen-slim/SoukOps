@@ -18,7 +18,7 @@ function decodeImage(input: string): Buffer {
 
 export async function POST(request: Request) {
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: "photo ou catégorie invalide" }, { status: 400 });
+  if (!parsed.success) return NextResponse.json({ error: "invalid photo or category" }, { status: 400 });
   const bytes = decodeImage(parsed.data.imageBase64);
   try {
     await sharp(bytes).metadata();
@@ -27,7 +27,7 @@ export async function POST(request: Request) {
   }
   if (await isBlurry(bytes)) {
     return NextResponse.json(
-      { error: "Photo trop floue. Reprenez la photo plus près, sans bouger." },
+      { error: "Photo too blurry. Retake it closer, without moving." },
       { status: 422 },
     );
   }
@@ -42,7 +42,7 @@ export async function POST(request: Request) {
       usedOriginal: sam.objects.length === 0,
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "découpe impossible";
-    return NextResponse.json({ error: `Découpe impossible : ${message}` }, { status: 502 });
+    const message = err instanceof Error ? err.message : "crop failed";
+    return NextResponse.json({ error: `Crop failed: ${message}` }, { status: 502 });
   }
 }

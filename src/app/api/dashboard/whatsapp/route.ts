@@ -65,7 +65,7 @@ export async function POST(request: Request) {
         phoneNumberId: z.string().trim().min(5).max(40),
       })
       .safeParse(body);
-    if (!parsed.success) return NextResponse.json({ error: "réponse Facebook invalide" }, { status: 400 });
+    if (!parsed.success) return NextResponse.json({ error: "invalid Facebook response" }, { status: 400 });
     const verifyToken =
       (await resolveWhatsAppConfig(gate.supabase, gate.merchant.id))?.verifyToken ??
       `wassalha-${gate.merchant.id.slice(0, 8)}`;
@@ -84,20 +84,20 @@ export async function POST(request: Request) {
       if (error) {
         return NextResponse.json(
           {
-            error: `Connexion Meta OK mais sauvegarde impossible (${error.message}). Appliquez supabase/migrations/0002_whatsapp.sql dans Supabase.`,
+            error: `Meta login OK but save failed (${error.message}). Apply supabase/migrations/0002_whatsapp.sql in Supabase.`,
           },
           { status: 500 },
         );
       }
       return NextResponse.json({ ok: true, ...info });
     } catch (err) {
-      return NextResponse.json({ error: err instanceof Error ? err.message : "connexion impossible" }, { status: 502 });
+      return NextResponse.json({ error: err instanceof Error ? err.message : "connection failed" }, { status: 502 });
     }
   }
 
   if (body?.action === "test") {
     const parsed = testSchema.safeParse(body);
-    if (!parsed.success) return NextResponse.json({ error: "paramètres invalides" }, { status: 400 });
+    if (!parsed.success) return NextResponse.json({ error: "invalid parameters" }, { status: 400 });
     const saved = await resolveWhatsAppConfig(gate.supabase, gate.merchant.id);
     const config: WhatsAppConfig | null =
       parsed.data.phoneNumberId && parsed.data.accessToken
@@ -110,7 +110,7 @@ export async function POST(request: Request) {
           }
         : saved;
     if (!config) {
-      return NextResponse.json({ error: "Renseignez le Phone Number ID et le token, puis testez." }, { status: 400 });
+      return NextResponse.json({ error: "Enter the Phone Number ID and token, then test." }, { status: 400 });
     }
     try {
       const info = await testWhatsAppConnection(config);
@@ -123,14 +123,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, ...info, testSent });
     } catch (err) {
       return NextResponse.json(
-        { error: err instanceof Error ? err.message : "test impossible" },
+        { error: err instanceof Error ? err.message : "test failed" },
         { status: 502 },
       );
     }
   }
 
   const parsed = saveSchema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: "réglages WhatsApp invalides" }, { status: 400 });
+  if (!parsed.success) return NextResponse.json({ error: "invalid WhatsApp settings" }, { status: 400 });
   const update: Record<string, unknown> = {
     whatsapp_phone_number_id: parsed.data.phoneNumberId,
     whatsapp_waba_id: parsed.data.wabaId || null,
@@ -142,7 +142,7 @@ export async function POST(request: Request) {
   if (error) {
     return NextResponse.json(
       {
-        error: `Sauvegarde impossible (${error.message}). Appliquez d'abord supabase/migrations/0002_whatsapp.sql dans Supabase, ou renseignez les variables WHATSAPP_* dans .env.local.`,
+        error: `Save failed (${error.message}). First apply supabase/migrations/0002_whatsapp.sql in Supabase, or set the WHATSAPP_* variables in .env.local.`,
       },
       { status: 500 },
     );

@@ -11,7 +11,7 @@ export async function POST(request: Request) {
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "identifiants invalides" }, { status: 400 });
   if (!credentialsMatch(parsed.data.user, parsed.data.password)) {
-    return NextResponse.json({ error: "identifiants refusés" }, { status: 401 });
+    return NextResponse.json({ error: "invalid credentials" }, { status: 401 });
   }
   const response = NextResponse.json({ ok: true });
   response.cookies.set(CLONE_COOKIE, cloneSessionToken(), {

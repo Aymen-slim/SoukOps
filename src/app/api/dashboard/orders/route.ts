@@ -9,7 +9,7 @@ export async function GET() {
     const orders = await loadOrderQueue(gate.supabase, gate.merchant.id);
     return NextResponse.json({ orders });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "lecture impossible";
+    const message = err instanceof Error ? err.message : "could not load";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

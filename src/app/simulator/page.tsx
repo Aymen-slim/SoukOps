@@ -16,7 +16,7 @@ export default function SimulatorPage({ searchParams }: PageProps<"/simulator">)
       <main className="min-h-screen bg-medina-grid">
         <SiteBar />
         <p className="mx-auto w-full max-w-6xl px-4 py-10 text-sm text-muted-foreground sm:px-6">
-          Simulateur fermé pour le moment. Réactivez <span className="font-mono">SIMULATOR_PUBLIC</span> pour rouvrir la démo.
+          Simulator is closed for now. Set <span className="font-mono">SIMULATOR_PUBLIC</span> back to true to reopen the demo.
         </p>
       </main>
     );

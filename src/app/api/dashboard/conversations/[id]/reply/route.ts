@@ -20,7 +20,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/dashboard/c
     .eq("id", id)
     .eq("merchant_id", gate.merchant.id)
     .maybeSingle();
-  if (!conversation) return NextResponse.json({ error: "conversation introuvable" }, { status: 404 });
+  if (!conversation) return NextResponse.json({ error: "conversation not found" }, { status: 404 });
 
   await simulatorAdapter.sendText(id, parsed.data.text);
   await logEvent(id, "seller.reply", {});

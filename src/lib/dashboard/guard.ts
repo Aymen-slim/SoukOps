@@ -15,7 +15,7 @@ export async function requireMerchant(): Promise<
   const supabase = createAdminClient();
   const merchant = await getDemoMerchant(supabase);
   if (!merchant) {
-    return { error: NextResponse.json({ error: "Aucune boutique. Lancez npm run seed:catalog." }, { status: 500 }) };
+    return { error: NextResponse.json({ error: "No shop. Run npm run seed:catalog." }, { status: 500 }) };
   }
   return { supabase, merchant };
 }

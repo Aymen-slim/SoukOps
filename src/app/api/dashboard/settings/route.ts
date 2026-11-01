@@ -34,7 +34,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const parsed = patchSchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: "réglages invalides" }, { status: 400 });
+  if (!parsed.success) return NextResponse.json({ error: "invalid settings" }, { status: 400 });
   const gate = await requireMerchant();
   if ("error" in gate) return gate.error;
 

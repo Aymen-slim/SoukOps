@@ -8,7 +8,7 @@ async function ColisGate({ params }: { params: Promise<{ barcode: string }> }) {
 
 export default function ColisPage({ params }: { params: Promise<{ barcode: string }> }) {
   return (
-    <Suspense fallback={<p className="text-sm text-muted-foreground">Chargement du colis…</p>}>
+    <Suspense fallback={<p className="text-sm text-muted-foreground">Loading parcel…</p>}>
       <ColisGate params={params} />
     </Suspense>
   );

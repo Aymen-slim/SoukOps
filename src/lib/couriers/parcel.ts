@@ -21,7 +21,7 @@ export async function loadParcel(supabase: Admin, orderId: string): Promise<Load
     .select("id, merchant_id, customer_id, conversation_id, address_id, total_millimes")
     .eq("id", orderId)
     .maybeSingle();
-  if (!order) return { ok: false, reason: "Commande introuvable." };
+  if (!order) return { ok: false, reason: "Order not found." };
 
   const [{ data: address }, { data: customer }, { data: item }] = await Promise.all([
     order.address_id
@@ -42,14 +42,14 @@ export async function loadParcel(supabase: Admin, orderId: string): Promise<Load
   ]);
 
   if (!address?.confirmed_at || address.lat == null || address.lng == null) {
-    return { ok: false, reason: "Pin GPS non confirmé." };
+    return { ok: false, reason: "GPS pin not confirmed." };
   }
   if (address.locality_id == null) {
-    return { ok: false, reason: "locality_id manquant : obligatoire pour First Delivery depuis juin 2026." };
+    return { ok: false, reason: "missing locality_id: required for First Delivery since June 2026." };
   }
 
   const phone = normalizeTunisianPhone(String(customer?.phone ?? ""));
-  if (!phone) return { ok: false, reason: "Téléphone invalide." };
+  if (!phone) return { ok: false, reason: "Invalid phone number." };
 
   const validated = validateParcel({
     clientName: ((customer?.name as string | null) ?? "").trim() || "Client",

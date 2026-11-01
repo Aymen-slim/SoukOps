@@ -42,11 +42,11 @@ export function clientIp(request: Request): string {
 /** Returns a 403/429 Response when the simulator is closed or over limit, else null. */
 export function simulatorGuard(request: Request, scope: string, limit: number, windowMs = 60_000): Response | null {
   if (!simulatorIsPublic()) {
-    return Response.json({ error: "simulateur fermé" }, { status: 403 });
+    return Response.json({ error: "simulator closed" }, { status: 403 });
   }
   const key = `${scope}:${clientIp(request)}`;
   if (!checkRateLimit(key, limit, windowMs)) {
-    return Response.json({ error: "trop de requêtes, réessayez dans une minute" }, { status: 429 });
+    return Response.json({ error: "too many requests, try again in a minute" }, { status: 429 });
   }
   return null;
 }

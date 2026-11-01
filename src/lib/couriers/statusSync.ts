@@ -54,7 +54,7 @@ export function mapFdState(state: FdState): FdMapping {
       buyerText: "Samahni, el commande rja3et lel vendeur. Ken t7eb n3awdou el envoi, 9olli houni.",
     };
   }
-  throw new Error(`Ã©tat FD inconnu: ${state}`);
+  throw new Error(`unknown FD state: ${state}`);
 }
 
 export type SyncResult =
@@ -76,7 +76,7 @@ async function syncOne(supabase: Admin, merchantId: string, orderId: string): Pr
     .eq("id", orderId)
     .eq("merchant_id", merchantId)
     .maybeSingle();
-  if (!order) return { ok: false, status: 404, reason: "Commande introuvable." };
+  if (!order) return { ok: false, status: 404, reason: "Order not found." };
 
   const { data: shipment } = await supabase
     .from("shipments")
@@ -85,7 +85,7 @@ async function syncOne(supabase: Admin, merchantId: string, orderId: string): Pr
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (!shipment?.barcode) return { ok: false, status: 409, reason: "Aucun bordereau Ã  synchroniser." };
+  if (!shipment?.barcode) return { ok: false, status: 409, reason: "No waybill to sync." };
   const barcode = shipment.barcode as string;
 
   let fdState: number;
@@ -94,7 +94,7 @@ async function syncOne(supabase: Admin, merchantId: string, orderId: string): Pr
   } catch (err) {
     return { ok: false, status: 502, reason: err instanceof Error ? err.message : "etat FD illisible" };
   }
-  if (!isFdState(fdState)) return { ok: false, status: 502, reason: `Ã©tat FD inconnu: ${fdState}` };
+  if (!isFdState(fdState)) return { ok: false, status: 502, reason: `unknown FD state: ${fdState}` };
   const mapping = mapFdState(fdState);
 
   const prevFdState = (shipment.fd_state as number | null) ?? null;
@@ -165,7 +165,7 @@ async function syncOne(supabase: Admin, merchantId: string, orderId: string): Pr
 export async function syncOrderShipment(orderId: string): Promise<SyncResult> {
   const supabase = createAdminClient();
   const merchant = await getDemoMerchant(supabase);
-  if (!merchant) return { ok: false, status: 500, reason: "Aucune boutique. Lancez npm run seed:catalog." };
+  if (!merchant) return { ok: false, status: 500, reason: "No shop. Run npm run seed:catalog." };
   return syncOne(supabase, merchant.id, orderId);
 }
 
@@ -173,7 +173,7 @@ export async function syncOrderShipment(orderId: string): Promise<SyncResult> {
 export async function syncMerchantShipments(): Promise<{ synced: SyncResult[]; failures: Array<{ orderId: string; reason: string }> }> {
   const supabase = createAdminClient();
   const merchant = await getDemoMerchant(supabase);
-  if (!merchant) return { synced: [], failures: [{ orderId: "-", reason: "Aucune boutique." }] };
+  if (!merchant) return { synced: [], failures: [{ orderId: "-", reason: "No shop." }] };
   const { data: shipments } = await supabase
     .from("shipments")
     .select("order_id, barcode")

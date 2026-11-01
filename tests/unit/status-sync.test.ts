@@ -26,6 +26,6 @@ describe("FD state mapping", () => {
 
   it("refuses unknown states", () => {
     expect(isFdState(99)).toBe(false);
-    expect(() => mapFdState(99 as never)).toThrow(/inconnu/);
+    expect(() => mapFdState(99 as never)).toThrow(/unknown/);
   });
 });

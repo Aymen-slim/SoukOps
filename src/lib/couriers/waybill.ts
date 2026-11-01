@@ -52,11 +52,11 @@ export async function renderWaybillPdf(parcel: ParcelFields, barcode: string): P
   page.drawText(barcode, { x: 16, y: height - 48 - 32 - barHeight, size: 12, font: bold, color: rgb(0.1, 0.1, 0.1) });
 
   const lines = [
-    `Désignation : ${pdfSafe(parcel.designation)}`,
+    `Designation: ${pdfSafe(parcel.designation)}`,
     `Client : ${pdfSafe(parcel.clientName)}`,
-    `Tél : ${parcel.phone}`,
-    `Repère : ${pdfSafe(parcel.landmark)}`,
-    parcel.floor ? `Étage : ${pdfSafe(parcel.floor)}` : null,
+    `Tel: ${parcel.phone}`,
+    `Landmark: ${pdfSafe(parcel.landmark)}`,
+    parcel.floor ? `Floor: ${pdfSafe(parcel.floor)}` : null,
     parcel.driverNote ? `Note : ${pdfSafe(parcel.driverNote)}` : null,
     `Lieu : ${pdfSafe(parcel.governorate)}${parcel.delegation ? ` / ${pdfSafe(parcel.delegation)}` : ""}`,
     `locality_id : ${parcel.localityId}`,

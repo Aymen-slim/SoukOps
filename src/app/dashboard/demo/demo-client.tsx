@@ -30,18 +30,18 @@ export function DemoClient() {
   const [resetNote, setResetNote] = useState<string | null>(null);
 
   async function resetDemo() {
-    if (!window.confirm("Effacer les conversations et commandes de démo ? Le catalogue, les repères et les frais sont conservés.")) return;
+    if (!window.confirm("Delete all demo conversations and orders? Catalog, landmarks and fees are kept.")) return;
     setResetBusy(true);
     setResetNote(null);
     const res = await fetch("/api/dashboard/demo", { method: "POST" });
     const body = (await res.json().catch(() => null)) as { error?: string; counts?: Record<string, number> } | null;
     setResetBusy(false);
     if (!res.ok) {
-      setResetNote(body?.error ?? "Reset impossible.");
+      setResetNote(body?.error ?? "Reset failed.");
       return;
     }
     const counts = body?.counts ?? {};
-    setResetNote(`Reset fait : ${counts.orders ?? 0} commandes, ${counts.conversations ?? 0} conversations effacées. Relancez npm run seed:day5 si besoin.`);
+    setResetNote(`Reset done: ${counts.orders ?? 0} orders, ${counts.conversations ?? 0} conversations deleted. Re-run npm run seed:day5 if needed.`);
     await reload();
   }
   return (
@@ -170,12 +170,12 @@ export function DemoClient() {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-xl border border-border bg-muted/45 p-3">
-                <p className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">Mode IA</p>
+                <p className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">AI mode</p>
                 <p className="mt-1 font-mono text-sm font-semibold text-foreground">{data?.aiMode ?? "…"}</p>
               </div>
               <div className="rounded-xl border border-border bg-muted/45 p-3">
-                <p className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">Simulateur public</p>
-                <p className="mt-1 font-semibold text-foreground">{data ? (data.simulatorPublic ? "Ouvert" : "Fermé") : "…"}</p>
+                <p className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">Public simulator</p>
+                <p className="mt-1 font-semibold text-foreground">{data ? (data.simulatorPublic ? "Open" : "Closed") : "…"}</p>
               </div>
             </div>
 
@@ -202,7 +202,7 @@ export function DemoClient() {
             <div className="flex flex-col gap-2">
               <Button type="button" variant="outline" disabled={resetBusy} onClick={() => void resetDemo()}>
                 <RotateCcw className="size-4" />
-                Réinitialiser la démo
+                Reset the demo
               </Button>
               {resetNote ? <p className="text-xs text-muted-foreground">{resetNote}</p> : null}
             </div>

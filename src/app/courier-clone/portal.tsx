@@ -25,7 +25,7 @@ export function LoginForm() {
     });
     if (!res.ok) {
       setSending(false);
-      setError("Identifiants refusés.");
+      setError("Invalid credentials.");
       return;
     }
     const next = new URLSearchParams(window.location.search).get("next") || "/courier-clone/nouveau";
@@ -44,18 +44,18 @@ export function LoginForm() {
       <CardHeader className="border-b border-slate-200">
         <CardTitle className="flex items-center gap-2 text-slate-900">
           <Lock className="size-4 text-[#093552]" />
-          Connexion agent
+          Agent login
         </CardTitle>
-        <CardDescription>Accès sécurisé au portail d&apos;expédition First Delivery.</CardDescription>
+        <CardDescription>Secure access to the First Delivery shipping portal.</CardDescription>
       </CardHeader>
       <CardContent>
         <form className="flex flex-col gap-3.5" onSubmit={(event) => event.preventDefault()}>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="user">Identifiant</Label>
+            <Label htmlFor="user">Username</Label>
             <Input id="user" name="user" autoComplete="username" required className="bg-white" />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="password">Mot de passe</Label>
+            <Label htmlFor="password">Password</Label>
             <Input
               id="password"
               name="password"
@@ -71,7 +71,7 @@ export function LoginForm() {
             </p>
           ) : null}
           <Button type="submit" disabled={sending} onClick={onClick} className="bg-[#093552] text-white hover:bg-[#093552]/90">
-            Se connecter
+            Log in
           </Button>
         </form>
       </CardContent>
@@ -80,19 +80,19 @@ export function LoginForm() {
 }
 
 const FIELDS: Array<{ name: string; label: string; mono?: boolean }> = [
-  { name: "clientName", label: "Nom du client" },
-  { name: "phone", label: "Téléphone", mono: true },
-  { name: "governorate", label: "Gouvernorat" },
-  { name: "delegation", label: "Délégation" },
+  { name: "clientName", label: "Customer name" },
+  { name: "phone", label: "Phone", mono: true },
+  { name: "governorate", label: "Governorate" },
+  { name: "delegation", label: "Delegation" },
   { name: "localityId", label: "locality_id", mono: true },
-  { name: "landmark", label: "Repère" },
-  { name: "floor", label: "Étage" },
-  { name: "driverNote", label: "Note livreur" },
+  { name: "landmark", label: "Landmark" },
+  { name: "floor", label: "Floor" },
+  { name: "driverNote", label: "Driver note" },
   { name: "lat", label: "Latitude", mono: true },
   { name: "lng", label: "Longitude", mono: true },
-  { name: "prixMillimes", label: "Prix (millimes, livraison comprise)", mono: true },
-  { name: "designation", label: "Désignation" },
-  { name: "orderId", label: "Commande", mono: true },
+  { name: "prixMillimes", label: "Price (millimes, delivery included)", mono: true },
+  { name: "designation", label: "Designation" },
+  { name: "orderId", label: "Order", mono: true },
 ];
 
 export function ParcelForm() {
@@ -144,7 +144,7 @@ export function ParcelForm() {
     const body = (await res.json().catch(() => null)) as { error?: string; barcode?: string } | null;
     if (!res.ok || !body?.barcode) {
       setSending(false);
-      setError(body?.error ?? "Création refusée.");
+      setError(body?.error ?? "Creation refused.");
       return;
     }
     router.push(`/courier-clone/colis/${body.barcode}`);
@@ -157,7 +157,7 @@ export function ParcelForm() {
     void submit(form);
   }
 
-  if (!ready) return <p className="text-sm text-slate-600">Connexion au portail…</p>;
+  if (!ready) return <p className="text-sm text-slate-600">Connecting to the portal…</p>;
 
   return (
     <Card className="bg-white">
@@ -166,14 +166,14 @@ export function ParcelForm() {
           <div>
             <CardTitle className="flex items-center gap-2 text-slate-900">
               <PackagePlus className="size-4 text-[#093552]" />
-              Nouveau colis
+              New parcel
             </CardTitle>
             <CardDescription>
-              Saisie du bordereau d&apos;expédition avec validation obligatoire de <code>locality_id</code>.
+              Waybill entry with mandatory validation of <code>locality_id</code>.
             </CardDescription>
           </div>
           <Badge variant="outline" className="font-mono">
-            13 champs
+            13 fields
           </Badge>
         </div>
       </CardHeader>
@@ -201,7 +201,7 @@ export function ParcelForm() {
               onClick={onClick}
               className="bg-[#093552] text-white hover:bg-[#093552]/90"
             >
-              Créer le colis
+              Create parcel
             </Button>
           </div>
         </form>
@@ -220,7 +220,7 @@ export function ColisView({ barcode }: { barcode: string }) {
     void fetch(`/api/fd-mock/v2/parcels/${barcode}`).then(async (res) => {
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        setError(data?.error ?? "Colis introuvable.");
+        setError(data?.error ?? "Parcel not found.");
         return;
       }
       setParcel(data);
@@ -228,7 +228,7 @@ export function ColisView({ barcode }: { barcode: string }) {
   }, [barcode]);
 
   if (error) return <p role="alert" className="text-sm text-destructive">{error}</p>;
-  if (!parcel) return <p className="text-sm text-slate-600">Chargement du colis…</p>;
+  if (!parcel) return <p className="text-sm text-slate-600">Loading parcel…</p>;
   const fields = parcel.fields ?? {};
 
   return (
@@ -237,9 +237,9 @@ export function ColisView({ barcode }: { barcode: string }) {
         <div className="flex items-center justify-between gap-2">
           <CardTitle className="flex items-center gap-2 text-slate-900">
             <Barcode className="size-4 text-[#093552]" />
-            Colis {barcode}
+            Parcel {barcode}
           </CardTitle>
-          <Badge variant="success" className="font-mono">Enregistré</Badge>
+          <Badge variant="success" className="font-mono">Saved</Badge>
         </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 text-sm">
@@ -261,7 +261,7 @@ export function ColisView({ barcode }: { barcode: string }) {
           href={parcel.printUrl}
         >
           <Printer className="size-3.5" />
-          Imprimer le bordereau
+          Print waybill
         </a>
       </CardContent>
     </Card>

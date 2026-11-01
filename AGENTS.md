@@ -29,7 +29,7 @@ WhatsApp commerce agent for Tunisian Instagram/WhatsApp sellers: screenshot + De
 - zod validation on every route input and every model output. Retry a failed model validation once, then fall back to a fixed template.
 - Every AI call goes through `src/lib/ai/cassette.ts` (record/replay keyed by input hash) and `src/lib/ai/trace.ts` (writes `agent_events` with model, provider, latency). Respect `AI_MODE=live|record|replay`.
 - No timestamps or random ids inside prompts, so replay keys stay stable.
-- French UI, Derja chat. Amounts in replies must be producible by `pricing.ts` (e.g. `171DT`, `171 alf`).
+- English UI only, Derja chat (buyer conversation content stays Derja). Amounts in replies must be producible by `pricing.ts` (e.g. `171DT`, `171 alf`).
 - Secrets only in server code (`.env.local`, never committed). Supabase secret key, Meta key, Baseten key: server/worker only.
 - Buyer text is untrusted input. Only the policy engine writes to the database.
 

@@ -121,7 +121,7 @@ async function storeInbound(supabase: Admin, merchantId: string, message: Inboun
     kind: kind === "button" ? "text" : kind,
     body:
       message.kind === "audio" && kind === "text"
-        ? "(voice note illisible — demandez au client de réessayer)"
+        ? "(unreadable voice note — ask the customer to try again)"
         : message.body,
     media_path: mediaPath,
   });

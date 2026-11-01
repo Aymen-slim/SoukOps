@@ -24,7 +24,7 @@ export type ReconfirmRequestResult =
 export async function requestDispatchReconfirmation(orderId: string): Promise<ReconfirmRequestResult> {
   const supabase = createAdminClient();
   const merchant = await getDemoMerchant(supabase);
-  if (!merchant) return { ok: false, status: 500, reason: "Aucune boutique. Lancez npm run seed:catalog." };
+  if (!merchant) return { ok: false, status: 500, reason: "No shop. Run npm run seed:catalog." };
 
   const { data: order } = await supabase
     .from("orders")
@@ -32,15 +32,15 @@ export async function requestDispatchReconfirmation(orderId: string): Promise<Re
     .eq("id", orderId)
     .eq("merchant_id", merchant.id)
     .maybeSingle();
-  if (!order) return { ok: false, status: 404, reason: "Commande introuvable." };
+  if (!order) return { ok: false, status: 404, reason: "Order not found." };
   if (order.status !== "CONFIRMED_BY_BUYER") {
-    return { ok: false, status: 409, reason: "Seule une commande confirmÃ©e par l'acheteur peut Ãªtre reconfirmÃ©e." };
+    return { ok: false, status: 409, reason: "Only a buyer-confirmed order can be reconfirmed." };
   }
   const { data: shipment } = await supabase.from("shipments").select("id").eq("order_id", orderId).maybeSingle();
-  if (shipment) return { ok: false, status: 409, reason: "Le bordereau existe dÃ©jÃ ." };
+  if (shipment) return { ok: false, status: 409, reason: "The waybill already exists." };
 
   const conversationId = (order.conversation_id as string | null) ?? null;
-  if (!conversationId) return { ok: false, status: 409, reason: "Conversation introuvable pour cette commande." };
+  if (!conversationId) return { ok: false, status: 409, reason: "No conversation found for this order." };
 
   const { data: conversation } = await supabase
     .from("conversations")

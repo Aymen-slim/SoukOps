@@ -69,14 +69,14 @@ export function isFdState(state: number): state is FdState {
 
 const FIELD_REASONS: Partial<Record<keyof ParcelFields, string>> = {
   localityId: "locality_id manquant : obligatoire pour First Delivery depuis juin 2026.",
-  phone: "Téléphone invalide.",
-  prixMillimes: "Prix hors plage : le total doit être entre 0 et 999 DT, livraison comprise.",
-  lat: "Pin GPS non confirmé.",
-  lng: "Pin GPS non confirmé.",
+  phone: "Invalid phone number.",
+  prixMillimes: "Price out of range: total must be between 0 and 999 DT, delivery included.",
+  lat: "GPS pin not confirmed.",
+  lng: "GPS pin not confirmed.",
   governorate: "Gouvernorat manquant.",
-  landmark: "Repère manquant.",
+  landmark: "Missing landmark.",
   clientName: "Nom du client manquant.",
-  designation: "Désignation manquante.",
+  designation: "Missing designation.",
   orderId: "Commande introuvable.",
 };
 
@@ -86,7 +86,7 @@ export function validateParcel(raw: unknown): { ok: true; parcel: ParcelFields }
   const issue = parsed.error.issues[0];
   const key = issue?.path[0];
   if (typeof key === "string" && key in FIELD_REASONS) {
-    return { ok: false, reason: FIELD_REASONS[key as keyof ParcelFields] ?? "Colis incomplet." };
+    return { ok: false, reason: FIELD_REASONS[key as keyof ParcelFields] ?? "Incomplete parcel." };
   }
-  return { ok: false, reason: "Colis incomplet." };
+  return { ok: false, reason: "Incomplete parcel." };
 }

@@ -240,12 +240,12 @@ export async function completeEmbeddedSignup(input: {
   const appId = env.META_APP_ID;
   const appSecret = env.META_APP_SECRET ?? env.WHATSAPP_APP_SECRET;
   if (!appId || !appSecret) {
-    throw new Error("Embedded Signup non configuré: META_APP_ID / META_APP_SECRET manquants dans .env.local.");
+    throw new Error("Embedded Signup not configured: META_APP_ID / META_APP_SECRET missing in .env.local.");
   }
   const res = await fetch(buildTokenExchangeUrl(appId, appSecret, input.code));
   const body = (await res.json().catch(() => null)) as { access_token?: string; error?: { message?: string } } | null;
   if (!res.ok || !body?.access_token) {
-    throw new Error(`Échange du code Facebook impossible: ${body?.error?.message ?? res.status}`);
+    throw new Error(`Facebook code exchange failed: ${body?.error?.message ?? res.status}`);
   }
   const config: WhatsAppConfig = {
     phoneNumberId: input.phoneNumberId,
@@ -281,7 +281,7 @@ export async function testWhatsAppConnection(config: WhatsAppConfig): Promise<Wh
 export async function sendWhatsAppTestMessage(config: WhatsAppConfig, toDigits: string): Promise<void> {
   await graph(config, `/${config.phoneNumberId}/messages`, {
     method: "POST",
-    body: JSON.stringify(buildTextPayload(toDigits, "Wassalha: votre WhatsApp est bien connecté ✅")),
+    body: JSON.stringify(buildTextPayload(toDigits, "Wassalha: your WhatsApp is connected ✅")),
   });
 }
 

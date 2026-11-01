@@ -11,7 +11,7 @@ export function usePoll<T>(url: string | null, ms = 2000): { data: T | null; err
     const res = await fetch(url);
     const body = (await res.json().catch(() => null)) as (T & { error?: string }) | null;
     if (!res.ok) {
-      setError(body?.error ?? "Lecture impossible.");
+      setError(body?.error ?? "Could not load.");
       return;
     }
     setError(null);

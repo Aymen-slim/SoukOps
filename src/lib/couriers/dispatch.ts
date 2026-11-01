@@ -39,7 +39,7 @@ async function latestJob(supabase: Admin, orderId: string) {
 export async function approveOrder(orderId: string): Promise<ApproveResponse> {
   const supabase = createAdminClient();
   const merchant = await getDemoMerchant(supabase);
-  if (!merchant) return { ok: false, status: 500, reason: "Aucune boutique. Lancez npm run seed:catalog." };
+  if (!merchant) return { ok: false, status: 500, reason: "No shop. Run npm run seed:catalog." };
 
   const { data: order } = await supabase
     .from("orders")
@@ -47,7 +47,7 @@ export async function approveOrder(orderId: string): Promise<ApproveResponse> {
     .eq("id", orderId)
     .eq("merchant_id", merchant.id)
     .maybeSingle();
-  if (!order) return { ok: false, status: 404, reason: "Commande introuvable." };
+  if (!order) return { ok: false, status: 404, reason: "Order not found." };
 
   const { data: shipment } = await supabase
     .from("shipments")
@@ -71,7 +71,7 @@ export async function approveOrder(orderId: string): Promise<ApproveResponse> {
   }
 
   if (order.status !== "CONFIRMED_BY_BUYER") {
-    return { ok: false, status: 409, reason: "Seule une commande confirmée par l'acheteur peut être approuvée." };
+    return { ok: false, status: 409, reason: "Only a buyer-confirmed order can be approved." };
   }
 
   // Pre-dispatch reconfirmation gate (Day 7): blocks only when the seller
@@ -84,10 +84,10 @@ export async function approveOrder(orderId: string): Promise<ApproveResponse> {
       .maybeSingle();
     const blocked = reconfirmBlocksApproval((conversation?.slots ?? {}) as Record<string, unknown>, orderId);
     if (blocked === "pending") {
-      return { ok: false, status: 409, reason: "Reconfirmation avant envoi en attente de l'acheteur." };
+      return { ok: false, status: 409, reason: "Pre-dispatch reconfirmation is waiting for the buyer." };
     }
     if (blocked === "declined") {
-      return { ok: false, status: 409, reason: "L'acheteur a demandé d'attendre avant l'envoi." };
+      return { ok: false, status: 409, reason: "The buyer asked to wait before dispatch." };
     }
   }
 
@@ -125,14 +125,14 @@ export async function approveOrder(orderId: string): Promise<ApproveResponse> {
     return { ok: true, mode: merchant.courier_mode === "real_api" ? "real_api" : "mock_api", barcode: created.barcode, printUrl: printPath(created.barcode), already: false };
   } catch (err) {
     const message = err instanceof Error ? err.message : "create failed";
-    return { ok: false, status: 502, reason: `Création du colis refusée : ${message}` };
+    return { ok: false, status: 502, reason: `Parcel creation refused: ${message}` };
   }
 }
 
 export async function confirmDispatch(orderId: string): Promise<{ ok: true } | { ok: false; status: number; reason: string }> {
   const supabase = createAdminClient();
   const merchant = await getDemoMerchant(supabase);
-  if (!merchant) return { ok: false, status: 500, reason: "Aucune boutique." };
+  if (!merchant) return { ok: false, status: 500, reason: "No shop." };
 
   const { data: order } = await supabase
     .from("orders")
@@ -140,11 +140,11 @@ export async function confirmDispatch(orderId: string): Promise<{ ok: true } | {
     .eq("id", orderId)
     .eq("merchant_id", merchant.id)
     .maybeSingle();
-  if (!order) return { ok: false, status: 404, reason: "Commande introuvable." };
+  if (!order) return { ok: false, status: 404, reason: "Order not found." };
 
   const job = await latestJob(supabase, orderId);
   if (!job || job.status !== "awaiting_confirm") {
-    return { ok: false, status: 409, reason: "Rien à confirmer : l'agent n'a pas encore relu le colis." };
+    return { ok: false, status: 409, reason: "Nothing to confirm: the agent has not read back the parcel yet." };
   }
   const prev = (job.result ?? {}) as JobResult;
   const { error } = await supabase
@@ -160,7 +160,7 @@ export async function confirmDispatch(orderId: string): Promise<{ ok: true } | {
 export async function retryCourierJob(orderId: string): Promise<{ ok: true } | { ok: false; status: number; reason: string }> {
   const supabase = createAdminClient();
   const merchant = await getDemoMerchant(supabase);
-  if (!merchant) return { ok: false, status: 500, reason: "Aucune boutique." };
+  if (!merchant) return { ok: false, status: 500, reason: "No shop." };
 
   const { data: order } = await supabase
     .from("orders")
@@ -168,14 +168,14 @@ export async function retryCourierJob(orderId: string): Promise<{ ok: true } | {
     .eq("id", orderId)
     .eq("merchant_id", merchant.id)
     .maybeSingle();
-  if (!order) return { ok: false, status: 404, reason: "Commande introuvable." };
+  if (!order) return { ok: false, status: 404, reason: "Order not found." };
 
   const { data: shipment } = await supabase.from("shipments").select("id").eq("order_id", orderId).maybeSingle();
-  if (shipment) return { ok: false, status: 409, reason: "Le bordereau existe déjà." };
+  if (shipment) return { ok: false, status: 409, reason: "The waybill already exists." };
 
   const job = await latestJob(supabase, orderId);
   if (!job || job.status !== "failed") {
-    return { ok: false, status: 409, reason: "Aucun envoi en échec à relancer." };
+    return { ok: false, status: 409, reason: "No failed dispatch to retry." };
   }
 
   const result = (job.result ?? {}) as JobResult;
