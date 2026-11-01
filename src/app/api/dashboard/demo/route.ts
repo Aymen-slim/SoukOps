@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { resetDemoData } from "@/lib/demo/reset";
 import { requireMerchant } from "@/lib/dashboard/guard";
+import { getServerEnv } from "@/lib/env";
 
 export async function GET() {
   const gate = await requireMerchant();
@@ -40,10 +42,24 @@ export async function GET() {
     workerOnline,
     lastHeartbeatAt,
     lastShipment,
+    aiMode: getServerEnv().AI_MODE,
+    simulatorPublic: getServerEnv().SIMULATOR_PUBLIC !== "false",
     links: {
       simulator: "/simulator",
       courierClone: "/courier-clone/login",
       dashboard: "/dashboard",
     },
   });
+}
+
+/** Stage reset: clears demo traffic, preserves catalog/landmarks/fees/persona histories. */
+export async function POST() {
+  const gate = await requireMerchant();
+  if ("error" in gate) return gate.error;
+  try {
+    const counts = await resetDemoData(gate.supabase, gate.merchant.id);
+    return NextResponse.json({ ok: true, counts });
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "reset impossible" }, { status: 500 });
+  }
 }

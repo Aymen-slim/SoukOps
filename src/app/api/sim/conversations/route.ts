@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getPersona } from "@/lib/sim/personas";
+import { simulatorGuard } from "@/lib/security/simulatorGuard";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const bodySchema = z.object({ persona: z.enum(["new", "returning", "bad"]).default("new") });
 
 /** Creates a simulator conversation for a persona against the demo merchant. */
 export async function POST(request: Request) {
+  const blocked = simulatorGuard(request, "sim-conversations", 30);
+  if (blocked) return blocked;
   const parsed = bodySchema.safeParse(await request.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: "invalid body" }, { status: 400 });
 

@@ -33,7 +33,8 @@ export interface QueueOrder {
   driverNote: string | null;
   conversationId: string | null;
   job: QueueJob | null;
-  shipment: { barcode: string; printUrl: string } | null;
+  shipment: { barcode: string; printUrl: string; fdState: number | null } | null;
+  dispatchReconfirm: { status: string; orderId: string } | null;
   createdAt: string;
 }
 
@@ -93,20 +94,24 @@ async function hydrate(supabase: Admin, rows: OrderRow[]): Promise<QueueOrder[]>
   const customerIds = [...new Set(rows.map((row) => row.customer_id).filter((id): id is string => Boolean(id)))];
   const addressIds = [...new Set(rows.map((row) => row.address_id).filter((id): id is string => Boolean(id)))];
 
-  const [{ data: items }, { data: jobs }, { data: shipments }, { data: customers }, { data: addresses }] = await Promise.all([
+  const conversationIds = [...new Set(rows.map((row) => row.conversation_id).filter((id): id is string => Boolean(id)))];
+  const [{ data: items }, { data: jobs }, { data: shipments }, { data: customers }, { data: addresses }, { data: conversations }] = await Promise.all([
     supabase.from("order_items").select("order_id, product_id, name_snapshot").in("order_id", ids),
     supabase
       .from("courier_jobs")
       .select("id, order_id, status, screenshot_path, result, created_at")
       .in("order_id", ids)
       .order("created_at", { ascending: false }),
-    supabase.from("shipments").select("order_id, barcode").in("order_id", ids),
+    supabase.from("shipments").select("order_id, barcode, fd_state").in("order_id", ids),
     customerIds.length
       ? supabase.from("customers").select("id, name, phone").in("id", customerIds)
       : Promise.resolve({ data: [] as { id: string; name: string | null; phone: string | null }[] }),
     addressIds.length
       ? supabase.from("addresses").select("id, lat, lng, landmark, governorate, floor, driver_note").in("id", addressIds)
       : Promise.resolve({ data: [] as { id: string; lat: number | null; lng: number | null; landmark: string | null; governorate: string | null; floor: string | null; driver_note: string | null }[] }),
+    conversationIds.length
+      ? supabase.from("conversations").select("id, slots").in("id", conversationIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; slots: Record<string, unknown> | null }> }),
   ]);
 
   const productIds = [...new Set((items ?? []).map((item) => item.product_id).filter((id): id is string => Boolean(id)))];
@@ -166,8 +171,21 @@ async function hydrate(supabase: Admin, rows: OrderRow[]): Promise<QueueOrder[]>
             }
           : null,
         shipment: shipment?.barcode
-          ? { barcode: shipment.barcode as string, printUrl: `/api/fd-mock/v2/waybill/${shipment.barcode as string}` }
+          ? {
+              barcode: shipment.barcode as string,
+              printUrl: `/api/fd-mock/v2/waybill/${shipment.barcode as string}`,
+              fdState: (shipment.fd_state as number | null) ?? null,
+            }
           : null,
+        dispatchReconfirm: (() => {
+          const conversation = (conversations ?? []).find((entry) => entry.id === row.conversation_id);
+          const raw = (conversation?.slots as Record<string, unknown> | undefined)?.dispatchReconfirm as
+            | { status?: unknown; orderId?: unknown }
+            | undefined;
+          return raw && typeof raw.status === "string" && raw.orderId === row.id
+            ? { status: raw.status, orderId: row.id }
+            : null;
+        })(),
         createdAt: row.created_at,
       };
     }),

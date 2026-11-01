@@ -9,11 +9,15 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:replay": "playwright test --config=playwright.replay.config.ts",
+    "test:e2e:record": "playwright test --config=playwright.record.config.ts",
     "smoke": "tsx scripts/smoke.ts",
     "bakeoff": "tsx scripts/bakeoff.ts",
     "seed:catalog": "tsx scripts/seed-catalog.ts",
     "seed:landmarks": "tsx scripts/seed-landmarks.ts",
     "seed:day5": "tsx scripts/seed-day5.ts",
+    "demo:reset": "tsx scripts/demo-reset.ts",
+    "sync:fd": "tsx scripts/sync-fd.ts",
     "worker": "tsx worker/index.ts"
   },
   "dependencies": {

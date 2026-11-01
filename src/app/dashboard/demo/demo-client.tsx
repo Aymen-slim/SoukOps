@@ -1,7 +1,9 @@
 "use client";
 
-import { ArrowUpRight, Bot, ExternalLink, MessageSquare, Package, Truck } from "lucide-react";
+import { useState } from "react";
+import { ArrowUpRight, Bot, ExternalLink, MessageSquare, Package, RotateCcw, Truck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { usePoll } from "../use-poll";
 
@@ -10,6 +12,8 @@ interface DemoPayload {
   workerOnline: boolean;
   lastHeartbeatAt: string | null;
   lastShipment: { barcode: string; printUrl: string; createdAt: string } | null;
+  aiMode: string;
+  simulatorPublic: boolean;
   links: { simulator: string; courierClone: string };
   error?: string;
 }
@@ -21,7 +25,25 @@ const MODE_LABEL: Record<string, string> = {
 };
 
 export function DemoClient() {
-  const { data, error } = usePoll<DemoPayload>("/api/dashboard/demo", 5000);
+  const { data, error, reload } = usePoll<DemoPayload>("/api/dashboard/demo", 5000);
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetNote, setResetNote] = useState<string | null>(null);
+
+  async function resetDemo() {
+    if (!window.confirm("Effacer les conversations et commandes de démo ? Le catalogue, les repères et les frais sont conservés.")) return;
+    setResetBusy(true);
+    setResetNote(null);
+    const res = await fetch("/api/dashboard/demo", { method: "POST" });
+    const body = (await res.json().catch(() => null)) as { error?: string; counts?: Record<string, number> } | null;
+    setResetBusy(false);
+    if (!res.ok) {
+      setResetNote(body?.error ?? "Reset impossible.");
+      return;
+    }
+    const counts = body?.counts ?? {};
+    setResetNote(`Reset fait : ${counts.orders ?? 0} commandes, ${counts.conversations ?? 0} conversations effacées. Relancez npm run seed:day5 si besoin.`);
+    await reload();
+  }
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -146,6 +168,17 @@ export function DemoClient() {
               </div>
             </div>
 
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-xl border border-border bg-muted/45 p-3">
+                <p className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">Mode IA</p>
+                <p className="mt-1 font-mono text-sm font-semibold text-foreground">{data?.aiMode ?? "…"}</p>
+              </div>
+              <div className="rounded-xl border border-border bg-muted/45 p-3">
+                <p className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">Simulateur public</p>
+                <p className="mt-1 font-semibold text-foreground">{data ? (data.simulatorPublic ? "Ouvert" : "Fermé") : "…"}</p>
+              </div>
+            </div>
+
             <div className="rounded-xl border border-border bg-card p-4">
               {data?.lastShipment ? (
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -164,6 +197,14 @@ export function DemoClient() {
               ) : (
                 <p className="text-muted-foreground">No waybill yet.</p>
               )}
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <Button type="button" variant="outline" disabled={resetBusy} onClick={() => void resetDemo()}>
+                <RotateCcw className="size-4" />
+                Réinitialiser la démo
+              </Button>
+              {resetNote ? <p className="text-xs text-muted-foreground">{resetNote}</p> : null}
             </div>
           </CardContent>
         </Card>

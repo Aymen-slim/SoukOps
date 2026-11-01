@@ -55,6 +55,18 @@ export async function readFdEtat(supabase: Admin, barcode: string): Promise<{ st
   return { state: data.state as number };
 }
 
+/** Demo driver for FD status sync: moves a clone parcel to a new FD state. */
+export async function setFdParcelState(supabase: Admin, barcode: string, state: number): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("fd_clone_parcels")
+    .update({ state })
+    .eq("barcode", barcode)
+    .select("barcode")
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return Boolean(data);
+}
+
 export async function readFdParcel(supabase: Admin, barcode: string) {
   const { data } = await supabase
     .from("fd_clone_parcels")

@@ -3,11 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  BarChart3,
   Inbox,
   Layers,
   MapPin,
   MessageSquare,
   Package,
+  PackageSearch,
   Play,
   Settings,
   Sparkles,
@@ -18,6 +20,8 @@ const LINKS = [
   { href: "/dashboard", label: "Orders", icon: Package },
   { href: "/dashboard/conversations", label: "Inbox", icon: Inbox },
   { href: "/dashboard/catalog", label: "Catalog", icon: Layers },
+  { href: "/dashboard/demand", label: "Demand", icon: PackageSearch },
+  { href: "/dashboard/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
   { href: "/dashboard/demo", label: "Demo", icon: Play },
   { href: "/design-system", label: "System", icon: Sparkles },

@@ -1,4 +1,5 @@
 import { simulatorAdapter } from "@/lib/channels/simulator";
+import { reconfirmBlocksApproval } from "@/lib/domain/reconfirm";
 import { logEvent } from "@/lib/pipeline/events";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getDemoMerchant } from "@/lib/dashboard/merchant";
@@ -71,6 +72,23 @@ export async function approveOrder(orderId: string): Promise<ApproveResponse> {
 
   if (order.status !== "CONFIRMED_BY_BUYER") {
     return { ok: false, status: 409, reason: "Seule une commande confirmée par l'acheteur peut être approuvée." };
+  }
+
+  // Pre-dispatch reconfirmation gate (Day 7): blocks only when the seller
+  // requested one for this order and the buyer has not confirmed.
+  if (order.conversation_id) {
+    const { data: conversation } = await supabase
+      .from("conversations")
+      .select("slots")
+      .eq("id", order.conversation_id as string)
+      .maybeSingle();
+    const blocked = reconfirmBlocksApproval((conversation?.slots ?? {}) as Record<string, unknown>, orderId);
+    if (blocked === "pending") {
+      return { ok: false, status: 409, reason: "Reconfirmation avant envoi en attente de l'acheteur." };
+    }
+    if (blocked === "declined") {
+      return { ok: false, status: 409, reason: "L'acheteur a demandé d'attendre avant l'envoi." };
+    }
   }
 
   const loaded = await loadParcel(supabase, orderId);

@@ -12,6 +12,8 @@ import { findConfirmedAddress, resolveAndSendPin, sendPinForCandidate } from "./
 import { logEvent } from "./events";
 import { createOrderFromAkked, handleBeddel, sendSummary } from "./order";
 import { phraseNegotiationReply, phraseSellerReply } from "./phrasing";
+import { parseDispatchReconfirm, parseDispatchReconfirmReply } from "@/lib/domain/reconfirm";
+import { applyDispatchReconfirmReply } from "./reconfirm";
 import { applyDeterministicFallbacks, fastPathUnderstanding, understand, type Understanding } from "./understand";
 import {
   catalogPhotoPath,
@@ -327,6 +329,22 @@ export async function runTurn(conversationId: string): Promise<void> {
         }
         await supabase.from("conversations").update({ updated_at: burstCursor }).eq("id", conversationId);
         return;
+      }
+    }
+
+    // Pre-dispatch reconfirmation answer: deterministic intercept before any
+    // model call, same trust boundary as Akked/Beddel above.
+    {
+      const currentSlots = (conversation.slots ?? {}) as Record<string, unknown>;
+      const pending = parseDispatchReconfirm(currentSlots);
+      if (pending?.status === "pending") {
+        const rawText = burst.map((m) => m.body ?? "").join(" ").trim();
+        const answer = parseDispatchReconfirmReply(rawText);
+        if (answer) {
+          await applyDispatchReconfirmReply(supabase, conversationId, currentSlots, answer);
+          await supabase.from("conversations").update({ updated_at: burstCursor }).eq("id", conversationId);
+          return;
+        }
       }
     }
 

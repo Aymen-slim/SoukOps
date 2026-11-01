@@ -53,6 +53,10 @@ export function OrderDetail({ id }: { id: string }) {
   const canApprove = order.status === "CONFIRMED_BY_BUYER" && !order.job && !order.shipment;
   const canConfirm = order.job?.status === "awaiting_confirm";
   const canRetry = order.job?.status === "failed" && !order.shipment;
+  const reconfirmStatus = order.dispatchReconfirm?.status ?? null;
+  const canRequestReconfirm =
+    order.status === "CONFIRMED_BY_BUYER" && !order.job && !order.shipment && reconfirmStatus !== "pending";
+  const canSync = Boolean(order.shipment) && !["DELIVERED", "RETURNED", "CANCELLED"].includes(order.status);
 
   return (
     <div className="flex flex-col gap-6">
@@ -245,12 +249,23 @@ export function OrderDetail({ id }: { id: string }) {
               />
             </div>
           ) : null}
+          {reconfirmStatus ? (
+            <p className="flex items-center gap-2">
+              <span>Reconfirmation avant envoi :</span>
+              <Badge variant={reconfirmStatus === "confirmed" ? "success" : reconfirmStatus === "declined" ? "destructive" : "warning"}>
+                {reconfirmStatus === "confirmed" ? "Confirmée par l'acheteur" : reconfirmStatus === "declined" ? "Acheteur: attendre" : "En attente de l'acheteur"}
+              </Badge>
+            </p>
+          ) : null}
           {order.shipment ? (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-status-success-border bg-status-success-bg px-4 py-3 text-status-success-fg">
               <p className="flex items-center gap-2">
                 <FileText className="size-4" />
                 <span>
                   Code <span className="font-mono font-semibold">{order.shipment.barcode}</span>
+                  {order.shipment.fdState != null ? (
+                    <span className="ml-2 font-mono text-xs">état FD {order.shipment.fdState}</span>
+                  ) : null}
                 </span>
               </p>
               <a
@@ -286,6 +301,26 @@ export function OrderDetail({ id }: { id: string }) {
                 onClick={() => void post(`/api/orders/${id}/retry`)}
               >
                 Retry
+              </Button>
+            ) : null}
+            {canRequestReconfirm ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy}
+                onClick={() => void post(`/api/orders/${id}/reconfirm`)}
+              >
+                Demander reconfirmation
+              </Button>
+            ) : null}
+            {canSync ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy}
+                onClick={() => void post(`/api/orders/${id}/sync-status`)}
+              >
+                Synchroniser FD
               </Button>
             ) : null}
           </div>

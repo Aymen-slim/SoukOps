@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { SiteBar } from "@/components/site-bar";
+import { simulatorIsPublic } from "@/lib/security/simulatorGuard";
 import SimulatorClient from "./simulator-client";
 
 async function SimulatorWithQuery({ searchParams }: Pick<PageProps<"/simulator">, "searchParams">) {
@@ -10,6 +11,16 @@ async function SimulatorWithQuery({ searchParams }: Pick<PageProps<"/simulator">
 }
 
 export default function SimulatorPage({ searchParams }: PageProps<"/simulator">) {
+  if (!simulatorIsPublic()) {
+    return (
+      <main className="min-h-screen bg-medina-grid">
+        <SiteBar />
+        <p className="mx-auto w-full max-w-6xl px-4 py-10 text-sm text-muted-foreground sm:px-6">
+          Simulateur fermé pour le moment. Réactivez <span className="font-mono">SIMULATOR_PUBLIC</span> pour rouvrir la démo.
+        </p>
+      </main>
+    );
+  }
   return (
     <main className="min-h-screen bg-medina-grid">
       <SiteBar />

@@ -60,7 +60,7 @@ async function driveToSummary(page: Page) {
   await expect(page.getByText(/customerName:\s*Aymen/)).toBeVisible({ timeout: 180_000 });
   await input.fill("numeri 22123456");
   await page.getByRole("button", { name: "Send" }).click();
-  await expect(page.getByText(/\+21622123456/)).toBeVisible({ timeout: 180_000 });
+  await expect(page.getByText(/\+21622123456/).first()).toBeVisible({ timeout: 180_000 });
   await input.fill("noskon fi Tunis w a9reb landmark howa Pharmacie de Nuit El Manar");
   await page.getByRole("button", { name: "Send" }).click();
 
@@ -104,8 +104,10 @@ test("home page loads with Day 1 status", async ({ page }) => {
   await expect(page.getByRole("heading", { name: /wassalha/i })).toBeVisible();
 });
 
-// Day 2: simulator shell + text round trip. The 5 acceptance tests
-// (docs/SPEC.md) run in replay mode from Day 7.
+// Day 2: simulator shell + text round trip. The acceptance tests
+// (docs/SPEC.md + Day 7 steps 11-12) run live with `npm run test:e2e`,
+// recorded with `npm run test:e2e:record`, and must pass offline with
+// `npm run test:e2e:replay` (AI_MODE=replay, cassettes in .ai-cassettes/).
 test("simulator sends a buyer text message", async ({ page }) => {
   await page.goto("/simulator");
   await expect(page.getByText("Demo Shop", { exact: true })).toBeVisible();
@@ -491,6 +493,106 @@ test("acceptance 5: approve, read back, confirm, waybill, buyer message", async 
     await page.goto(`/simulator?conversation=${fixture.conversationId}`);
     await expect(page.getByText(barcode)).toBeVisible({ timeout: 20_000 });
     expect(Date.now() - started).toBeLessThan(180_000);
+  } finally {
+    await fixture.supabase.from("merchants").update({ courier_mode: fixture.previousMode }).eq("id", fixture.merchantId);
+  }
+});
+
+// Day 7 (step 12): FD status sync folds /etat into the order status and
+// writes exactly one risk event per terminal outcome, however often it runs.
+test("acceptance 6: FD status sync updates order and writes one risk event", async ({ request }) => {
+  test.setTimeout(120_000);
+  const fixture = await insertConfirmedOrder({ localityId: 101, label: "Test sync FD" });
+  await fixture.supabase.from("merchants").update({ courier_mode: "mock_api" }).eq("id", fixture.merchantId);
+  try {
+    const approve = await request.post(`/api/orders/${fixture.orderId}/approve`);
+    expect(approve.status()).toBe(200);
+    const { data: shipment } = await fixture.supabase
+      .from("shipments")
+      .select("barcode")
+      .eq("order_id", fixture.orderId)
+      .single();
+    const barcode = shipment?.barcode as string;
+    expect(barcode).toMatch(/^FD\d{10}$/);
+
+    const setState = async (state: number) => {
+      const { error } = await fixture.supabase.from("fd_clone_parcels").update({ state }).eq("barcode", barcode);
+      expect(error).toBeNull();
+    };
+    const riskCount = async (kind: string) => {
+      const { data } = await fixture.supabase
+        .from("risk_events")
+        .select("id")
+        .eq("order_id", fixture.orderId)
+        .eq("kind", kind);
+      return (data ?? []).length;
+    };
+    const orderStatus = async () => {
+      const { data } = await fixture.supabase.from("orders").select("status").eq("id", fixture.orderId).single();
+      return data?.status as string;
+    };
+
+    await setState(2);
+    const sync1 = await request.post(`/api/orders/${fixture.orderId}/sync-status`);
+    expect(sync1.status()).toBe(200);
+    expect(await orderStatus()).toBe("DELIVERED");
+    expect(await riskCount("delivered")).toBe(1);
+
+    const sync2 = await request.post(`/api/orders/${fixture.orderId}/sync-status`);
+    expect(sync2.status()).toBe(200);
+    expect(await riskCount("delivered")).toBe(1);
+
+    await setState(5);
+    const sync3 = await request.post(`/api/orders/${fixture.orderId}/sync-status`);
+    expect(sync3.status()).toBe(200);
+    expect(await orderStatus()).toBe("RETURNED");
+    expect(await riskCount("returned")).toBe(1);
+  } finally {
+    await fixture.supabase.from("merchants").update({ courier_mode: fixture.previousMode }).eq("id", fixture.merchantId);
+  }
+});
+
+// Day 7 (step 11): pre-dispatch reconfirmation blocks approval until the
+// buyer confirms with the deterministic button reply (no model call).
+test("acceptance 7: reconfirmation gates approval until buyer confirms", async ({ request }) => {
+  test.setTimeout(120_000);
+  const fixture = await insertConfirmedOrder({ localityId: 101, label: "Test reconfirmation" });
+  await fixture.supabase.from("merchants").update({ courier_mode: "mock_api" }).eq("id", fixture.merchantId);
+  try {
+    const ask = await request.post(`/api/orders/${fixture.orderId}/reconfirm`);
+    expect(ask.status()).toBe(200);
+
+    const blocked = await request.post(`/api/orders/${fixture.orderId}/approve`);
+    expect(blocked.status()).toBe(409);
+
+    const reply = await request.post(`/api/messages`, {
+      data: { conversationId: fixture.conversationId, kind: "button", body: "Oui, ab3ath" },
+    });
+    expect(reply.status()).toBe(202);
+
+    await expect
+      .poll(
+        async () => {
+          const { data } = await fixture.supabase
+            .from("conversations")
+            .select("slots")
+            .eq("id", fixture.conversationId)
+            .single();
+          const state = (data?.slots as { dispatchReconfirm?: { status?: string } } | null)?.dispatchReconfirm;
+          return state?.status ?? "waiting";
+        },
+        { timeout: 60_000, intervals: [1000] },
+      )
+      .toBe("confirmed");
+
+    const approve = await request.post(`/api/orders/${fixture.orderId}/approve`);
+    expect(approve.status()).toBe(200);
+    const { data: shipment } = await fixture.supabase
+      .from("shipments")
+      .select("barcode")
+      .eq("order_id", fixture.orderId)
+      .maybeSingle();
+    expect(shipment?.barcode).toMatch(/^FD\d{10}$/);
   } finally {
     await fixture.supabase.from("merchants").update({ courier_mode: fixture.previousMode }).eq("id", fixture.merchantId);
   }

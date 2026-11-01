@@ -1,6 +1,7 @@
 import { after, NextResponse } from "next/server";
 import { z } from "zod";
 import { burstDelayMs, runTurn } from "@/lib/pipeline/handleTurn";
+import { simulatorGuard } from "@/lib/security/simulatorGuard";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const bodySchema = z.object({
@@ -17,6 +18,8 @@ const bodySchema = z.object({
  * reply 202 immediately, and process the burst after the response.
  */
 export async function POST(request: Request) {
+  const blocked = simulatorGuard(request, "messages", 120);
+  if (blocked) return blocked;
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "invalid body" }, { status: 400 });
   const input = parsed.data;
