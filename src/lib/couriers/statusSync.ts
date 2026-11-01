@@ -1,4 +1,4 @@
-import { simulatorAdapter } from "@/lib/channels/simulator";
+import { channelAdapter } from "@/lib/channels";
 import { getDemoMerchant } from "@/lib/dashboard/merchant";
 import { logEvent } from "@/lib/pipeline/events";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -54,7 +54,7 @@ export function mapFdState(state: FdState): FdMapping {
       buyerText: "Samahni, el commande rja3et lel vendeur. Ken t7eb n3awdou el envoi, 9olli houni.",
     };
   }
-  throw new Error(`état FD inconnu: ${state}`);
+  throw new Error(`Ã©tat FD inconnu: ${state}`);
 }
 
 export type SyncResult =
@@ -85,7 +85,7 @@ async function syncOne(supabase: Admin, merchantId: string, orderId: string): Pr
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (!shipment?.barcode) return { ok: false, status: 409, reason: "Aucun bordereau à synchroniser." };
+  if (!shipment?.barcode) return { ok: false, status: 409, reason: "Aucun bordereau Ã  synchroniser." };
   const barcode = shipment.barcode as string;
 
   let fdState: number;
@@ -94,7 +94,7 @@ async function syncOne(supabase: Admin, merchantId: string, orderId: string): Pr
   } catch (err) {
     return { ok: false, status: 502, reason: err instanceof Error ? err.message : "etat FD illisible" };
   }
-  if (!isFdState(fdState)) return { ok: false, status: 502, reason: `état FD inconnu: ${fdState}` };
+  if (!isFdState(fdState)) return { ok: false, status: 502, reason: `Ã©tat FD inconnu: ${fdState}` };
   const mapping = mapFdState(fdState);
 
   const prevFdState = (shipment.fd_state as number | null) ?? null;
@@ -137,7 +137,7 @@ async function syncOne(supabase: Admin, merchantId: string, orderId: string): Pr
   const conversationId = (order.conversation_id as string | null) ?? null;
   if (changed) {
     if (mapping.buyerText && conversationId && prevStatus !== mapping.orderStatus) {
-      await simulatorAdapter.sendText(conversationId, mapping.buyerText);
+      await channelAdapter.sendText(conversationId, mapping.buyerText);
     }
     await logEvent(conversationId, "courier.status_sync", {
       orderId,

@@ -7,7 +7,9 @@ import type { ChannelAdapter, ChannelButton } from "./types";
  * anon RLS policies are needed). Day 7 may swap transport to Realtime
  * broadcast behind this same adapter interface.
  */
-async function insertOut(
+/** Shared outbound row insert: every channel mirrors its sends into
+ * `messages` so the dashboard inbox and simulator history stay complete. */
+export async function insertOut(
   conversationId: string,
   kind: string,
   body: string,

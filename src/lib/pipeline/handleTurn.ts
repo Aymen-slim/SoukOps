@@ -1,6 +1,6 @@
 import { embedImages } from "@/lib/ai/embeddings";
 import type { SamBox } from "@/lib/ai/sam";
-import { simulatorAdapter } from "@/lib/channels/simulator";
+import { channelAdapter } from "@/lib/channels";
 import { normalizeTunisianPhone, parseMoneyMillimes } from "@/lib/domain/derja";
 import { landmarkMatchesAny } from "@/lib/domain/landmarks";
 import { nextNegotiationStep, parseNegotiationState } from "@/lib/domain/negotiation";
@@ -164,12 +164,12 @@ function readPendingChoice(slots: Record<string, unknown>): PendingChoice | null
 }
 
 function buttonTitle(index: number, name?: string): string {
-  return `${index + 1} · ${name ?? "Produit"}`.slice(0, 20);
+  return `${index + 1} Â· ${name ?? "Produit"}`.slice(0, 20);
 }
 
 /**
  * Direct answers to buyer questions. The conversation must respond to what
- * was just asked (price, stock) before asking for the next slot — a buyer
+ * was just asked (price, stock) before asking for the next slot â€” a buyer
  * asking "b9addech?" must never get "win toskon?" back.
  */
 export function buildPriceReply(
@@ -217,12 +217,12 @@ export function nextQuestion(slots: Record<string, unknown>): string {
   const action = nextAction(slots);
   if (action === "need_size") return "Behi! Chnowa el taille mte3ek? (S, M, L, XL)";
   if (action === "need_name") return "Chnowa esmek, 3aychek?";
-  if (action === "need_phone") return "Aatini numero el téléphone mte3ek, w nkammlou el commande bel 3ayni.";
+  if (action === "need_phone") return "Aatini numero el tÃ©lÃ©phone mte3ek, w nkammlou el commande bel 3ayni.";
   if (action === "need_governorate") {
-    return "Win toskon? Aatini el wilaya w a9reb repère (pharmacie, café, mosquée...) lel dar.";
+    return "Win toskon? Aatini el wilaya w a9reb repÃ¨re (pharmacie, cafÃ©, mosquÃ©e...) lel dar.";
   }
   if (action === "need_landmark") {
-    return `Aatini bark a9reb repère (pharmacie, café, mosquée, école...) ba7dha darek fi ${slots.governorate as string} bch nab3athlek el pin.`;
+    return `Aatini bark a9reb repÃ¨re (pharmacie, cafÃ©, mosquÃ©e, Ã©cole...) ba7dha darek fi ${slots.governorate as string} bch nab3athlek el pin.`;
   }
   if (action === "need_product") return "Chnowa el produit elli t7eb alih? Ab3atli taswirt el produit walla ousifhouli.";
   return "T7eb nkammlou el commande? Ana mrigel.";
@@ -313,14 +313,14 @@ export async function runTurn(conversationId: string): Promise<void> {
         .join(" ")
         .trim()
         .toLowerCase()
-        .replace(/[.!،]+$/g, "");
+        .replace(/[.!ØŒ]+$/g, "");
       if (currentSlots.summaryPending === true && (rawText === "akked" || rawText === "beddel")) {
         if (rawText === "akked") {
           const result = await createOrderFromAkked(supabase, conversationId);
           if (!result.ok) {
-            await simulatorAdapter.sendText(
+            await channelAdapter.sendText(
               conversationId,
-              "Mazzel na9es ma3loumet bch nakked el commande. Rja3 chouf el récap w akked marra o5ra.",
+              "Mazzel na9es ma3loumet bch nakked el commande. Rja3 chouf el rÃ©cap w akked marra o5ra.",
             );
             await logEvent(conversationId, "order.akked_rejected", { reason: result.reason });
           }
@@ -406,7 +406,7 @@ export async function runTurn(conversationId: string): Promise<void> {
       : null;
     const isButtonChoiceTap =
       imageCount === 0 &&
-      /^\s*\d{1,2}(?:\s*·\s*.+)?\s*$/.test(combinedText) &&
+      /^\s*\d{1,2}(?:\s*Â·\s*.+)?\s*$/.test(combinedText) &&
       Boolean(pendingBeforeUnderstand || (pendingLmBeforeUnderstand && pendingLmBeforeUnderstand.length > 0));
 
     const expectingSize =
@@ -470,7 +470,7 @@ export async function runTurn(conversationId: string): Promise<void> {
         .update({ slots, ai_paused: true, updated_at: burstCursor })
         .eq("id", conversationId);
       await logEvent(conversationId, "handover", { reason: handoverReason });
-      await simulatorAdapter.sendText(
+      await channelAdapter.sendText(
         conversationId,
         "Samahni, bch n5alli el vendeur ykamal m3ak directement.",
       );
@@ -534,7 +534,7 @@ export async function runTurn(conversationId: string): Promise<void> {
         const index = parseChoice(combinedText, pendingLm.length);
         const chosen = index !== null ? pendingLm[index] : undefined;
         if (!chosen) {
-          await simulatorAdapter.sendButtons(
+          await channelAdapter.sendButtons(
             conversationId,
             "Ma fhemtch a5tartek. A9reb landmark howa anehou? A5tar b el ra9m:",
             pendingLm.map((c, i) => ({ id: `landmark-${i}`, title: buttonTitle(i, c.name) })),
@@ -560,7 +560,7 @@ export async function runTurn(conversationId: string): Promise<void> {
 
       // Negotiation ladder (deterministic; amounts only from negotiation.ts).
       // Counter-offer: model proposal first, deterministic Derja money
-      // parsing as fallback — code decides the amount either way.
+      // parsing as fallback â€” code decides the amount either way.
       const counterOfferMillimes = result.counterOfferMillimes ?? parseMoneyMillimes(combinedText);
       if (result.primaryIntent === "bargain" || counterOfferMillimes !== null) {
         const { data: product } = await supabase
@@ -592,7 +592,7 @@ export async function runTurn(conversationId: string): Promise<void> {
           },
           conversationId,
         );
-        await simulatorAdapter.sendText(conversationId, phrased.text);
+        await channelAdapter.sendText(conversationId, phrased.text);
         await logEvent(conversationId, "negotiation.offer", {
           offerMillimes: step.offerMillimes,
           rung: negotiationState.rung,
@@ -605,7 +605,7 @@ export async function runTurn(conversationId: string): Promise<void> {
 
       const action = nextAction(slots);
       if (action === "need_pin") {
-        // Returning buyers reuse a confirmed pin and skip the map step —
+        // Returning buyers reuse a confirmed pin and skip the map step â€”
         // but only when the landmark they just stated is that same place.
         // A newly stated, different address always gets a fresh pin for
         // that address; the stored pin must never override it silently.
@@ -635,12 +635,12 @@ export async function runTurn(conversationId: string): Promise<void> {
         }
         const outcome = await resolveAndSendPin({ supabase, conversationId, slots });
         if (outcome.status === "miss") {
-          await simulatorAdapter.sendText(
+          await channelAdapter.sendText(
             conversationId,
-            "Ma l9itch el repère hedha. Tnajem t9olli esm pharmacie, café, mosquée walla école 9riba lel dar, m3a el wilaya?",
+            "Ma l9itch el repÃ¨re hedha. Tnajem t9olli esm pharmacie, cafÃ©, mosquÃ©e walla Ã©cole 9riba lel dar, m3a el wilaya?",
           );
         } else if (outcome.status === "ambiguous") {
-          await simulatorAdapter.sendButtons(
+          await channelAdapter.sendButtons(
             conversationId,
             "L9it barcha amaken b nafs el esm. A9reb landmark howa anehou?",
             outcome.candidates.map((c, i) => ({ id: `landmark-${i}`, title: buttonTitle(i, c.name) })),
@@ -655,7 +655,7 @@ export async function runTurn(conversationId: string): Promise<void> {
           delete slots.pendingAddress;
           return progressCheckout();
         }
-        await simulatorAdapter.sendText(
+        await channelAdapter.sendText(
           conversationId,
           "Mazzel nestanna fe takkid el mkan mte3ek 3al kharita. E8et 3al lien elli b3aththoulek w akked el pin bch nkammlou.",
         );
@@ -665,14 +665,14 @@ export async function runTurn(conversationId: string): Promise<void> {
         return sendSummary(supabase, conversationId);
       }
       if (action === "awaiting_confirmation") {
-        await simulatorAdapter.sendText(
+        await channelAdapter.sendText(
           conversationId,
-          "Chouf el récap l fou9, 3aychek. E8et [Akked] ken kol chay s7a7, w [Beddel] ken t7eb tbaddel haja.",
+          "Chouf el rÃ©cap l fou9, 3aychek. E8et [Akked] ken kol chay s7a7, w [Beddel] ken t7eb tbaddel haja.",
         );
         return true;
       }
       if (action === "ordered") {
-        await simulatorAdapter.sendText(
+        await channelAdapter.sendText(
           conversationId,
           "El commande mte3ek mtakkda deja, w el vendeur 3liha. Ken t7eb haja okhra 9olli, ana mawjoud!",
         );
@@ -726,7 +726,7 @@ export async function runTurn(conversationId: string): Promise<void> {
           crop_path: cropPath,
           embedding: source.embedding ?? null,
         });
-        await simulatorAdapter.sendText(
+        await channelAdapter.sendText(
           conversationId,
           "Samahni, ma l9itch el produit hedha 3andna fel catalogue. Tnajem tab3atli taswira awda7, walla ousifli el produit b kelmet o5rin?",
         );
@@ -748,15 +748,15 @@ export async function runTurn(conversationId: string): Promise<void> {
         } satisfies PendingChoice;
         if (source.cropPng) {
           const cropMediaPath = await uploadPng(supabase, "buyer-media", `vision/${conversationId}`, source.cropPng);
-          await simulatorAdapter.sendImage(conversationId, cropMediaPath, "Hedhi el taswira elli b3athetha 👇");
+          await channelAdapter.sendImage(conversationId, cropMediaPath, "Hedhi el taswira elli b3athetha ðŸ‘‡");
         } else {
           for (const [i, candidate] of match.top.entries()) {
             const photo = catalogPhotoPath(candidate);
-            if (photo) await simulatorAdapter.sendImage(conversationId, photo, `${i + 1} · ${candidate.name}`);
+            if (photo) await channelAdapter.sendImage(conversationId, photo, `${i + 1} Â· ${candidate.name}`);
           }
         }
         const sizeNote = typeof slots.size === "string" ? ` (sajaltlek taille ${slots.size}!)` : "";
-        await simulatorAdapter.sendButtons(
+        await channelAdapter.sendButtons(
           conversationId,
           slots.primaryIntent === "ask_price"
             ? `Qarrebt barcha${sizeNote}! A5tar el produit w na3tik el soum el sahih:`
@@ -781,12 +781,12 @@ export async function runTurn(conversationId: string): Promise<void> {
             `Amma l9it hedha el qarib lou barcha: ${match.alternative.name}. T7eb tkammel bih?`;
           const alternativePhoto = catalogPhotoPath(match.alternative);
           if (alternativePhoto) {
-            await simulatorAdapter.sendImage(conversationId, alternativePhoto, text);
+            await channelAdapter.sendImage(conversationId, alternativePhoto, text);
           } else {
-            await simulatorAdapter.sendText(conversationId, text);
+            await channelAdapter.sendText(conversationId, text);
           }
         } else {
-          await simulatorAdapter.sendText(
+          await channelAdapter.sendText(
             conversationId,
             `Samahni, ${chosen.name} kemmel (ma3adch mawjoud fel stock). T7eb nchouflek produit a5ar yechbeh lou?`,
           );
@@ -798,11 +798,11 @@ export async function runTurn(conversationId: string): Promise<void> {
       const text = await phraseMatchCaption(slots, chosen.name, chosen.priceMillimes, combinedText, conversationId);
       if (source.cropPng) {
         const cropMediaPath = await uploadPng(supabase, "buyer-media", `vision/${conversationId}`, source.cropPng);
-        await simulatorAdapter.sendImage(conversationId, cropMediaPath, text);
+        await channelAdapter.sendImage(conversationId, cropMediaPath, text);
       } else {
         const photo = catalogPhotoPath(chosen);
-        if (photo) await simulatorAdapter.sendImage(conversationId, photo, text);
-        else await simulatorAdapter.sendText(conversationId, text);
+        if (photo) await channelAdapter.sendImage(conversationId, photo, text);
+        else await channelAdapter.sendText(conversationId, text);
       }
     };
 
@@ -820,7 +820,7 @@ export async function runTurn(conversationId: string): Promise<void> {
           if (byName >= 0) index = byName;
         }
         if (index === null) {
-          await simulatorAdapter.sendButtons(
+          await channelAdapter.sendButtons(
             conversationId,
             slots.primaryIntent === "ask_price"
               ? "Lezem ta5tar el produit el sahih bch na3tik el soum. A5tar b el ra9m:"
@@ -851,13 +851,13 @@ export async function runTurn(conversationId: string): Promise<void> {
                 conversationId,
               );
               const photo = catalogPhotoPath(option);
-              if (photo) await simulatorAdapter.sendImage(conversationId, photo, text);
-              else await simulatorAdapter.sendText(conversationId, text);
+              if (photo) await channelAdapter.sendImage(conversationId, photo, text);
+              else await channelAdapter.sendText(conversationId, text);
             }
           }
           visionHandled = true;
         } else {
-          // kind === "crop": ladder step (d) — SAM point prompt on the chosen box.
+          // kind === "crop": ladder step (d) â€” SAM point prompt on the chosen box.
           const option = pending.options[index];
           await logEvent(conversationId, "vision.choice", { kind: "crop", index });
           delete slots.pendingChoice;
@@ -942,15 +942,15 @@ export async function runTurn(conversationId: string): Promise<void> {
           } satisfies PendingChoice;
           const overlayPath = await uploadPng(supabase, "buyer-media", `vision/${conversationId}`, outcome.overlayPng);
           const sizeNote = typeof slots.size === "string" ? ` (sajaltlek taille ${slots.size}!)` : "";
-          await simulatorAdapter.sendImage(conversationId, overlayPath, `L9it barcha produits fel taswira 👇${sizeNote}`);
-          await simulatorAdapter.sendButtons(
+          await channelAdapter.sendImage(conversationId, overlayPath, `L9it barcha produits fel taswira ðŸ‘‡${sizeNote}`);
+          await channelAdapter.sendButtons(
             conversationId,
             "Chnowa el produit elli t7eb alih? A5tar el ra9m:",
             options.map((o, i) => ({ id: `crop-${i}`, title: o.label })),
           );
         } else {
           slots.visionStatus = "no_garment";
-          await simulatorAdapter.sendText(
+          await channelAdapter.sendText(
             conversationId,
             "Wesletni el taswira, amma ma l9itch fiha produit lazem. Tnajem tab3atli taswira awda7 lel produit?",
           );
@@ -990,7 +990,7 @@ export async function runTurn(conversationId: string): Promise<void> {
       const action = nextAction(slots);
       if (action === "need_pin" || action === "need_summary") {
         // progressCheckout persists slots itself (pin/summary writes carry
-        // their own slot updates) — do not overwrite with the stale copy.
+        // their own slot updates) â€” do not overwrite with the stale copy.
         await progressCheckout().catch(() => false);
       }
       return;
@@ -1040,10 +1040,10 @@ export async function runTurn(conversationId: string): Promise<void> {
       if (matchedProduct && result.primaryIntent === "bargain") {
         const reply =
           firewallChecked(
-            `Fhemt elli t7eb soum a9al. El ${matchedProduct.name as string} soumou ${formatMillimesForChat(matchedProduct.price_millimes as number)} — ken ysa3dek nkammlou bih hakka, walla nchoufou el soum el akher ma3a el vendeur.`,
+            `Fhemt elli t7eb soum a9al. El ${matchedProduct.name as string} soumou ${formatMillimesForChat(matchedProduct.price_millimes as number)} â€” ken ysa3dek nkammlou bih hakka, walla nchoufou el soum el akher ma3a el vendeur.`,
             [matchedProduct.price_millimes as number],
           ) ?? "Fhemt elli t7eb soum a9al. Nkammlou w nchoufou el soum m3a el vendeur?";
-        await simulatorAdapter.sendText(conversationId, reply);
+        await channelAdapter.sendText(conversationId, reply);
         await logEvent(conversationId, "reply.sent", { reply, template: "bargain-ack" });
       } else if (matchedProduct && result.primaryIntent === "ask_price") {
         const fallback =
@@ -1073,7 +1073,7 @@ export async function runTurn(conversationId: string): Promise<void> {
           },
           conversationId,
         );
-        await simulatorAdapter.sendText(conversationId, phrased.text);
+        await channelAdapter.sendText(conversationId, phrased.text);
         await logEvent(conversationId, "reply.sent", { reply: phrased.text, template: `price-${phrased.source}` });
       } else if (matchedProduct) {
         const fallback = buildStockReply(matchedProduct.name as string, matchedProduct.stock as number, slots);
@@ -1094,14 +1094,14 @@ export async function runTurn(conversationId: string): Promise<void> {
           },
           conversationId,
         );
-        await simulatorAdapter.sendText(conversationId, phrased.text);
+        await channelAdapter.sendText(conversationId, phrased.text);
         await logEvent(conversationId, "reply.sent", { reply: phrased.text, template: `stock-${phrased.source}` });
       } else {
         const reply =
           result.primaryIntent === "ask_stock"
             ? "Marhba bik! Ab3atli taswirt el produit walla ousifhouli, w n9ollek fisa3 ken mawjoud fel stock."
-            : "Marhba bik! Bch na3tik el soum el sahih, ab3atli taswirt el produit walla ousifhouli (el loun w el modèle).";
-        await simulatorAdapter.sendText(conversationId, reply);
+            : "Marhba bik! Bch na3tik el soum el sahih, ab3atli taswirt el produit walla ousifhouli (el loun w el modÃ¨le).";
+        await channelAdapter.sendText(conversationId, reply);
         await logEvent(conversationId, "reply.sent", { reply, template: "question-clarify" });
       }
       return;
@@ -1134,7 +1134,7 @@ export async function runTurn(conversationId: string): Promise<void> {
       },
       conversationId,
     );
-    await simulatorAdapter.sendText(conversationId, phrasedAck.text);
+    await channelAdapter.sendText(conversationId, phrasedAck.text);
     await logEvent(conversationId, "reply.sent", { reply: phrasedAck.text, template: `ack-${phrasedAck.source}` });
   } finally {
     running.delete(conversationId);

@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { simulatorAdapter } from "@/lib/channels/simulator";
+import { channelAdapter } from "@/lib/channels";
 import { getServerEnv } from "@/lib/env";
 import {
   haversineKm,
@@ -83,7 +83,7 @@ export async function sendPinForCandidate(input: {
   if (error) throw new Error(`pin token save failed: ${error.message}`);
 
   const url = `${getServerEnv().APP_BASE_URL}/pin/${rawToken}`;
-  await simulatorAdapter.sendPinLink(
+  await channelAdapter.sendPinLink(
     input.conversationId,
     url,
     `Mrigel! 7ot el pin 3al kharita win el dar (9rib le ${input.landmarkName}) w akked:`,

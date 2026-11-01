@@ -1,4 +1,4 @@
-import { simulatorAdapter } from "@/lib/channels/simulator";
+import { channelAdapter } from "@/lib/channels";
 import { getDemoMerchant } from "@/lib/dashboard/merchant";
 import {
   buildDispatchReconfirmText,
@@ -34,10 +34,10 @@ export async function requestDispatchReconfirmation(orderId: string): Promise<Re
     .maybeSingle();
   if (!order) return { ok: false, status: 404, reason: "Commande introuvable." };
   if (order.status !== "CONFIRMED_BY_BUYER") {
-    return { ok: false, status: 409, reason: "Seule une commande confirmée par l'acheteur peut être reconfirmée." };
+    return { ok: false, status: 409, reason: "Seule une commande confirmÃ©e par l'acheteur peut Ãªtre reconfirmÃ©e." };
   }
   const { data: shipment } = await supabase.from("shipments").select("id").eq("order_id", orderId).maybeSingle();
-  if (shipment) return { ok: false, status: 409, reason: "Le bordereau existe déjà." };
+  if (shipment) return { ok: false, status: 409, reason: "Le bordereau existe dÃ©jÃ ." };
 
   const conversationId = (order.conversation_id as string | null) ?? null;
   if (!conversationId) return { ok: false, status: 409, reason: "Conversation introuvable pour cette commande." };
@@ -63,7 +63,7 @@ export async function requestDispatchReconfirmation(orderId: string): Promise<Re
   const { error } = await supabase.from("conversations").update({ slots }).eq("id", conversationId);
   if (error) return { ok: false, status: 500, reason: error.message };
 
-  await simulatorAdapter.sendButtons(
+  await channelAdapter.sendButtons(
     conversationId,
     buildDispatchReconfirmText((item?.name_snapshot as string | null) ?? null),
     [...RECONFIRM_BUTTONS],
@@ -87,7 +87,7 @@ export async function applyDispatchReconfirmReply(
   const next: DispatchReconfirmStatus = answer;
   const updated = { ...slots, dispatchReconfirm: { status: next, orderId: state?.orderId ?? null } };
   await supabase.from("conversations").update({ slots: updated }).eq("id", conversationId);
-  await simulatorAdapter.sendText(
+  await channelAdapter.sendText(
     conversationId,
     answer === "confirmed"
       ? "Mrigel, takked el envoi! El vendeur yab3athha taw, w yousallek el code mta3 el bordereau houni."

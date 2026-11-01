@@ -1,4 +1,4 @@
-import { simulatorAdapter } from "@/lib/channels/simulator";
+import { channelAdapter } from "@/lib/channels";
 import { agreedUnitMillimes, parseNegotiationState } from "@/lib/domain/negotiation";
 import { computeTotals, firewallChecked, formatMillimesForChat, type Totals } from "@/lib/domain/pricing";
 import { computeRisk, PIN_FAR_KM, type RiskResult } from "@/lib/domain/risk";
@@ -7,7 +7,7 @@ import { logEvent } from "./events";
 
 type SupabaseClient = ReturnType<typeof createAdminClient>;
 
-export const SUMMARY_HEADING = "Récap el commande:";
+export const SUMMARY_HEADING = "RÃ©cap el commande:";
 
 export interface OrderPreview {
   conversationId: string;
@@ -119,29 +119,29 @@ async function loadPreview(supabase: SupabaseClient, conversationId: string): Pr
   };
 }
 
-/** Fixed summary template — never model text. Every amount comes from pricing.ts. */
+/** Fixed summary template â€” never model text. Every amount comes from pricing.ts. */
 export function buildSummaryText(p: OrderPreview): string {
   const lines = [
     "Mrigel! Haka el commande mte3ek, choufha bel 3ayni w akked:",
     SUMMARY_HEADING,
-    `• Produit: ${p.productName}${p.size ? ` (taille ${p.size})` : ""} x${p.quantity}`,
-    `• Soum: ${formatMillimesForChat(p.agreedUnitMillimes)}`,
+    `â€¢ Produit: ${p.productName}${p.size ? ` (taille ${p.size})` : ""} x${p.quantity}`,
+    `â€¢ Soum: ${formatMillimesForChat(p.agreedUnitMillimes)}`,
   ];
-  if (p.totals.discountMillimes > 0) lines.push(`• Remise: -${formatMillimesForChat(p.totals.discountMillimes)}`);
+  if (p.totals.discountMillimes > 0) lines.push(`â€¢ Remise: -${formatMillimesForChat(p.totals.discountMillimes)}`);
   lines.push(
     p.totals.freeDelivery
-      ? "• Livraison: gratuite"
-      : `• Livraison: ${formatMillimesForChat(p.totals.deliveryFeeMillimes)}`,
+      ? "â€¢ Livraison: gratuite"
+      : `â€¢ Livraison: ${formatMillimesForChat(p.totals.deliveryFeeMillimes)}`,
   );
-  lines.push(`• Total: ${formatMillimesForChat(p.totals.totalMillimes)}`);
-  if (p.customerName) lines.push(`• Esm: ${p.customerName}`);
-  if (p.phone) lines.push(`• Téléphone: ${p.phone}`);
-  if (p.landmark) lines.push(`• Adresse: 9rib le ${p.landmark} (pin m2akked)`);
+  lines.push(`â€¢ Total: ${formatMillimesForChat(p.totals.totalMillimes)}`);
+  if (p.customerName) lines.push(`â€¢ Esm: ${p.customerName}`);
+  if (p.phone) lines.push(`â€¢ TÃ©lÃ©phone: ${p.phone}`);
+  if (p.landmark) lines.push(`â€¢ Adresse: 9rib le ${p.landmark} (pin m2akked)`);
   if (p.risk.level === "red") {
     lines.push(
       p.paymentLink
-        ? `• Lezem t5allas avance houni bch nakkedou el envoi: ${p.paymentLink}`
-        : "• Lezem tekhou el commande mel bureau el mouwasel (pickup), ma najmnach el livraison lel dar lel commande hethi.",
+        ? `â€¢ Lezem t5allas avance houni bch nakkedou el envoi: ${p.paymentLink}`
+        : "â€¢ Lezem tekhou el commande mel bureau el mouwasel (pickup), ma najmnach el livraison lel dar lel commande hethi.",
     );
   }
   lines.push("Ken el ma3loumet koll s7a7, e8et [Akked]. Ken t7eb tbaddel haja, e8et [Beddel], 3adi.");
@@ -183,7 +183,7 @@ export async function sendSummary(supabase: SupabaseClient, conversationId: stri
     .eq("id", conversationId);
 
   const text = firewallChecked(buildSummaryText(preview), summaryAllowedAmounts(preview)) ?? SUMMARY_HEADING;
-  await simulatorAdapter.sendButtons(conversationId, text, [
+  await channelAdapter.sendButtons(conversationId, text, [
     { id: "akked", title: "Akked" },
     { id: "beddel", title: "Beddel" },
   ]);
@@ -281,7 +281,7 @@ export async function createOrderFromAkked(
     .eq("id", conversationId);
 
   const name = preview.customerName?.trim();
-  await simulatorAdapter.sendText(
+  await channelAdapter.sendText(
     conversationId,
     name
       ? `Takkdet el commande, yesss! ${name}, 3aychek. El vendeur ychoufha taw w yab3athha. Ken t7eb haja okhra, ana houni.`
@@ -310,9 +310,9 @@ export async function handleBeddel(supabase: SupabaseClient, conversationId: str
     .from("conversations")
     .update({ slots })
     .eq("id", conversationId);
-  await simulatorAdapter.sendText(
+  await channelAdapter.sendText(
     conversationId,
-    "Ma femma hatta mochkel, 3adi. Chnowa nbedlou? El taille, el quantité, walla el adresse?",
+    "Ma femma hatta mochkel, 3adi. Chnowa nbedlou? El taille, el quantitÃ©, walla el adresse?",
   );
   await logEvent(conversationId, "order.beddel", {});
 }

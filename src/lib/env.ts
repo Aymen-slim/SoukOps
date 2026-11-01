@@ -30,6 +30,13 @@ const schema = z.object({
   SIMULATOR_PUBLIC: z.string().default("true"),
   FD_API_BASE_URL: z.string().optional(),
   FD_API_TOKEN: z.string().optional(),
+  // WhatsApp Cloud API (fallback when the merchant has no DB-saved config;
+  // Settings > Link WhatsApp saves to merchants columns from migration 0002).
+  WHATSAPP_PHONE_NUMBER_ID: z.string().optional(),
+  WHATSAPP_WABA_ID: z.string().optional(),
+  WHATSAPP_ACCESS_TOKEN: z.string().optional(),
+  WHATSAPP_VERIFY_TOKEN: z.string().optional(),
+  WHATSAPP_APP_SECRET: z.string().optional(),
   COURIER_CLONE_USER: z.string().default("agent"),
   COURIER_CLONE_PASSWORD: z.string().default("wassalha"),
 });
@@ -81,6 +88,7 @@ export function providerStatus() {
     basetenPe: Boolean(env.peEmbedUrl),
     supabase: Boolean(env.supabaseUrl && env.supabasePublishableKey),
     supabaseAdmin: Boolean(env.supabaseUrl && env.supabaseSecretKey),
+    whatsappEnv: Boolean(env.WHATSAPP_PHONE_NUMBER_ID && env.WHATSAPP_ACCESS_TOKEN),
     llmProvider: env.LLM_PROVIDER,
     asrProvider: env.ASR_PROVIDER,
     matcher: env.MATCHER,
