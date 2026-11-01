@@ -94,6 +94,36 @@ export async function resolveFacebookVerifyToken(supabase: Admin, merchantId: st
 
 // ------------------------------------------------------------------- OAuth
 
+export const FACEBOOK_PLATFORM_SCOPES: Record<FacebookPlatform, string> = {
+  messenger: "pages_messaging,pages_show_list,pages_manage_metadata,pages_read_engagement",
+  instagram: "instagram_business_basic,instagram_business_manage_messages,pages_show_list,pages_manage_metadata",
+};
+
+/** Server-side OAuth dialog URL. No FB JS SDK (it refuses http pages);
+ * the browser just navigates to facebook.com and Meta redirects back to
+ * our callback. `http://localhost` redirect URIs are allowed by Meta. */
+export function buildOAuthDialogUrl(input: {
+  appId: string;
+  redirectUri: string;
+  state: string;
+  scope?: string;
+  configId?: string;
+}): string {
+  const params = new URLSearchParams({
+    client_id: input.appId,
+    redirect_uri: input.redirectUri,
+    state: input.state,
+    response_type: "code",
+  });
+  if (input.configId) {
+    params.set("config_id", input.configId);
+    params.set("override_default_response_type", "true");
+  } else if (input.scope) {
+    params.set("scope", input.scope);
+  }
+  return `https://www.facebook.com/v21.0/dialog/oauth?${params.toString()}`;
+}
+
 export interface FacebookPageOption {
   pageId: string;
   pageName: string;

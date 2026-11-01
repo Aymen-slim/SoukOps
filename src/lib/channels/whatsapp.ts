@@ -254,9 +254,59 @@ export async function completeEmbeddedSignup(input: {
     verifyToken: input.verifyToken,
     source: "database",
   };
-  await graph(config, `/${input.wabaId}/subscribed_apps`, { method: "POST", body: JSON.stringify({}) });
-  const info = await testWhatsAppConnection(config);
+  const info = await connectWhatsAppWithToken(config);
   return { config, info };
+}
+
+/** Subscribes the app to the WABA webhook and proves the token works. */
+export async function connectWhatsAppWithToken(config: WhatsAppConfig): Promise<WhatsAppConnectionInfo> {
+  if (config.wabaId) {
+    await graph(config, `/${config.wabaId}/subscribed_apps`, { method: "POST", body: JSON.stringify({}) });
+  }
+  return testWhatsAppConnection(config);
+}
+
+/**
+ * OAuth-redirect variant of Embedded Signup: the redirect only returns a
+ * code (no session-info message like the JS popup), so after the exchange
+ * we discover the seller's WABA from the token's granular scopes and take
+ * its first phone number.
+ */
+export async function discoverWhatsAppAccount(accessToken: string): Promise<{ wabaId: string; phoneNumberId: string }> {
+  const env = getServerEnv();
+  const appId = env.META_APP_ID;
+  const appSecret = env.META_APP_SECRET ?? env.WHATSAPP_APP_SECRET;
+  if (!appId || !appSecret) throw new Error("META_APP_ID / META_APP_SECRET missing in .env.local.");
+  const debugUrl = `${GRAPH_BASE}/debug_token?input_token=${encodeURIComponent(accessToken)}&access_token=${encodeURIComponent(`${appId}|${appSecret}`)}`;
+  const debugRes = await fetch(debugUrl);
+  const debugBody = (await debugRes.json().catch(() => null)) as {
+    data?: { granular_scopes?: Array<{ scope?: string; target_ids?: string[] }> };
+  } | null;
+  const scopes = debugBody?.data?.granular_scopes ?? [];
+  const wabaId = scopes.flatMap((s) => s.target_ids ?? [])[0] ?? null;
+  if (!wabaId) throw new Error("No WhatsApp Business account found on this Facebook login. Create one in the signup flow, then retry.");
+  const config: WhatsAppConfig = { phoneNumberId: "", wabaId, accessToken, verifyToken: null, source: "database" };
+  const numbers = (await graph(config, `/${wabaId}/phone_numbers?fields=id,display_phone_number`)) as {
+    data?: Array<{ id: string }>;
+  } | null;
+  const phoneNumberId = numbers?.data?.[0]?.id;
+  if (!phoneNumberId) throw new Error("No phone number found on the WhatsApp Business account. Add a number in Meta, then retry.");
+  return { wabaId, phoneNumberId };
+}
+
+/** Exchanges an OAuth code for a business access token (shared by the
+ * WhatsApp, Messenger and Instagram redirect callbacks). */
+export async function exchangeOAuthCode(code: string): Promise<string> {
+  const env = getServerEnv();
+  const appId = env.META_APP_ID;
+  const appSecret = env.META_APP_SECRET ?? env.WHATSAPP_APP_SECRET;
+  if (!appId || !appSecret) throw new Error("META_APP_ID / META_APP_SECRET missing in .env.local.");
+  const res = await fetch(buildTokenExchangeUrl(appId, appSecret, code));
+  const body = (await res.json().catch(() => null)) as { access_token?: string; error?: { message?: string } } | null;
+  if (!res.ok || !body?.access_token) {
+    throw new Error(`Facebook code exchange failed: ${body?.error?.message ?? res.status}`);
+  }
+  return body.access_token;
 }
 
 export interface WhatsAppConnectionInfo {

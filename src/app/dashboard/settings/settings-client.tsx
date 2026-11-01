@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { CheckCircle2, Copy, CreditCard, Link2, MapPin, MessageCircle, PlugZap, Save, Send, Truck } from "lucide-react";
+import { InstagramIcon, MessengerIcon, WhatsAppIcon } from "@/components/brand-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -235,43 +236,6 @@ interface WhatsAppStatus {
   embedded: { configured: boolean; appId: string | null; configId: string | null };
 }
 
-interface FbSdk {
-  init: (opts: Record<string, unknown>) => void;
-  login: (
-    cb: (res: { authResponse?: { code?: string } }) => void,
-    opts: Record<string, unknown>,
-  ) => void;
-}
-
-declare global {
-  interface Window {
-    FB?: FbSdk;
-  }
-}
-
-function loadFacebookSdk(appId: string): Promise<FbSdk> {
-  return new Promise((resolve, reject) => {
-    if (window.FB) {
-      resolve(window.FB);
-      return;
-    }
-    const script = document.createElement("script");
-    script.id = "facebook-jssdk";
-    script.src = "https://connect.facebook.net/en_US/sdk.js";
-    script.async = true;
-    script.onload = () => {
-      if (!window.FB) {
-        reject(new Error("Facebook SDK could not load"));
-        return;
-      }
-      window.FB.init({ appId, autoLogAppEvents: true, xfbml: true, version: "v21.0" });
-      resolve(window.FB);
-    };
-    script.onerror = () => reject(new Error("Facebook SDK could not load (network?)"));
-    document.body.appendChild(script);
-  });
-}
-
 /**
  * One-button WhatsApp Cloud API link: open the wizard, paste the two values
  * Meta gives you, test, save, then copy the webhook into Meta. The access
@@ -304,79 +268,24 @@ function WhatsAppConnect() {
   }
 
   useEffect(() => {
-    const timer = setTimeout(() => void load(), 0);
+    const params = new URLSearchParams(window.location.search);
+    const timer = setTimeout(() => {
+      void load();
+      if (params.get("platform") === "whatsapp") {
+      if (params.get("social") === "connected") {
+        setOpen(true);
+        setNote(`WhatsApp linked: ${params.get("name") ?? "connected"}. Webhook subscribed automatically.`);
+        } else if (params.get("social") === "error") {
+          setOpen(true);
+          setWaError(params.get("msg") ?? "Connection failed.");
+        }
+      }
+    }, 0);
     return () => clearTimeout(timer);
   }, []);
 
   async function copy(text: string) {
     await navigator.clipboard.writeText(text).catch(() => undefined);
-  }
-
-  /** The real one-click path: Facebook popup -> pick the WhatsApp number ->
-   * Meta hands back a code + ids -> server exchanges and subscribes. */
-  async function launchEmbeddedSignup() {
-    if (!status?.embedded.appId || !status.embedded.configId) return;
-    setBusy(true);
-    setWaError(null);
-    setNote(null);
-    let session: { wabaId: string; phoneNumberId: string } | null = null;
-    const onMessage = (event: MessageEvent) => {
-      if (!event.origin.endsWith("facebook.com")) return;
-      try {
-        const data = (typeof event.data === "string" ? JSON.parse(event.data) : event.data) as {
-          type?: string;
-          event?: string;
-          data?: { waba_id?: string; phone_number_id?: string };
-        } | null;
-        if (data?.type === "WA_EMBEDDED_SIGNUP" && data.event === "FINISH" && data.data?.waba_id && data.data.phone_number_id) {
-          session = { wabaId: data.data.waba_id, phoneNumberId: data.data.phone_number_id };
-        }
-      } catch {
-        // not an embedded-signup message; ignore
-      }
-    };
-    window.addEventListener("message", onMessage);
-    try {
-      const FB = await loadFacebookSdk(status.embedded.appId);
-      const code = await new Promise<string | null>((resolve) => {
-        FB.login(
-          (res) => resolve(res.authResponse?.code ?? null),
-          {
-            config_id: status.embedded.configId,
-            response_type: "code",
-            override_default_response_type: true,
-            extras: { setup: {}, featureType: "", sessionInfoVersion: "3" },
-          },
-        );
-      });
-      if (!code) throw new Error("Facebook login cancelled.");
-      for (let i = 0; i < 20 && !session; i++) {
-        await new Promise((resolve) => setTimeout(resolve, 250));
-      }
-      if (!session) throw new Error("Facebook did not return the WhatsApp number. Try again.");
-      const found: { wabaId: string; phoneNumberId: string } = session;
-      const res = await fetch("/api/dashboard/whatsapp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "connect", code, ...found }),
-      });
-      const body = (await res.json().catch(() => null)) as {
-        error?: string;
-        displayPhoneNumber?: string | null;
-        verifiedName?: string | null;
-      } | null;
-      if (!res.ok) throw new Error(body?.error ?? "Connection failed.");
-      setConnectedName(body?.displayPhoneNumber ?? found.phoneNumberId);
-      setNote(
-        `WhatsApp linked in one click${body?.displayPhoneNumber ? ` : ${body.displayPhoneNumber}` : ""}${body?.verifiedName ? ` · ${body.verifiedName}` : ""}. Webhook subscribed automatically — paste the Verify Token below into Meta if it asks.`,
-      );
-      await load();
-    } catch (err) {
-      setWaError(err instanceof Error ? err.message : "Connection failed.");
-    } finally {
-      window.removeEventListener("message", onMessage);
-      setBusy(false);
-    }
   }
 
   async function test(withRecipient: boolean) {
@@ -443,7 +352,9 @@ function WhatsAppConnect() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <CardTitle className="flex items-center gap-2">
-              <MessageCircle className="size-4 text-brand-terracotta" />
+              <span className="flex size-7 items-center justify-center rounded-lg bg-[#25D366] text-white">
+                <WhatsAppIcon className="size-4" />
+              </span>
               WhatsApp
             </CardTitle>
             <CardDescription>
@@ -481,39 +392,23 @@ function WhatsAppConnect() {
               Log in with the shop&apos;s Facebook account, pick the WhatsApp number, confirm.
               No IDs or tokens to copy — Wassalha exchanges the code and subscribes the webhook automatically.
             </p>
-            <Button
-              type="button"
-              className="w-fit bg-[#1877F2] text-white hover:bg-[#1663cc]"
-              disabled={busy || !status?.embedded.configured}
-              onClick={() => void launchEmbeddedSignup()}
+            <a
+              className={`inline-flex w-fit items-center gap-2 rounded-lg bg-[#25D366] px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 ${status?.embedded.configured ? "" : "pointer-events-none opacity-50"}`}
+              href="/api/meta/oauth/start?platform=whatsapp"
             >
-              <Link2 className="size-3.5" />
-              Link with Facebook
-            </Button>
+              <WhatsAppIcon className="size-4" />
+              Link WhatsApp
+            </a>
             {status && !status.embedded.configured ? (
               <p className="text-xs text-muted-foreground">
-                Not enabled on this server yet: set <code>META_APP_ID</code>, <code>META_APP_SECRET</code> et{" "}
-                <code>WHATSAPP_EMBEDDED_CONFIG_ID</code> dans <code>.env.local</code> (app Meta → Facebook Login for
+                Not enabled on this server yet: set <code>META_APP_ID</code>, <code>META_APP_SECRET</code> and{" "}
+                <code>WHATSAPP_EMBEDDED_CONFIG_ID</code> in <code>.env.local</code> (Meta app → Facebook Login for
                 Business), or use the manual method below.
               </p>
             ) : null}
           </div>
 
-          <div className="flex flex-col gap-2">
-            <p className="text-sm font-semibold text-foreground">Manual method · 1 · Create your number at Meta</p>
-            <p className="text-sm text-muted-foreground">
-              Open Meta for Developers, add the WhatsApp product to an app, then copy the{" "}
-              <strong>Phone Number ID</strong> et un <strong>Access Token</strong> depuis « API Setup ».
-            </p>
-            <a
-              className="w-fit text-sm font-medium text-brand-terracotta underline underline-offset-4"
-              href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Open the WhatsApp Cloud API guide
-            </a>
-          </div>
+          <p className="text-sm font-semibold text-foreground">Manual method: paste your credentials</p>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
@@ -521,7 +416,7 @@ function WhatsAppConnect() {
               <Input id="wa-phone" value={phoneNumberId} onChange={(e) => setPhoneNumberId(e.target.value)} className="font-mono" placeholder="1065…" />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="wa-waba">WhatsApp Business Account ID (optionnel)</Label>
+              <Label htmlFor="wa-waba">WhatsApp Business Account ID (optional)</Label>
               <Input id="wa-waba" value={wabaId} onChange={(e) => setWabaId(e.target.value)} className="font-mono" placeholder="1098…" />
             </div>
             <div className="flex flex-col gap-1.5">
@@ -555,7 +450,7 @@ function WhatsAppConnect() {
           </div>
 
           <div className="flex flex-col gap-2">
-            <p className="text-sm font-semibold text-foreground">Manual method · 2 · Paste the webhook into Meta</p>
+            <p className="text-sm font-semibold text-foreground">Manual method: paste the webhook into Meta</p>
             <p className="text-sm text-muted-foreground">
               In the Meta app: WhatsApp → Configuration → Webhook → Edit. Paste the URL and the Verify Token,
               save, then subscribe to the <code>messages</code>.
@@ -583,7 +478,7 @@ function WhatsAppConnect() {
           </div>
 
           <div className="flex flex-col gap-2">
-            <p className="text-sm font-semibold text-foreground">Manual method · 3 · Get a test message</p>
+            <p className="text-sm font-semibold text-foreground">Manual method: get a test message</p>
             <div className="flex flex-wrap gap-2">
               <Input
                 value={testRecipient}
@@ -622,11 +517,6 @@ interface PageOption {
   instagram: { id: string; username: string | null } | null;
 }
 
-const PLATFORM_SCOPES: Record<"messenger" | "instagram", string> = {
-  messenger: "pages_messaging,pages_show_list,pages_manage_metadata,pages_read_engagement",
-  instagram: "instagram_business_basic,instagram_business_manage_messages,pages_show_list,pages_manage_metadata",
-};
-
 /**
  * One-click Messenger / Instagram link: same Facebook popup as WhatsApp,
  * then the seller picks which of his Pages to connect. Page tokens are
@@ -652,43 +542,38 @@ function FacebookConnect() {
   }
 
   useEffect(() => {
-    const timer = setTimeout(() => void load(), 0);
+    const params = new URLSearchParams(window.location.search);
+    const social = params.get("social");
+    const paramPlatform = params.get("platform");
+    const timer = setTimeout(() => {
+      void load();
+      if ((paramPlatform !== "messenger" && paramPlatform !== "instagram") || !social) return;
+      if (social === "error") {
+        const msg = params.get("msg");
+        setFbError(
+          msg === "no_instagram_on_page"
+            ? "No Instagram Business account is linked to that Page. Link one in Meta Business Settings, then retry."
+            : (msg ?? "Connection failed."),
+        );
+      } else if (social === "pick") {
+        setPlatform(paramPlatform);
+        void fetch("/api/dashboard/facebook/pending")
+          .then((res) => res.json())
+          .then((body: { pages?: PageOption[] }) => {
+            if (!body.pages?.length) return;
+            setPages(body.pages);
+            const preselected = params.get("page");
+            setSelectedPage(
+              preselected && body.pages.some((page) => page.pageId === preselected)
+                ? preselected
+                : body.pages[0].pageId,
+            );
+          })
+          .catch(() => undefined);
+      }
+    }, 0);
     return () => clearTimeout(timer);
   }, []);
-
-  async function link(target: "messenger" | "instagram") {
-    if (!status?.appId) return;
-    setBusy(true);
-    setFbError(null);
-    setNote(null);
-    setPages(null);
-    setPlatform(target);
-    try {
-      const FB = await loadFacebookSdk(status.appId);
-      const code = await new Promise<string | null>((resolve) => {
-        FB.login((res) => resolve(res.authResponse?.code ?? null), {
-          scope: PLATFORM_SCOPES[target],
-          response_type: "code",
-          override_default_response_type: true,
-        });
-      });
-      if (!code) throw new Error("Facebook login cancelled.");
-      const res = await fetch("/api/dashboard/facebook", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "exchange", code }),
-      });
-      const body = (await res.json().catch(() => null)) as { error?: string; pages?: PageOption[] } | null;
-      if (!res.ok || !body?.pages) throw new Error(body?.error ?? "Could not list your Pages.");
-      if (body.pages.length === 0) throw new Error("No Facebook Page found on this account. Create a Page first, then retry.");
-      setPages(body.pages);
-      setSelectedPage(body.pages[0].pageId);
-    } catch (err) {
-      setFbError(err instanceof Error ? err.message : "Connection failed.");
-    } finally {
-      setBusy(false);
-    }
-  }
 
   async function connect() {
     if (!platform || !selectedPage) return;
@@ -756,16 +641,24 @@ function FacebookConnect() {
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="flex flex-col gap-2 rounded-xl border border-border bg-muted/40 p-4">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-sm font-semibold text-foreground">Messenger</p>
+              <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <span className="flex size-7 items-center justify-center rounded-lg bg-[#0084FF] text-white">
+                  <MessengerIcon className="size-4" />
+                </span>
+                Messenger
+              </p>
               <Badge variant={status?.messenger.connected ? "success" : "outline"}>
                 {status?.messenger.connected ? `Connected · ${status.messenger.pageName ?? status.messenger.pageId}` : "Not connected"}
               </Badge>
             </div>
             <div className="flex gap-2">
-              <Button type="button" disabled={busy || !status?.oauthConfigured} onClick={() => void link("messenger")}>
-                <Link2 className="size-3.5" />
+              <a
+                className={`inline-flex items-center gap-2 rounded-lg bg-[#0084FF] px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 ${status?.oauthConfigured ? "" : "pointer-events-none opacity-50"}`}
+                href="/api/meta/oauth/start?platform=messenger"
+              >
+                <MessengerIcon className="size-4" />
                 Link Messenger
-              </Button>
+              </a>
               {status?.messenger.connected ? (
                 <Button type="button" variant="outline" disabled={busy} onClick={() => void disconnect("messenger")}>
                   Disconnect
@@ -776,16 +669,24 @@ function FacebookConnect() {
 
           <div className="flex flex-col gap-2 rounded-xl border border-border bg-muted/40 p-4">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-sm font-semibold text-foreground">Instagram</p>
+              <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <span className="flex size-7 items-center justify-center rounded-lg bg-gradient-to-tr from-[#FEDA75] via-[#D62976] to-[#4F5BD5] text-white">
+                  <InstagramIcon className="size-4" />
+                </span>
+                Instagram
+              </p>
               <Badge variant={status?.instagram.connected ? "success" : "outline"}>
                 {status?.instagram.connected ? `Connected${status.instagram.username ? ` · @${status.instagram.username}` : ""}` : "Not connected"}
               </Badge>
             </div>
             <div className="flex gap-2">
-              <Button type="button" disabled={busy || !status?.oauthConfigured} onClick={() => void link("instagram")}>
-                <Link2 className="size-3.5" />
+              <a
+                className={`inline-flex items-center gap-2 rounded-lg bg-[#D62976] px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 ${status?.oauthConfigured ? "" : "pointer-events-none opacity-50"}`}
+                href="/api/meta/oauth/start?platform=instagram"
+              >
+                <InstagramIcon className="size-4" />
                 Link Instagram
-              </Button>
+              </a>
               {status?.instagram.connected ? (
                 <Button type="button" variant="outline" disabled={busy} onClick={() => void disconnect("instagram")}>
                   Disconnect

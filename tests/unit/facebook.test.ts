@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildQuickReplies, parseFacebookWebhook } from "@/lib/channels/facebook";
+import { buildOAuthDialogUrl, buildQuickReplies, parseFacebookWebhook } from "@/lib/channels/facebook";
 
 function pagePayload(object: string, messaging: unknown[]) {
   return { object, entry: [{ id: "page-1", time: 1, messaging }] };
@@ -38,6 +38,26 @@ describe("Facebook webhook parsing (Messenger + Instagram)", () => {
     expect(parsed[0]).toMatchObject({ platform: "instagram", platformUserId: "igsid-9", kind: "text" });
     expect(parseFacebookWebhook(pagePayload("user", [{ sender: { id: "x" }, message: { mid: "y", text: "hi" } }]))).toEqual([]);
     expect(parseFacebookWebhook(null)).toEqual([]);
+  });
+
+  it("builds the server-side OAuth dialog URL (no JS SDK, no http FB.login)", () => {
+    const url = buildOAuthDialogUrl({
+      appId: "1476562851235645",
+      redirectUri: "http://localhost:3000/api/meta/oauth/callback",
+      state: "messenger.abc",
+      scope: "pages_messaging,pages_show_list",
+    });
+    expect(url).toContain("facebook.com/v21.0/dialog/oauth");
+    expect(url).toContain("client_id=1476562851235645");
+    expect(url).toContain("scope=pages_messaging");
+    const wa = buildOAuthDialogUrl({
+      appId: "1",
+      redirectUri: "http://localhost:3000/api/meta/oauth/callback",
+      state: "whatsapp.abc",
+      configId: "1174595044892264",
+    });
+    expect(wa).toContain("config_id=1174595044892264");
+    expect(wa).not.toContain("scope=");
   });
 
   it("caps quick replies at 3 with 20-char titles", () => {
