@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
+  completeEmbeddedSignup,
   resolveWhatsAppConfig,
   sendWhatsAppTestMessage,
   testWhatsAppConnection,
@@ -20,6 +21,7 @@ export async function GET() {
   if ("error" in gate) return gate.error;
   const config = await resolveWhatsAppConfig(gate.supabase, gate.merchant.id);
   const base = getServerEnv().APP_BASE_URL.replace(/\/$/, "");
+  const env = getServerEnv();
   return NextResponse.json({
     configured: Boolean(config),
     source: config?.source ?? null,
@@ -27,6 +29,11 @@ export async function GET() {
     tokenSet: Boolean(config?.accessToken),
     verifyToken: config?.verifyToken ?? null,
     webhookUrl: `${base}/api/whatsapp/webhook`,
+    embedded: {
+      configured: Boolean(env.META_APP_ID && env.WHATSAPP_EMBEDDED_CONFIG_ID),
+      appId: env.META_APP_ID ?? null,
+      configId: env.WHATSAPP_EMBEDDED_CONFIG_ID ?? null,
+    },
   });
 }
 
@@ -47,6 +54,46 @@ export async function POST(request: Request) {
   const gate = await requireMerchant();
   if ("error" in gate) return gate.error;
   const body = (await request.json().catch(() => null)) as { action?: string } | null;
+
+  if (body?.action === "connect") {
+    // One-click Embedded Signup: browser sends the FB login code + the ids
+    // from the session-info message; we exchange, subscribe, persist.
+    const parsed = z
+      .object({
+        code: z.string().min(10).max(4000),
+        wabaId: z.string().trim().min(5).max(40),
+        phoneNumberId: z.string().trim().min(5).max(40),
+      })
+      .safeParse(body);
+    if (!parsed.success) return NextResponse.json({ error: "réponse Facebook invalide" }, { status: 400 });
+    const verifyToken =
+      (await resolveWhatsAppConfig(gate.supabase, gate.merchant.id))?.verifyToken ??
+      `wassalha-${gate.merchant.id.slice(0, 8)}`;
+    try {
+      const { config, info } = await completeEmbeddedSignup({ ...parsed.data, verifyToken });
+      const { error } = await gate.supabase
+        .from("merchants")
+        .update({
+          whatsapp_phone_number_id: config.phoneNumberId,
+          whatsapp_waba_id: config.wabaId,
+          whatsapp_access_token: config.accessToken,
+          whatsapp_verify_token: config.verifyToken,
+          whatsapp_connected_at: new Date().toISOString(),
+        })
+        .eq("id", gate.merchant.id);
+      if (error) {
+        return NextResponse.json(
+          {
+            error: `Connexion Meta OK mais sauvegarde impossible (${error.message}). Appliquez supabase/migrations/0002_whatsapp.sql dans Supabase.`,
+          },
+          { status: 500 },
+        );
+      }
+      return NextResponse.json({ ok: true, ...info });
+    } catch (err) {
+      return NextResponse.json({ error: err instanceof Error ? err.message : "connexion impossible" }, { status: 502 });
+    }
+  }
 
   if (body?.action === "test") {
     const parsed = testSchema.safeParse(body);

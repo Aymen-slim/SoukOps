@@ -230,6 +230,44 @@ interface WhatsAppStatus {
   tokenSet: boolean;
   verifyToken: string | null;
   webhookUrl: string;
+  embedded: { configured: boolean; appId: string | null; configId: string | null };
+}
+
+interface FbSdk {
+  init: (opts: Record<string, unknown>) => void;
+  login: (
+    cb: (res: { authResponse?: { code?: string } }) => void,
+    opts: Record<string, unknown>,
+  ) => void;
+}
+
+declare global {
+  interface Window {
+    FB?: FbSdk;
+  }
+}
+
+function loadFacebookSdk(appId: string): Promise<FbSdk> {
+  return new Promise((resolve, reject) => {
+    if (window.FB) {
+      resolve(window.FB);
+      return;
+    }
+    const script = document.createElement("script");
+    script.id = "facebook-jssdk";
+    script.src = "https://connect.facebook.net/en_US/sdk.js";
+    script.async = true;
+    script.onload = () => {
+      if (!window.FB) {
+        reject(new Error("Facebook SDK illisible"));
+        return;
+      }
+      window.FB.init({ appId, autoLogAppEvents: true, xfbml: true, version: "v21.0" });
+      resolve(window.FB);
+    };
+    script.onerror = () => reject(new Error("Facebook SDK illisible (réseau?)"));
+    document.body.appendChild(script);
+  });
 }
 
 /**
@@ -270,6 +308,73 @@ function WhatsAppConnect() {
 
   async function copy(text: string) {
     await navigator.clipboard.writeText(text).catch(() => undefined);
+  }
+
+  /** The real one-click path: Facebook popup -> pick the WhatsApp number ->
+   * Meta hands back a code + ids -> server exchanges and subscribes. */
+  async function launchEmbeddedSignup() {
+    if (!status?.embedded.appId || !status.embedded.configId) return;
+    setBusy(true);
+    setWaError(null);
+    setNote(null);
+    let session: { wabaId: string; phoneNumberId: string } | null = null;
+    const onMessage = (event: MessageEvent) => {
+      if (!event.origin.endsWith("facebook.com")) return;
+      try {
+        const data = (typeof event.data === "string" ? JSON.parse(event.data) : event.data) as {
+          type?: string;
+          event?: string;
+          data?: { waba_id?: string; phone_number_id?: string };
+        } | null;
+        if (data?.type === "WA_EMBEDDED_SIGNUP" && data.event === "FINISH" && data.data?.waba_id && data.data.phone_number_id) {
+          session = { wabaId: data.data.waba_id, phoneNumberId: data.data.phone_number_id };
+        }
+      } catch {
+        // not an embedded-signup message; ignore
+      }
+    };
+    window.addEventListener("message", onMessage);
+    try {
+      const FB = await loadFacebookSdk(status.embedded.appId);
+      const code = await new Promise<string | null>((resolve) => {
+        FB.login(
+          (res) => resolve(res.authResponse?.code ?? null),
+          {
+            config_id: status.embedded.configId,
+            response_type: "code",
+            override_default_response_type: true,
+            extras: { setup: {}, featureType: "", sessionInfoVersion: "3" },
+          },
+        );
+      });
+      if (!code) throw new Error("Connexion Facebook annulée.");
+      for (let i = 0; i < 20 && !session; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      if (!session) throw new Error("Facebook n'a pas renvoyé le numéro WhatsApp. Réessayez.");
+      const found: { wabaId: string; phoneNumberId: string } = session;
+      const res = await fetch("/api/dashboard/whatsapp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "connect", code, ...found }),
+      });
+      const body = (await res.json().catch(() => null)) as {
+        error?: string;
+        displayPhoneNumber?: string | null;
+        verifiedName?: string | null;
+      } | null;
+      if (!res.ok) throw new Error(body?.error ?? "Connexion impossible.");
+      setConnectedName(body?.displayPhoneNumber ?? found.phoneNumberId);
+      setNote(
+        `WhatsApp connecté en un clic${body?.displayPhoneNumber ? ` : ${body.displayPhoneNumber}` : ""}${body?.verifiedName ? ` · ${body.verifiedName}` : ""}. Webhook abonné automatiquement — recopiez le Verify Token ci-dessous dans Meta si demandé.`,
+      );
+      await load();
+    } catch (err) {
+      setWaError(err instanceof Error ? err.message : "Connexion impossible.");
+    } finally {
+      window.removeEventListener("message", onMessage);
+      setBusy(false);
+    }
   }
 
   async function test(withRecipient: boolean) {
@@ -368,8 +473,32 @@ function WhatsAppConnect() {
             </p>
           ) : null}
 
+          <div className="flex flex-col gap-2 rounded-xl border border-border bg-muted/40 p-4">
+            <p className="text-sm font-semibold text-foreground">Le plus simple : un clic avec Facebook</p>
+            <p className="text-sm text-muted-foreground">
+              Connectez-vous avec le compte Facebook de la boutique, choisissez le numéro WhatsApp, validez.
+              Aucun ID ni token à copier — Wassalha échange et abonne le webhook automatiquement.
+            </p>
+            <Button
+              type="button"
+              className="w-fit bg-[#1877F2] text-white hover:bg-[#1663cc]"
+              disabled={busy || !status?.embedded.configured}
+              onClick={() => void launchEmbeddedSignup()}
+            >
+              <Link2 className="size-3.5" />
+              Link with Facebook
+            </Button>
+            {status && !status.embedded.configured ? (
+              <p className="text-xs text-muted-foreground">
+                Pas encore activé sur ce serveur : renseignez <code>META_APP_ID</code>, <code>META_APP_SECRET</code> et{" "}
+                <code>WHATSAPP_EMBEDDED_CONFIG_ID</code> dans <code>.env.local</code> (app Meta → Facebook Login for
+                Business), ou utilisez la méthode manuelle ci-dessous.
+              </p>
+            ) : null}
+          </div>
+
           <div className="flex flex-col gap-2">
-            <p className="text-sm font-semibold text-foreground">1 · Créez votre numéro chez Meta</p>
+            <p className="text-sm font-semibold text-foreground">Méthode manuelle · 1 · Créez votre numéro chez Meta</p>
             <p className="text-sm text-muted-foreground">
               Ouvrez Meta for Developers, ajoutez le produit WhatsApp à une app, puis copiez le{" "}
               <strong>Phone Number ID</strong> et un <strong>Access Token</strong> depuis « API Setup ».
@@ -424,7 +553,7 @@ function WhatsAppConnect() {
           </div>
 
           <div className="flex flex-col gap-2">
-            <p className="text-sm font-semibold text-foreground">2 · Collez le webhook dans Meta</p>
+            <p className="text-sm font-semibold text-foreground">Méthode manuelle · 2 · Collez le webhook dans Meta</p>
             <p className="text-sm text-muted-foreground">
               Dans l&apos;app Meta : WhatsApp → Configuration → Webhook → Edit. Collez l&apos;URL et le Verify Token,
               sauvegardez, puis abonnez le champ <code>messages</code>.
@@ -452,7 +581,7 @@ function WhatsAppConnect() {
           </div>
 
           <div className="flex flex-col gap-2">
-            <p className="text-sm font-semibold text-foreground">3 · Recevez un message test</p>
+            <p className="text-sm font-semibold text-foreground">Méthode manuelle · 3 · Recevez un message test</p>
             <div className="flex flex-wrap gap-2">
               <Input
                 value={testRecipient}

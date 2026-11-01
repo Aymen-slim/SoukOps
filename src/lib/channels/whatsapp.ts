@@ -203,6 +203,62 @@ async function graph(config: WhatsAppConfig, path: string, init?: RequestInit): 
   return body;
 }
 
+// ------------------------------------------------------- Embedded Signup
+
+/** Session-info message the Embedded Signup popup posts back to the opener. */
+export function parseEmbeddedSignupMessage(data: unknown): { wabaId: string; phoneNumberId: string } | null {
+  const msg = data as { type?: string; event?: string; data?: { waba_id?: unknown; phone_number_id?: unknown } } | null;
+  if (!msg || msg.type !== "WA_EMBEDDED_SIGNUP" || msg.event !== "FINISH") return null;
+  const wabaId = typeof msg.data?.waba_id === "string" ? msg.data.waba_id : null;
+  const phoneNumberId = typeof msg.data?.phone_number_id === "string" ? msg.data.phone_number_id : null;
+  return wabaId && phoneNumberId ? { wabaId, phoneNumberId } : null;
+}
+
+export function buildTokenExchangeUrl(appId: string, appSecret: string, code: string): string {
+  const params = new URLSearchParams({ client_id: appId, client_secret: appSecret, code });
+  return `${GRAPH_BASE}/oauth/access_token?${params.toString()}`;
+}
+
+export interface EmbeddedSignupResult {
+  config: WhatsAppConfig;
+  info: WhatsAppConnectionInfo;
+}
+
+/**
+ * One-click link, server half: exchange the Facebook Login code for a
+ * business access token, subscribe this app to the seller's WABA webhook,
+ * and prove the token by reading the phone number. The caller persists the
+ * returned config; the token never goes back to the browser.
+ */
+export async function completeEmbeddedSignup(input: {
+  code: string;
+  wabaId: string;
+  phoneNumberId: string;
+  verifyToken: string;
+}): Promise<EmbeddedSignupResult> {
+  const env = getServerEnv();
+  const appId = env.META_APP_ID;
+  const appSecret = env.META_APP_SECRET ?? env.WHATSAPP_APP_SECRET;
+  if (!appId || !appSecret) {
+    throw new Error("Embedded Signup non configuré: META_APP_ID / META_APP_SECRET manquants dans .env.local.");
+  }
+  const res = await fetch(buildTokenExchangeUrl(appId, appSecret, input.code));
+  const body = (await res.json().catch(() => null)) as { access_token?: string; error?: { message?: string } } | null;
+  if (!res.ok || !body?.access_token) {
+    throw new Error(`Échange du code Facebook impossible: ${body?.error?.message ?? res.status}`);
+  }
+  const config: WhatsAppConfig = {
+    phoneNumberId: input.phoneNumberId,
+    wabaId: input.wabaId,
+    accessToken: body.access_token,
+    verifyToken: input.verifyToken,
+    source: "database",
+  };
+  await graph(config, `/${input.wabaId}/subscribed_apps`, { method: "POST", body: JSON.stringify({}) });
+  const info = await testWhatsAppConnection(config);
+  return { config, info };
+}
+
 export interface WhatsAppConnectionInfo {
   displayPhoneNumber: string | null;
   verifiedName: string | null;

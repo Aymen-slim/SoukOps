@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   buildButtonsPayload,
   buildTextPayload,
+  buildTokenExchangeUrl,
+  parseEmbeddedSignupMessage,
   parseWebhookPayload,
   truncateButtonTitle,
   verifyWebhookSignature,
@@ -83,6 +85,29 @@ describe("WhatsApp signature + payload builders", () => {
     expect(action.buttons).toHaveLength(3);
     expect(action.buttons[1].reply.title.length).toBeLessThanOrEqual(20);
     expect(truncateButtonTitle("court")).toBe("court");
+  });
+});
+
+describe("Embedded Signup (one-click link)", () => {
+  it("parses the FINISH session message and ignores other events", () => {
+    expect(
+      parseEmbeddedSignupMessage({
+        type: "WA_EMBEDDED_SIGNUP",
+        event: "FINISH",
+        data: { waba_id: "1098", phone_number_id: "1065" },
+      }),
+    ).toEqual({ wabaId: "1098", phoneNumberId: "1065" });
+    expect(parseEmbeddedSignupMessage({ type: "WA_EMBEDDED_SIGNUP", event: "CANCEL", data: {} })).toBeNull();
+    expect(parseEmbeddedSignupMessage({ type: "WA_EMBEDDED_SIGNUP", event: "FINISH", data: {} })).toBeNull();
+    expect(parseEmbeddedSignupMessage(null)).toBeNull();
+  });
+
+  it("builds the code-exchange URL with encoded credentials", () => {
+    const url = buildTokenExchangeUrl("app 1", "sec/ret", "co de");
+    expect(url).toContain("graph.facebook.com/v21.0/oauth/access_token");
+    expect(url).toContain("client_id=app+1");
+    expect(url).toContain("client_secret=sec%2Fret");
+    expect(url).toContain("code=co+de");
   });
 });
 

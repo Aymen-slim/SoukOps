@@ -37,6 +37,12 @@ const schema = z.object({
   WHATSAPP_ACCESS_TOKEN: z.string().optional(),
   WHATSAPP_VERIFY_TOKEN: z.string().optional(),
   WHATSAPP_APP_SECRET: z.string().optional(),
+  // Meta Embedded Signup (one-click Facebook link in Settings): app id is
+  // public, app secret is server-only, config id comes from the app's
+  // Facebook Login for Business configuration.
+  META_APP_ID: z.string().optional(),
+  META_APP_SECRET: z.string().optional(),
+  WHATSAPP_EMBEDDED_CONFIG_ID: z.string().optional(),
   COURIER_CLONE_USER: z.string().default("agent"),
   COURIER_CLONE_PASSWORD: z.string().default("wassalha"),
 });
