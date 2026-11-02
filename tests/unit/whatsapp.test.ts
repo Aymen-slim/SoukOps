@@ -108,6 +108,9 @@ describe("Embedded Signup (one-click link)", () => {
     expect(url).toContain("client_id=app+1");
     expect(url).toContain("client_secret=sec%2Fret");
     expect(url).toContain("code=co+de");
+    expect(url).not.toContain("redirect_uri");
+    const withRedirect = buildTokenExchangeUrl("app", "secret", "code", "https://localhost:3000/api/meta/oauth/callback");
+    expect(withRedirect).toContain("redirect_uri=https%3A%2F%2Flocalhost%3A3000%2Fapi%2Fmeta%2Foauth%2Fcallback");
   });
 });
 

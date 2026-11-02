@@ -155,7 +155,8 @@ export async function exchangeCodeForPages(code: string): Promise<PendingFaceboo
   if (!appId || !appSecret) {
     throw new Error("Facebook login not configured: META_APP_ID / META_APP_SECRET missing in .env.local.");
   }
-  const tokenRes = await fetch(buildTokenExchangeUrl(appId, appSecret, code));
+  const redirectUri = `${env.APP_BASE_URL.replace(/\/$/, "")}/api/meta/oauth/callback`;
+  const tokenRes = await fetch(buildTokenExchangeUrl(appId, appSecret, code, redirectUri));
   const tokenBody = (await tokenRes.json().catch(() => null)) as { access_token?: string; error?: { message?: string } } | null;
   if (!tokenRes.ok || !tokenBody?.access_token) {
     throw new Error(`Facebook code exchange failed: ${tokenBody?.error?.message ?? tokenRes.status}`);

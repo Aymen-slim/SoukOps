@@ -214,8 +214,11 @@ export function parseEmbeddedSignupMessage(data: unknown): { wabaId: string; pho
   return wabaId && phoneNumberId ? { wabaId, phoneNumberId } : null;
 }
 
-export function buildTokenExchangeUrl(appId: string, appSecret: string, code: string): string {
+export function buildTokenExchangeUrl(appId: string, appSecret: string, code: string, redirectUri?: string): string {
   const params = new URLSearchParams({ client_id: appId, client_secret: appSecret, code });
+  // Required when the code came from the OAuth redirect dialog: Meta checks
+  // it is identical to the redirect_uri of the authorization request.
+  if (redirectUri) params.set("redirect_uri", redirectUri);
   return `${GRAPH_BASE}/oauth/access_token?${params.toString()}`;
 }
 
@@ -301,7 +304,8 @@ export async function exchangeOAuthCode(code: string): Promise<string> {
   const appId = env.META_APP_ID;
   const appSecret = env.META_APP_SECRET ?? env.WHATSAPP_APP_SECRET;
   if (!appId || !appSecret) throw new Error("META_APP_ID / META_APP_SECRET missing in .env.local.");
-  const res = await fetch(buildTokenExchangeUrl(appId, appSecret, code));
+  const redirectUri = `${env.APP_BASE_URL.replace(/\/$/, "")}/api/meta/oauth/callback`;
+  const res = await fetch(buildTokenExchangeUrl(appId, appSecret, code, redirectUri));
   const body = (await res.json().catch(() => null)) as { access_token?: string; error?: { message?: string } } | null;
   if (!res.ok || !body?.access_token) {
     throw new Error(`Facebook code exchange failed: ${body?.error?.message ?? res.status}`);
