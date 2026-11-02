@@ -275,18 +275,47 @@ export async function connectWhatsAppWithToken(config: WhatsAppConfig): Promise<
  * we discover the seller's WABA from the token's granular scopes and take
  * its first phone number.
  */
+async function graphGet(accessToken: string, path: string): Promise<unknown> {
+  const res = await fetch(`${GRAPH_BASE}${path}`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!res.ok) return null;
+  return res.json().catch(() => null);
+}
+
 export async function discoverWhatsAppAccount(accessToken: string): Promise<{ wabaId: string; phoneNumberId: string }> {
   const env = getServerEnv();
   const appId = env.META_APP_ID;
   const appSecret = env.META_APP_SECRET ?? env.WHATSAPP_APP_SECRET;
   if (!appId || !appSecret) throw new Error("META_APP_ID / META_APP_SECRET missing in .env.local.");
+
+  // Strategy 1: the token's granular scopes carry the WABA as target_ids.
   const debugUrl = `${GRAPH_BASE}/debug_token?input_token=${encodeURIComponent(accessToken)}&access_token=${encodeURIComponent(`${appId}|${appSecret}`)}`;
   const debugRes = await fetch(debugUrl);
   const debugBody = (await debugRes.json().catch(() => null)) as {
     data?: { granular_scopes?: Array<{ scope?: string; target_ids?: string[] }> };
   } | null;
   const scopes = debugBody?.data?.granular_scopes ?? [];
-  const wabaId = scopes.flatMap((s) => s.target_ids ?? [])[0] ?? null;
+  console.log("[whatsapp] discovery scopes:", scopes.map((s) => `${s.scope}:[${(s.target_ids ?? []).join(",")}]`).join(" "));
+  let wabaId = scopes.flatMap((s) => s.target_ids ?? [])[0] ?? null;
+
+  // Strategy 2: walk the user's businesses to their WhatsApp accounts.
+  if (!wabaId) {
+    const businesses = (await graphGet(accessToken, "/me/businesses?fields=id,name")) as {
+      data?: Array<{ id: string }>;
+    } | null;
+    for (const business of businesses?.data ?? []) {
+      for (const edge of ["owned_whatsapp_business_accounts", "client_whatsapp_business_accounts"] as const) {
+        const wabas = (await graphGet(accessToken, `/${business.id}/${edge}?fields=id,name`)) as {
+          data?: Array<{ id: string }>;
+        } | null;
+        if (wabas?.data?.[0]?.id) {
+          wabaId = wabas.data[0].id;
+          break;
+        }
+      }
+      if (wabaId) break;
+    }
+  }
+
   if (!wabaId) throw new Error("No WhatsApp Business account found on this Facebook login. Create one in the signup flow, then retry.");
   const config: WhatsAppConfig = { phoneNumberId: "", wabaId, accessToken, verifyToken: null, source: "database" };
   const numbers = (await graph(config, `/${wabaId}/phone_numbers?fields=id,display_phone_number`)) as {
