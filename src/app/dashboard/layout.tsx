@@ -4,7 +4,7 @@ import { WorkerBanner } from "./worker-banner";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="min-h-screen bg-medina-grid">
+    <div className="min-h-screen bg-dot-grid">
       <Suspense fallback={null}>
         <SiteBar />
       </Suspense>

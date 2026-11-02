@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { AlertTriangle } from "@untitledui/icons";
+import { Button } from "@/components/base/buttons/button";
 import { usePoll } from "./use-poll";
 
 interface DemoStatus {
@@ -27,7 +27,7 @@ export function WorkerBanner() {
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-status-warning-border bg-status-warning-bg px-4 py-3 text-sm text-status-warning-fg shadow-2xs">
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-utility-yellow-200 bg-warning-primary px-4 py-3 text-sm text-warning-primary shadow-2xs">
       <div className="flex items-center gap-2.5">
         <AlertTriangle className="size-4 shrink-0" />
         <p>
@@ -35,7 +35,7 @@ export function WorkerBanner() {
           <code className="rounded bg-black/5 px-1.5 py-0.5 font-mono text-xs">npm run worker</code>).
         </p>
       </div>
-      <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void switchToApi()}>
+      <Button type="button" size="sm" color="secondary" isDisabled={busy} onClick={() => void switchToApi()}>
         Switch to the API
       </Button>
     </div>

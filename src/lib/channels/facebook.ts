@@ -96,7 +96,7 @@ export async function resolveFacebookVerifyToken(supabase: Admin, merchantId: st
 
 export const FACEBOOK_PLATFORM_SCOPES: Record<FacebookPlatform, string> = {
   messenger: "pages_messaging,pages_show_list,pages_manage_metadata,pages_read_engagement",
-  instagram: "instagram_business_basic,instagram_business_manage_messages,pages_show_list,pages_manage_metadata",
+  instagram: "instagram_basic,instagram_manage_messages,pages_show_list,pages_manage_metadata,pages_read_engagement",
 };
 
 /** Server-side OAuth dialog URL. No FB JS SDK (it refuses http pages);

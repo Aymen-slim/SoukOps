@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState, type MouseEvent } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Barcode, Lock, PackagePlus, Printer } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Scan as Barcode, Lock01 as Lock, PackagePlus, Printer } from "@untitledui/icons";
+import { Badge } from "@/components/base/badges/badges";
+import { Button } from "@/components/base/buttons/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/foundations/card/card";
+import { Input } from "@/components/base/input/input";
+import { Label } from "@/components/base/input/label";
 
 export function LoginForm() {
   const router = useRouter();
@@ -32,18 +32,18 @@ export function LoginForm() {
     router.push(next.startsWith("/courier-clone/") ? next : "/courier-clone/nouveau");
   }
 
-  function onClick(event: MouseEvent<HTMLButtonElement>) {
+  function onClick(event: { preventDefault(): void; target: EventTarget | null }) {
     event.preventDefault();
-    const form = event.currentTarget.form;
+    const form = (event.target as HTMLElement | null)?.closest("form");
     if (!form || sending) return;
     void submit(form);
   }
 
   return (
-    <Card className="mx-auto w-full max-w-md bg-white">
-      <CardHeader className="border-b border-slate-200">
-        <CardTitle className="flex items-center gap-2 text-slate-900">
-          <Lock className="size-4 text-[#093552]" />
+    <Card className="mx-auto w-full max-w-md bg-primary">
+      <CardHeader className="border-b border-secondary">
+        <CardTitle className="flex items-center gap-2 text-primary">
+          <Lock className="size-4 text-brand-secondary" />
           Agent login
         </CardTitle>
         <CardDescription>Secure access to the First Delivery shipping portal.</CardDescription>
@@ -52,25 +52,25 @@ export function LoginForm() {
         <form className="flex flex-col gap-3.5" onSubmit={(event) => event.preventDefault()}>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="user">Username</Label>
-            <Input id="user" name="user" autoComplete="username" required className="bg-white" />
+            <Input aria-label="Username" id="user" name="user" autoComplete="username" isRequired inputClassName="bg-primary" />
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="password">Password</Label>
-            <Input
+            <Input aria-label="Password"
               id="password"
               name="password"
               type="password"
               autoComplete="current-password"
-              required
-              className="bg-white"
+              isRequired
+              inputClassName="bg-primary"
             />
           </div>
           {error ? (
-            <p role="alert" className="text-sm text-destructive">
+            <p role="alert" className="text-sm text-error-primary">
               {error}
             </p>
           ) : null}
-          <Button type="submit" disabled={sending} onClick={onClick} className="bg-[#093552] text-white hover:bg-[#093552]/90">
+          <Button type="submit" isDisabled={sending} onClick={onClick} className="bg-brand-solid text-white hover:bg-brand-solid/90">
             Log in
           </Button>
         </form>
@@ -150,29 +150,29 @@ export function ParcelForm() {
     router.push(`/courier-clone/colis/${body.barcode}`);
   }
 
-  function onClick(event: MouseEvent<HTMLButtonElement>) {
+  function onClick(event: { preventDefault(): void; target: EventTarget | null }) {
     event.preventDefault();
-    const form = event.currentTarget.form;
+    const form = (event.target as HTMLElement | null)?.closest("form");
     if (!form || sending) return;
     void submit(form);
   }
 
-  if (!ready) return <p className="text-sm text-slate-600">Connecting to the portal…</p>;
+  if (!ready) return <p className="text-sm text-tertiary">Connecting to the portal…</p>;
 
   return (
-    <Card className="bg-white">
-      <CardHeader className="border-b border-slate-200">
+    <Card className="bg-primary">
+      <CardHeader className="border-b border-secondary">
         <div className="flex items-center justify-between gap-2">
           <div>
-            <CardTitle className="flex items-center gap-2 text-slate-900">
-              <PackagePlus className="size-4 text-[#093552]" />
+            <CardTitle className="flex items-center gap-2 text-primary">
+              <PackagePlus className="size-4 text-brand-secondary" />
               New parcel
             </CardTitle>
             <CardDescription>
               Waybill entry with mandatory validation of <code>locality_id</code>.
             </CardDescription>
           </div>
-          <Badge variant="outline" className="font-mono">
+          <Badge color="gray" className="font-mono">
             13 fields
           </Badge>
         </div>
@@ -185,21 +185,22 @@ export function ParcelForm() {
               <Input
                 id={field.name}
                 name={field.name}
-                className={`bg-white ${field.mono ? "font-mono tabular-nums" : ""}`}
+                aria-label={field.label}
+                className={`bg-primary ${field.mono ? "font-mono tabular-nums" : ""}`}
               />
             </div>
           ))}
           {error ? (
-            <p role="alert" className="text-sm text-destructive sm:col-span-2">
+            <p role="alert" className="text-sm text-error-primary sm:col-span-2">
               {error}
             </p>
           ) : null}
           <div className="pt-2 sm:col-span-2">
             <Button
               type="submit"
-              disabled={sending}
+              isDisabled={sending}
               onClick={onClick}
-              className="bg-[#093552] text-white hover:bg-[#093552]/90"
+              className="bg-brand-solid text-white hover:bg-brand-solid/90"
             >
               Create parcel
             </Button>
@@ -227,37 +228,37 @@ export function ColisView({ barcode }: { barcode: string }) {
     });
   }, [barcode]);
 
-  if (error) return <p role="alert" className="text-sm text-destructive">{error}</p>;
-  if (!parcel) return <p className="text-sm text-slate-600">Loading parcel…</p>;
+  if (error) return <p role="alert" className="text-sm text-error-primary">{error}</p>;
+  if (!parcel) return <p className="text-sm text-tertiary">Loading parcel…</p>;
   const fields = parcel.fields ?? {};
 
   return (
-    <Card className="bg-white">
-      <CardHeader className="border-b border-slate-200">
+    <Card className="bg-primary">
+      <CardHeader className="border-b border-secondary">
         <div className="flex items-center justify-between gap-2">
-          <CardTitle className="flex items-center gap-2 text-slate-900">
-            <Barcode className="size-4 text-[#093552]" />
+          <CardTitle className="flex items-center gap-2 text-primary">
+            <Barcode className="size-4 text-brand-secondary" />
             Parcel {barcode}
           </CardTitle>
-          <Badge variant="success" className="font-mono">Saved</Badge>
+          <Badge color="success" className="font-mono">Saved</Badge>
         </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 text-sm">
-        <p className="rounded-xl bg-slate-100 px-3.5 py-2">
+        <p className="rounded-xl bg-secondary px-3.5 py-2">
           Code <span className="font-mono font-semibold">{barcode}</span>
         </p>
         <dl className="grid gap-1.5">
           {Object.entries(fields).map(([key, value]) => (
-            <div key={key} className="flex justify-between gap-4 border-b border-slate-200/80 py-1.5">
-              <dt className="font-mono text-xs text-slate-500">{key}</dt>
-              <dd className="text-right font-medium text-slate-900">
+            <div key={key} className="flex justify-between gap-4 border-b border-secondary py-1.5">
+              <dt className="font-mono text-xs text-tertiary">{key}</dt>
+              <dd className="text-right font-medium text-primary">
                 {value == null || value === "" ? "—" : String(value)}
               </dd>
             </div>
           ))}
         </dl>
         <a
-          className="inline-flex w-fit items-center gap-1.5 rounded-lg bg-[#093552] px-4 py-2 text-xs font-semibold text-white underline-offset-4 hover:bg-[#093552]/90"
+          className="inline-flex w-fit items-center gap-1.5 rounded-lg bg-brand-solid px-4 py-2 text-xs font-semibold text-white underline-offset-4 hover:bg-brand-solid/90"
           href={parcel.printUrl}
         >
           <Printer className="size-3.5" />

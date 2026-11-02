@@ -1,22 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Activity,
-  ImagePlus,
-  MapPin,
-  Mic,
-  Send,
-  ShieldCheck,
-  Square,
-  Trash2,
-  UserCheck,
-  X,
-} from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { Activity, ImagePlus, MarkerPin01 as MapPin, Microphone01 as Mic, Send01 as Send, ShieldTick as ShieldCheck, Square, Trash01 as Trash2, UserCheck01 as UserCheck, X } from "@untitledui/icons";
+import { Badge } from "@/components/base/badges/badges";
+import { Button } from "@/components/base/buttons/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/foundations/card/card";
+import { Input } from "@/components/base/input/input";
 import { blobToBase64, fileToBase64, WavRecorder } from "@/lib/media/wav-recorder";
 import { getPersona, PERSONAS, type PersonaId } from "@/lib/sim/personas";
 
@@ -347,7 +336,7 @@ export default function SimulatorClient({ initialConversationId = null }: { init
               href={parsed.url}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex w-fit items-center gap-1.5 rounded-full bg-brand-saffron px-3.5 py-1.5 text-xs font-semibold text-surface-ink shadow-2xs transition-transform duration-150 ease-[var(--ease-out)] hover:brightness-95 active:scale-[0.97]"
+              className="inline-flex w-fit items-center gap-1.5 rounded-full bg-brand-solid px-3.5 py-1.5 text-xs font-semibold text-primary shadow-2xs transition-transform duration-150 ease-linear hover:brightness-95 active:scale-[0.97]"
             >
               <MapPin className="size-3.5" />
               {t.confirmPin}
@@ -370,10 +359,10 @@ export default function SimulatorClient({ initialConversationId = null }: { init
                   key={b.id}
                   type="button"
                   onClick={() => void send({ kind: "button", body: b.title })}
-                  className={`h-9 cursor-pointer rounded-full px-3.5 text-xs font-semibold transition-[transform,background-color] duration-150 ease-[var(--ease-out)] active:scale-[0.97] ${
+                  className={`h-9 cursor-pointer rounded-full px-3.5 text-xs font-semibold transition-[transform,background-color] duration-150 ease-linear active:scale-[0.97] ${
                     b.id === "akked"
-                      ? "bg-surface-ink text-white shadow-2xs hover:bg-surface-ink/90"
-                      : "bg-muted/60 text-foreground ring-1 ring-border hover:bg-muted"
+                      ? "bg-primary-solid text-white shadow-2xs hover:bg-primary-solid/90"
+                      : "bg-tertiary/60 text-primary ring-1 ring-secondary hover:bg-tertiary"
                   }`}
                 >
                   {b.title}
@@ -406,7 +395,7 @@ export default function SimulatorClient({ initialConversationId = null }: { init
         ) : null}
         <span
           className={`self-end font-mono text-[10px] leading-none tabular-nums ${
-            message.direction === "in" ? "text-white/55" : "text-muted-foreground"
+            message.direction === "in" ? "text-white/55" : "text-tertiary"
           }`}
         >
           {new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -425,8 +414,8 @@ export default function SimulatorClient({ initialConversationId = null }: { init
       <div className="flex flex-col items-center gap-3.5">
         <div className="flex w-full max-w-[392px] items-center justify-between">
           <div>
-            <h1 className="text-lg font-semibold tracking-tight text-foreground">{t.title}</h1>
-            <p className="text-xs text-muted-foreground">Buyer preview · Live session</p>
+            <h1 className="text-lg font-semibold tracking-tight text-primary">{t.title}</h1>
+            <p className="text-xs text-tertiary">Buyer preview · Live session</p>
           </div>
         </div>
 
@@ -436,7 +425,7 @@ export default function SimulatorClient({ initialConversationId = null }: { init
             <Button
               key={p.id}
               size="sm"
-              variant={persona === p.id ? "default" : "outline"}
+              color={persona === p.id ? "primary" : "secondary"}
               onClick={() => void startConversation(p.id)}
             >
               {p.labelEn}
@@ -445,41 +434,41 @@ export default function SimulatorClient({ initialConversationId = null }: { init
         </div>
 
         {/* Active Buyer Pill */}
-        <div className="flex w-full max-w-[392px] items-center justify-between rounded-xl border border-border/80 bg-card/85 px-3 py-1.5 text-xs">
-          <span className="flex items-center gap-1.5 font-medium text-foreground">
-            <UserCheck className="size-3.5 text-brand-terracotta" />
+        <div className="flex w-full max-w-[392px] items-center justify-between rounded-xl border border-secondary/80 bg-primary/85 px-3 py-1.5 text-xs">
+          <span className="flex items-center gap-1.5 font-medium text-primary">
+            <UserCheck className="size-3.5 text-brand-secondary" />
             {activePersona.customerName}
           </span>
-          <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+          <span className="font-mono text-[11px] tabular-nums text-tertiary">
             {activePersona.phone}
           </span>
         </div>
 
         {/* Mobile Device Frame */}
-        <div className="w-full max-w-[392px] overflow-hidden rounded-[34px] border-[5px] border-surface-ink bg-chat-pattern shadow-[var(--shadow-elevated)]">
+        <div className="w-full max-w-[392px] overflow-hidden rounded-[34px] border-[5px] border-neutral-900 bg-chat-canvas shadow-lg">
           {/* Top Speaker Notch Bar */}
-          <div className="flex items-center justify-center bg-surface-ink pt-1.5 pb-0.5">
-            <div className="h-1 w-12 rounded-full bg-white/20" />
+          <div className="flex items-center justify-center bg-primary-solid pt-1.5 pb-0.5">
+            <div className="h-1 w-12 rounded-full bg-primary/20" />
           </div>
 
           {/* WhatsApp Header */}
-          <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-surface-ink px-4 py-3 text-white">
+          <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-primary-solid px-4 py-3 text-white">
             <div className="flex min-w-0 items-center gap-3">
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-brand-saffron text-sm font-bold text-surface-ink shadow-xs">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-brand-solid text-sm font-bold text-primary shadow-xs">
                 W
               </div>
               <div className="flex min-w-0 flex-col">
                 <div className="flex items-center gap-1.5">
                   <span className="truncate text-sm font-semibold">{t.shop}</span>
-                  <ShieldCheck className="size-3.5 shrink-0 text-brand-saffron" />
+                  <ShieldCheck className="size-3.5 shrink-0 text-brand-200" />
                 </div>
                 <span className="flex items-center gap-1.5 text-[11px] text-white/75">
-                  <span className={`size-1.5 rounded-full ${aiPaused ? "bg-amber-300" : "bg-emerald-400"}`} />
+                  <span className={`size-1.5 rounded-full ${aiPaused ? "bg-utility-yellow-400" : "bg-utility-green-500"}`} />
                   {aiPaused ? t.sellerOnline : awaiting ? t.typing : t.online}
                 </span>
               </div>
             </div>
-            <span className="rounded-full bg-white/10 px-2 py-0.5 font-mono text-[10px] text-white/80">
+            <span className="rounded-full bg-primary/10 px-2 py-0.5 font-mono text-[10px] text-white/80">
               Derja AI
             </span>
           </div>
@@ -494,19 +483,19 @@ export default function SimulatorClient({ initialConversationId = null }: { init
                 key={m.id}
                 className={`max-w-[85%] px-3.5 py-2.5 text-sm shadow-2xs ${
                   m.direction === "in"
-                    ? "self-end rounded-2xl rounded-br-xs bg-surface-ink text-white"
-                    : "self-start rounded-2xl rounded-bl-xs bg-card text-foreground ring-1 ring-border/90"
+                    ? "self-end rounded-2xl rounded-br-xs bg-primary-solid text-white"
+                    : "self-start rounded-2xl rounded-bl-xs bg-primary text-primary ring-1 ring-secondary/90"
                 }`}
               >
                 {renderMessage(m)}
               </div>
             ))}
             {awaiting && !aiPaused ? (
-              <div className="self-start rounded-2xl rounded-bl-xs bg-card px-3.5 py-2.5 ring-1 ring-border/90 shadow-2xs">
+              <div className="self-start rounded-2xl rounded-bl-xs bg-primary px-3.5 py-2.5 ring-1 ring-secondary/90 shadow-2xs">
                 <span className="flex gap-1">
-                  <span className="size-1.5 animate-bounce rounded-full bg-stone-400 [animation-delay:0ms]" />
-                  <span className="size-1.5 animate-bounce rounded-full bg-stone-400 [animation-delay:120ms]" />
-                  <span className="size-1.5 animate-bounce rounded-full bg-stone-400 [animation-delay:240ms]" />
+                  <span className="size-1.5 animate-bounce rounded-full bg-neutral-400 [animation-delay:0ms]" />
+                  <span className="size-1.5 animate-bounce rounded-full bg-neutral-400 [animation-delay:120ms]" />
+                  <span className="size-1.5 animate-bounce rounded-full bg-neutral-400 [animation-delay:240ms]" />
                 </span>
               </div>
             ) : null}
@@ -514,20 +503,20 @@ export default function SimulatorClient({ initialConversationId = null }: { init
 
           {/* Staged Photo Preview */}
           {pendingImage ? (
-            <div className="mx-2.5 mb-1.5 flex items-center gap-3 rounded-2xl bg-card p-2 ring-1 ring-border shadow-xs">
+            <div className="mx-2.5 mb-1.5 flex items-center gap-3 rounded-2xl bg-primary p-2 ring-1 ring-secondary shadow-xs">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={pendingImage.previewUrl}
                 alt={pendingImage.file.name}
-                className="size-14 rounded-xl border border-border object-cover"
+                className="size-14 rounded-xl border border-secondary object-cover"
               />
               <div className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate text-xs font-semibold text-foreground">{pendingImage.file.name}</span>
-                <span className="text-[11px] text-muted-foreground">{t.imageAttached}</span>
+                <span className="truncate text-xs font-semibold text-primary">{pendingImage.file.name}</span>
+                <span className="text-[11px] text-tertiary">{t.imageAttached}</span>
               </div>
               <Button
-                size="icon-sm"
-                variant="ghost"
+                size="sm"
+                color="tertiary"
                 aria-label={t.remove}
                 onClick={unstageImage}
                 className="shrink-0"
@@ -539,16 +528,16 @@ export default function SimulatorClient({ initialConversationId = null }: { init
 
           {/* Staged Voice Note Preview */}
           {pendingVoice ? (
-            <div className="mx-2.5 mb-1.5 flex items-center gap-2 rounded-2xl bg-card p-2 ring-1 ring-border shadow-xs">
+            <div className="mx-2.5 mb-1.5 flex items-center gap-2 rounded-2xl bg-primary p-2 ring-1 ring-secondary shadow-xs">
               <div className="flex min-w-0 flex-1 flex-col">
                 <audio controls src={pendingVoice.url} className="h-8 w-full" />
-                <span className="truncate font-mono text-[11px] tabular-nums text-muted-foreground">
+                <span className="truncate font-mono text-[11px] tabular-nums text-tertiary">
                   {formatElapsed(pendingVoice.seconds)} · {t.voiceAttached}
                 </span>
               </div>
               <Button
-                size="icon-sm"
-                variant="ghost"
+                size="sm"
+                color="tertiary"
                 aria-label={t.cancelVoice}
                 onClick={() => setVoice(null)}
                 className="shrink-0"
@@ -559,14 +548,14 @@ export default function SimulatorClient({ initialConversationId = null }: { init
           ) : null}
 
           {micError ? (
-            <p className="px-3 pt-1.5 text-center text-[11px] font-medium text-status-danger-fg">{micError}</p>
+            <p className="px-3 pt-1.5 text-center text-[11px] font-medium text-error-primary">{micError}</p>
           ) : null}
 
           {/* Composer Bar */}
-          <div className="flex items-end gap-1.5 border-t border-border/80 bg-[#eee8dc] px-2.5 py-2.5">
-            <div className="flex flex-1 items-center rounded-full bg-card px-2 ring-1 ring-border/70 shadow-2xs">
+          <div className="flex items-end gap-1.5 border-t border-secondary/80 bg-secondary px-2.5 py-2.5">
+            <div className="flex flex-1 items-center rounded-full bg-primary px-2 ring-1 ring-secondary/70 shadow-2xs">
               <label
-                className={`rounded-full p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${
+                className={`rounded-full p-2 text-tertiary transition-colors hover:bg-tertiary hover:text-primary ${
                   stopping ? "pointer-events-none opacity-40" : "cursor-pointer"
                 }`}
                 title="Image"
@@ -588,20 +577,20 @@ export default function SimulatorClient({ initialConversationId = null }: { init
               {recording ? (
                 <div className="flex h-10 min-w-0 flex-1 items-center gap-2 px-1">
                   <span className="relative flex size-2.5 shrink-0">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
-                    <span className="relative inline-flex size-2.5 rounded-full bg-red-600" />
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-utility-red-400 opacity-75" />
+                    <span className="relative inline-flex size-2.5 rounded-full bg-utility-red-600" />
                   </span>
-                  <span className="font-mono text-sm font-semibold tabular-nums text-foreground">
+                  <span className="font-mono text-sm font-semibold tabular-nums text-primary">
                     {formatElapsed(elapsed)}
                   </span>
-                  <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                  <span className="min-w-0 flex-1 truncate text-xs text-tertiary">
                     {t.recordingHint}
                   </span>
                   <button
                     type="button"
                     onClick={cancelRecording}
                     aria-label={t.cancelVoice}
-                    className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-red-600"
+                    className="rounded-full p-1.5 text-tertiary transition-colors hover:bg-tertiary hover:text-error-primary"
                   >
                     <Trash2 className="size-4" />
                   </button>
@@ -609,16 +598,16 @@ export default function SimulatorClient({ initialConversationId = null }: { init
               ) : (
                 <Input
                   value={draft}
-                  disabled={!conversationId || stopping}
-                  onChange={(e) => {
+                  isDisabled={!conversationId || stopping}
+                  onChange={(value) => {
                     setMicError(null);
-                    setDraft(e.target.value);
+                    setDraft(value);
                   }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") void sendCurrent();
                   }}
                   placeholder={pendingImage ? t.captionPlaceholder : t.placeholder}
-                  className="h-10 border-0 bg-transparent shadow-none focus-visible:ring-0"
+                  inputClassName="h-10 border-0 bg-transparent shadow-none focus-visible:ring-0"
                   dir="auto"
                 />
               )}
@@ -629,55 +618,54 @@ export default function SimulatorClient({ initialConversationId = null }: { init
                   title={t.recordVoice}
                   disabled={!conversationId || stopping || arming}
                   onClick={() => void startRecording()}
-                  className="rounded-full p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+                  className="rounded-full p-2 text-tertiary transition-colors hover:bg-tertiary hover:text-primary disabled:opacity-40"
                 >
                   <Mic className="size-5" />
                 </button>
               ) : null}
             </div>
             <Button
-              size="icon"
-              disabled={!conversationId || stopping || arming}
+              size="md"
+              isDisabled={!conversationId || stopping || arming}
               onClick={() => {
                 if (recording) void stopAndStage();
                 else if (showSend) void sendCurrent();
                 else void startRecording();
               }}
-              className="size-10.5 shrink-0 rounded-full bg-surface-ink text-white hover:bg-surface-ink/90"
+              className="size-10.5 shrink-0 rounded-full bg-primary-solid text-white hover:bg-primary-solid/90"
               aria-label={recording ? t.stageVoice : showSend ? "Send" : t.recordVoice}
-              title={recording ? t.stageVoice : showSend ? "Send" : t.recordVoice}
             >
               {recording ? (
                 <Square className="size-4.5" />
               ) : showSend ? (
-                <Send className="size-4.5 text-brand-saffron" />
+                <Send className="size-4.5 text-brand-200" />
               ) : (
                 <Mic className="size-5" />
               )}
             </Button>
           </div>
         </div>
-        <p className="max-w-[360px] text-center text-xs text-muted-foreground">{t.subtitle}</p>
+        <p className="max-w-[360px] text-center text-xs text-tertiary">{t.subtitle}</p>
       </div>
 
       {/* Right Column: Behind the Scenes AI Telemetry */}
       <Card className="h-fit lg:sticky lg:top-22">
-        <CardHeader className="border-b border-border/70">
+        <CardHeader className="border-b border-secondary/70">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <CardTitle className="flex items-center gap-2">
-                <Activity className="size-4 text-brand-terracotta" />
+                <Activity className="size-4 text-brand-secondary" />
                 {t.traceTitle}
               </CardTitle>
               <CardDescription className="mt-0.5">{t.traceSub}</CardDescription>
             </div>
             <div className="flex items-center gap-2">
               {aiPaused ? (
-                <Badge variant="destructive">{t.aiPaused}</Badge>
+                <Badge color="error">{t.aiPaused}</Badge>
               ) : (
-                <Badge variant="success">{t.aiActive}</Badge>
+                <Badge color="success">{t.aiActive}</Badge>
               )}
-              <Badge variant="outline" className="font-mono tabular-nums">
+              <Badge color="gray" className="font-mono tabular-nums">
                 {events.length} events
               </Badge>
             </div>
@@ -686,13 +674,13 @@ export default function SimulatorClient({ initialConversationId = null }: { init
 
         <CardContent className="flex flex-col gap-4">
           {visibleSlots.length > 0 ? (
-            <div className="rounded-xl border border-border/80 bg-muted/45 p-3">
-              <p className="mb-2 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
+            <div className="rounded-xl border border-secondary/80 bg-tertiary/45 p-3">
+              <p className="mb-2 text-[11px] font-semibold tracking-wider text-tertiary uppercase">
                 {t.slots}
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {visibleSlots.map(([k, v]) => (
-                  <Badge key={k} variant="outline" className="bg-card font-mono text-[11px]">
+                  <Badge key={k} color="gray" className="bg-primary font-mono text-[11px]">
                     {k}: {String(v)}
                   </Badge>
                 ))}
@@ -702,34 +690,34 @@ export default function SimulatorClient({ initialConversationId = null }: { init
 
           <div className="flex max-h-[580px] flex-col gap-2.5 overflow-y-auto pr-1">
             {events.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-border p-8 text-center">
-                <p className="text-sm text-muted-foreground">{t.emptyTrace}</p>
+              <div className="rounded-xl border border-dashed border-secondary p-8 text-center">
+                <p className="text-sm text-tertiary">{t.emptyTrace}</p>
               </div>
             ) : null}
             {events.map((event) => (
               <div
                 key={event.id}
-                className={`rounded-xl border border-border/80 border-l-4 px-3.5 py-2.5 text-xs shadow-2xs ${
+                className={`rounded-xl border border-secondary/80 border-l-4 px-3.5 py-2.5 text-xs shadow-2xs ${
                   event.ok
-                    ? "border-l-emerald-600 bg-card"
-                    : "border-l-red-600 bg-status-danger-bg/50"
+                    ? "border-l-utility-green-600 bg-primary"
+                    : "border-l-utility-red-600 bg-error-primary/50"
                 }`}
               >
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant={event.ok ? "info" : "destructive"} className="font-mono">
+                  <Badge color={event.ok ? "blue" : "error"} className="font-mono">
                     {event.kind}
                   </Badge>
                   {event.provider ? (
-                    <span className="font-mono text-[11px] font-medium text-foreground">
+                    <span className="font-mono text-[11px] font-medium text-primary">
                       {event.provider}/{event.model}
                     </span>
                   ) : null}
                   {event.latency_ms !== null ? (
-                    <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-muted-foreground">
+                    <span className="rounded bg-tertiary px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-tertiary">
                       {event.latency_ms}ms
                     </span>
                   ) : null}
-                  <span className="ml-auto font-mono text-[10px] tabular-nums text-muted-foreground">
+                  <span className="ml-auto font-mono text-[10px] tabular-nums text-tertiary">
                     {new Date(event.created_at).toLocaleTimeString([], {
                       hour: "2-digit",
                       minute: "2-digit",
@@ -738,22 +726,22 @@ export default function SimulatorClient({ initialConversationId = null }: { init
                   </span>
                 </div>
                 {event.kind === "asr.transcript" ? (
-                  <p className="mt-2 rounded-lg bg-muted/50 px-2.5 py-1.5 text-foreground" dir="auto">
+                  <p className="mt-2 rounded-lg bg-tertiary/50 px-2.5 py-1.5 text-primary" dir="auto">
                     {String((event.detail as { transcript?: string }).transcript ?? "")}
                   </p>
                 ) : null}
                 {event.kind === "understand" ? (
-                  <pre className="mt-2 max-h-44 overflow-auto rounded-lg bg-muted/65 p-2.5 font-mono text-[10px] leading-relaxed">
+                  <pre className="mt-2 max-h-44 overflow-auto rounded-lg bg-tertiary/65 p-2.5 font-mono text-[10px] leading-relaxed">
                     {JSON.stringify((event.detail as { understanding?: unknown }).understanding, null, 2)}
                   </pre>
                 ) : null}
                 {event.kind.startsWith("vision.") && event.kind !== "vision.pending" ? (
-                  <pre className="mt-2 max-h-44 overflow-auto rounded-lg bg-muted/65 p-2.5 font-mono text-[10px] leading-relaxed">
+                  <pre className="mt-2 max-h-44 overflow-auto rounded-lg bg-tertiary/65 p-2.5 font-mono text-[10px] leading-relaxed">
                     {JSON.stringify(event.detail, null, 2)}
                   </pre>
                 ) : null}
                 {event.kind === "reply.sent" ? (
-                  <p className="mt-2 rounded-lg bg-muted/40 px-2.5 py-1.5 text-foreground" dir="auto">
+                  <p className="mt-2 rounded-lg bg-tertiary/40 px-2.5 py-1.5 text-primary" dir="auto">
                     {String((event.detail as { reply?: string }).reply ?? "")}
                   </p>
                 ) : null}

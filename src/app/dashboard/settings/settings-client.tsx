@@ -1,13 +1,14 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { CheckCircle2, Copy, CreditCard, Link2, MapPin, MessageCircle, PlugZap, Save, Send, Truck } from "lucide-react";
+import { CheckCircle as CheckCircle2, Copy01 as Copy, CreditCard01 as CreditCard, Link02 as Link2, MarkerPin01 as MapPin, MessageCircle01 as MessageCircle, Zap as PlugZap, Save01 as Save, Send01 as Send, Truck01 as Truck } from "@untitledui/icons";
 import { InstagramIcon, MessengerIcon, WhatsAppIcon } from "@/components/brand-icons";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/base/badges/badges";
+import { Button } from "@/components/base/buttons/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/foundations/card/card";
+import { Input } from "@/components/base/input/input";
+import { Label } from "@/components/base/input/label";
+import { NativeSelect } from "@/components/base/select/select-native";
 import { money } from "../bits";
 
 interface FeeRow {
@@ -83,24 +84,24 @@ export function SettingsClient() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <p className="text-[11px] font-semibold tracking-[0.16em] text-brand-terracotta uppercase">
+        <p className="text-[11px] font-semibold tracking-[0.16em] text-brand-secondary uppercase">
           Merchant Configuration
         </p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-primary sm:text-3xl">
           Settings
         </h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">
+        <p className="mt-0.5 text-sm text-tertiary">
           Payment link, free delivery, courier mode.
         </p>
       </div>
 
       {error ? (
-        <p role="alert" className="rounded-xl border border-status-danger-border bg-status-danger-bg px-4 py-2.5 text-sm text-status-danger-fg">
+        <p role="alert" className="rounded-xl border border-utility-red-200 bg-error-primary px-4 py-2.5 text-sm text-error-primary">
           {error}
         </p>
       ) : null}
       {saved ? (
-        <p className="flex items-center gap-2 rounded-xl border border-status-success-border bg-status-success-bg px-4 py-2.5 text-sm font-medium text-status-success-fg">
+        <p className="flex items-center gap-2 rounded-xl border border-utility-green-200 bg-success-primary px-4 py-2.5 text-sm font-medium text-success-primary">
           <CheckCircle2 className="size-4" />
           Settings saved.
         </p>
@@ -112,9 +113,9 @@ export function SettingsClient() {
 
       <div className="grid gap-6 lg:grid-cols-[1fr_1.15fr]">
         <Card className="h-fit">
-          <CardHeader className="border-b border-border/70">
+          <CardHeader className="border-b border-secondary/70">
             <CardTitle className="flex items-center gap-2">
-              <CreditCard className="size-4 text-brand-terracotta" />
+              <CreditCard className="size-4 text-brand-secondary" />
               Shop
             </CardTitle>
             <CardDescription>
@@ -125,35 +126,34 @@ export function SettingsClient() {
             <form onSubmit={(event) => void onSubmit(event)} className="flex flex-col gap-4">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="pay">Payment link (Flouci / Konnect)</Label>
-                <Input
+                <Input aria-label="Payment link (Flouci / Konnect)"
                   id="pay"
                   value={paymentLink}
-                  onChange={(event) => setPaymentLink(event.target.value)}
+                  onChange={setPaymentLink}
                   placeholder="https://flouci.com/pay/..."
                 />
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="threshold">Free delivery from (DT, empty = never)</Label>
-                <Input
+                <Input aria-label="Free delivery from (DT, empty = never)"
                   id="threshold"
                   value={thresholdDt}
-                  onChange={(event) => setThresholdDt(event.target.value)}
+                  onChange={setThresholdDt}
                   inputMode="decimal"
-                  className="font-mono tabular-nums"
+                  inputClassName="font-mono tabular-nums"
                 />
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="mode">Courier mode</Label>
-                <select
-                  id="mode"
+                <NativeSelect
+                  label="Courier mode"
                   value={mode}
                   onChange={(event) => setMode(event.target.value as Settings["courierMode"])}
-                  className="h-9 rounded-lg border border-input bg-card px-3 text-sm shadow-2xs outline-none transition-[border-color,box-shadow] focus-visible:border-foreground/45 focus-visible:ring-3 focus-visible:ring-ring/25"
-                >
-                  <option value="mock_api">API mock</option>
-                  <option value="browser">Browser agent</option>
-                  <option value="real_api">Real First Delivery API</option>
-                </select>
+                  options={[
+                    { value: "mock_api", label: "API mock" },
+                    { value: "browser", label: "Browser agent" },
+                    { value: "real_api", label: "Real First Delivery API" },
+                  ]}
+                />
               </div>
               <Button type="submit" className="w-fit">
                 <Save className="size-3.5" />
@@ -164,18 +164,18 @@ export function SettingsClient() {
         </Card>
 
         <Card>
-          <CardHeader className="border-b border-border/70">
+          <CardHeader className="border-b border-secondary/70">
             <div className="flex items-center justify-between gap-2">
               <div>
                 <CardTitle className="flex items-center gap-2">
-                  <Truck className="size-4 text-brand-terracotta" />
+                  <Truck className="size-4 text-brand-secondary" />
                   Delivery fees
                 </CardTitle>
                 <CardDescription>
                   Deterministic governorate &amp; First Delivery <code>locality_id</code> mapping.
                 </CardDescription>
               </div>
-              <Badge variant="outline" className="font-mono tabular-nums">
+              <Badge color="gray" className="font-mono tabular-nums">
                 {(settings?.fees ?? []).length} zones
               </Badge>
             </div>
@@ -183,36 +183,36 @@ export function SettingsClient() {
           <CardContent className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
-                <tr className="border-b border-border text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
+                <tr className="border-b border-secondary text-[11px] font-semibold tracking-wider text-tertiary uppercase">
                   <th className="py-2.5 pr-3">Governorate</th>
                   <th className="py-2.5 px-3">Delegation</th>
                   <th className="py-2.5 px-3">locality_id</th>
                   <th className="py-2.5 pl-3 text-right">Fee</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border/60">
+              <tbody className="divide-y divide-secondary/60">
                 {(settings?.fees ?? []).map((fee) => (
                   <tr
                     key={`${fee.governorate}-${fee.delegation ?? ""}-${fee.locality_id ?? ""}`}
-                    className="hover:bg-muted/40"
+                    className="hover:bg-tertiary/40"
                   >
-                    <td className="py-2.5 pr-3 font-medium text-foreground">
+                    <td className="py-2.5 pr-3 font-medium text-primary">
                       <span className="inline-flex items-center gap-1.5">
-                        <MapPin className="size-3 text-brand-terracotta" />
+                        <MapPin className="size-3 text-brand-secondary" />
                         {fee.governorate}
                       </span>
                     </td>
-                    <td className="py-2.5 px-3 text-muted-foreground">{fee.delegation ?? "—"}</td>
+                    <td className="py-2.5 px-3 text-tertiary">{fee.delegation ?? "—"}</td>
                     <td className="py-2.5 px-3">
                       {fee.locality_id != null ? (
-                        <Badge variant="secondary" className="font-mono tabular-nums">
+                        <Badge color="gray" className="font-mono tabular-nums">
                           {fee.locality_id}
                         </Badge>
                       ) : (
                         "—"
                       )}
                     </td>
-                    <td className="py-2.5 pl-3 text-right font-mono font-medium tabular-nums text-foreground">
+                    <td className="py-2.5 pl-3 text-right font-mono font-medium tabular-nums text-primary">
                       {money(fee.fee_millimes)}
                     </td>
                   </tr>
@@ -348,7 +348,7 @@ function WhatsAppConnect() {
 
   return (
     <Card>
-      <CardHeader className="border-b border-border/70">
+      <CardHeader className="border-b border-secondary/70">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <CardTitle className="flex items-center gap-2">
@@ -362,7 +362,7 @@ function WhatsAppConnect() {
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant={status?.configured ? "success" : "outline"}>
+            <Badge color={status?.configured ? "success" : "gray"}>
               {status?.configured ? `Connected${connectedName ? ` · ${connectedName}` : ""}` : "Not connected"}
             </Badge>
             <Button type="button" onClick={() => setOpen((value) => !value)}>
@@ -375,20 +375,20 @@ function WhatsAppConnect() {
       {open ? (
         <CardContent className="flex flex-col gap-5">
           {waError ? (
-            <p role="alert" className="rounded-xl border border-status-danger-border bg-status-danger-bg px-4 py-2.5 text-sm text-status-danger-fg">
+            <p role="alert" className="rounded-xl border border-utility-red-200 bg-error-primary px-4 py-2.5 text-sm text-error-primary">
               {waError}
             </p>
           ) : null}
           {note ? (
-            <p className="flex items-center gap-2 rounded-xl border border-status-success-border bg-status-success-bg px-4 py-2.5 text-sm font-medium text-status-success-fg">
+            <p className="flex items-center gap-2 rounded-xl border border-utility-green-200 bg-success-primary px-4 py-2.5 text-sm font-medium text-success-primary">
               <CheckCircle2 className="size-4" />
               {note}
             </p>
           ) : null}
 
-          <div className="flex flex-col gap-2 rounded-xl border border-border bg-muted/40 p-4">
-            <p className="text-sm font-semibold text-foreground">Easiest: one click with Facebook</p>
-            <p className="text-sm text-muted-foreground">
+          <div className="flex flex-col gap-2 rounded-xl border border-secondary bg-tertiary/40 p-4">
+            <p className="text-sm font-semibold text-primary">Easiest: one click with Facebook</p>
+            <p className="text-sm text-tertiary">
               Log in with the shop&apos;s Facebook account, pick the WhatsApp number, confirm.
               No IDs or tokens to copy — Wassalha exchanges the code and subscribes the webhook automatically.
             </p>
@@ -400,7 +400,7 @@ function WhatsAppConnect() {
               Link WhatsApp
             </a>
             {status && !status.embedded.configured ? (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-tertiary">
                 Not enabled on this server yet: set <code>META_APP_ID</code>, <code>META_APP_SECRET</code> and{" "}
                 <code>WHATSAPP_EMBEDDED_CONFIG_ID</code> in <code>.env.local</code> (Meta app → Facebook Login for
                 Business), or use the manual method below.
@@ -408,28 +408,28 @@ function WhatsAppConnect() {
             ) : null}
           </div>
 
-          <p className="text-sm font-semibold text-foreground">Manual method: paste your credentials</p>
+          <p className="text-sm font-semibold text-primary">Manual method: paste your credentials</p>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="wa-phone">Phone Number ID</Label>
-              <Input id="wa-phone" value={phoneNumberId} onChange={(e) => setPhoneNumberId(e.target.value)} className="font-mono" placeholder="1065…" />
+              <Input aria-label="Phone Number ID" id="wa-phone" value={phoneNumberId} onChange={setPhoneNumberId} inputClassName="font-mono" placeholder="1065…" />
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="wa-waba">WhatsApp Business Account ID (optional)</Label>
-              <Input id="wa-waba" value={wabaId} onChange={(e) => setWabaId(e.target.value)} className="font-mono" placeholder="1098…" />
+              <Input aria-label="WhatsApp Business Account ID (optional)" id="wa-waba" value={wabaId} onChange={setWabaId} inputClassName="font-mono" placeholder="1098…" />
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="wa-token">Access Token {status?.tokenSet ? "(already saved — leave empty to keep it)" : ""}</Label>
-              <Input id="wa-token" type="password" value={accessToken} onChange={(e) => setAccessToken(e.target.value)} className="font-mono" placeholder="EAA…" />
+              <Input id="wa-token" type="password" value={accessToken} onChange={setAccessToken} inputClassName="font-mono" placeholder="EAA…" />
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="wa-verify">Verify Token (paste it into Meta)</Label>
               <div className="flex gap-2">
-                <Input id="wa-verify" value={verifyToken} onChange={(e) => setVerifyToken(e.target.value)} className="font-mono" placeholder="wassalha-…" />
+                <Input aria-label="Verify Token (paste it into Meta)" id="wa-verify" value={verifyToken} onChange={setVerifyToken} inputClassName="font-mono" placeholder="wassalha-…" />
                 <Button
                   type="button"
-                  variant="outline"
+                  color="secondary"
                   onClick={() => setVerifyToken(`wassalha-${Math.random().toString(36).slice(2, 10)}`)}
                 >
                   Generate
@@ -439,60 +439,60 @@ function WhatsAppConnect() {
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Button type="button" disabled={busy} onClick={() => void test(false)}>
+            <Button type="button" isDisabled={busy} onClick={() => void test(false)}>
               <PlugZap className="size-3.5" />
               Test connection
             </Button>
-            <Button type="button" variant="secondary" disabled={busy || !phoneNumberId.trim() || !verifyToken.trim()} onClick={() => void save()}>
+            <Button type="button" color="secondary" isDisabled={busy || !phoneNumberId.trim() || !verifyToken.trim()} onClick={() => void save()}>
               <Save className="size-3.5" />
               Save &amp; connect
             </Button>
           </div>
 
           <div className="flex flex-col gap-2">
-            <p className="text-sm font-semibold text-foreground">Manual method: paste the webhook into Meta</p>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm font-semibold text-primary">Manual method: paste the webhook into Meta</p>
+            <p className="text-sm text-tertiary">
               In the Meta app: WhatsApp → Configuration → Webhook → Edit. Paste the URL and the Verify Token,
               save, then subscribe to the <code>messages</code>.
             </p>
             <div className="grid gap-2">
               <div className="flex gap-2">
-                <Input readOnly value={status?.webhookUrl ?? ""} className="font-mono text-xs" aria-label="Webhook URL" />
-                <Button type="button" variant="outline" onClick={() => void copy(status?.webhookUrl ?? "")}>
+                <Input isReadOnly value={status?.webhookUrl ?? ""} inputClassName="font-mono text-xs" aria-label="Webhook URL" />
+                <Button type="button" color="secondary" onClick={() => void copy(status?.webhookUrl ?? "")}>
                   <Copy className="size-3.5" />
                   Copy
                 </Button>
               </div>
               <div className="flex gap-2">
-                <Input readOnly value={verifyToken} className="font-mono text-xs" aria-label="Verify token" />
-                <Button type="button" variant="outline" onClick={() => void copy(verifyToken)}>
+                <Input isReadOnly value={verifyToken} inputClassName="font-mono text-xs" aria-label="Verify token" />
+                <Button type="button" color="secondary" onClick={() => void copy(verifyToken)}>
                   <Copy className="size-3.5" />
                   Copy
                 </Button>
               </div>
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-tertiary">
               Local demo tip: expose this machine temporarily with an HTTPS tunnel and put that public URL
               dans <code>APP_BASE_URL</code>, otherwise Meta cannot call the webhook.
             </p>
           </div>
 
           <div className="flex flex-col gap-2">
-            <p className="text-sm font-semibold text-foreground">Manual method: get a test message</p>
+            <p className="text-sm font-semibold text-primary">Manual method: get a test message</p>
             <div className="flex flex-wrap gap-2">
               <Input
                 value={testRecipient}
-                onChange={(e) => setTestRecipient(e.target.value)}
-                className="w-56 font-mono"
+                onChange={setTestRecipient}
+                inputClassName="w-56 font-mono"
                 placeholder="Your mobile, e.g. 21622123456"
                 inputMode="tel"
               />
-              <Button type="button" variant="outline" disabled={busy || !testRecipient.trim()} onClick={() => void test(true)}>
+              <Button type="button" color="secondary" isDisabled={busy || !testRecipient.trim()} onClick={() => void test(true)}>
                 <Send className="size-3.5" />
                 Send test message
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-tertiary">
               Then message your WhatsApp Business number from another phone: the conversation lands
               in Inbox and the agent replies just like in the simulator.
             </p>
@@ -615,9 +615,9 @@ function FacebookConnect() {
 
   return (
     <Card>
-      <CardHeader className="border-b border-border/70">
+      <CardHeader className="border-b border-secondary/70">
         <CardTitle className="flex items-center gap-2">
-          <MessageCircle className="size-4 text-brand-terracotta" />
+          <MessageCircle className="size-4 text-brand-secondary" />
           Messenger &amp; Instagram
         </CardTitle>
         <CardDescription>
@@ -627,27 +627,27 @@ function FacebookConnect() {
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {fbError ? (
-          <p role="alert" className="rounded-xl border border-status-danger-border bg-status-danger-bg px-4 py-2.5 text-sm text-status-danger-fg">
+          <p role="alert" className="rounded-xl border border-utility-red-200 bg-error-primary px-4 py-2.5 text-sm text-error-primary">
             {fbError}
           </p>
         ) : null}
         {note ? (
-          <p className="flex items-center gap-2 rounded-xl border border-status-success-border bg-status-success-bg px-4 py-2.5 text-sm font-medium text-status-success-fg">
+          <p className="flex items-center gap-2 rounded-xl border border-utility-green-200 bg-success-primary px-4 py-2.5 text-sm font-medium text-success-primary">
             <CheckCircle2 className="size-4" />
             {note}
           </p>
         ) : null}
 
         <div className="grid gap-3 sm:grid-cols-2">
-          <div className="flex flex-col gap-2 rounded-xl border border-border bg-muted/40 p-4">
+          <div className="flex flex-col gap-2 rounded-xl border border-secondary bg-tertiary/40 p-4">
             <div className="flex items-center justify-between gap-2">
-              <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <p className="flex items-center gap-2 text-sm font-semibold text-primary">
                 <span className="flex size-7 items-center justify-center rounded-lg bg-[#0084FF] text-white">
                   <MessengerIcon className="size-4" />
                 </span>
                 Messenger
               </p>
-              <Badge variant={status?.messenger.connected ? "success" : "outline"}>
+              <Badge color={status?.messenger.connected ? "success" : "gray"}>
                 {status?.messenger.connected ? `Connected · ${status.messenger.pageName ?? status.messenger.pageId}` : "Not connected"}
               </Badge>
             </div>
@@ -660,22 +660,22 @@ function FacebookConnect() {
                 Link Messenger
               </a>
               {status?.messenger.connected ? (
-                <Button type="button" variant="outline" disabled={busy} onClick={() => void disconnect("messenger")}>
+                <Button type="button" color="secondary" isDisabled={busy} onClick={() => void disconnect("messenger")}>
                   Disconnect
                 </Button>
               ) : null}
             </div>
           </div>
 
-          <div className="flex flex-col gap-2 rounded-xl border border-border bg-muted/40 p-4">
+          <div className="flex flex-col gap-2 rounded-xl border border-secondary bg-tertiary/40 p-4">
             <div className="flex items-center justify-between gap-2">
-              <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <p className="flex items-center gap-2 text-sm font-semibold text-primary">
                 <span className="flex size-7 items-center justify-center rounded-lg bg-gradient-to-tr from-[#FEDA75] via-[#D62976] to-[#4F5BD5] text-white">
                   <InstagramIcon className="size-4" />
                 </span>
                 Instagram
               </p>
-              <Badge variant={status?.instagram.connected ? "success" : "outline"}>
+              <Badge color={status?.instagram.connected ? "success" : "gray"}>
                 {status?.instagram.connected ? `Connected${status.instagram.username ? ` · @${status.instagram.username}` : ""}` : "Not connected"}
               </Badge>
             </div>
@@ -688,19 +688,19 @@ function FacebookConnect() {
                 Link Instagram
               </a>
               {status?.instagram.connected ? (
-                <Button type="button" variant="outline" disabled={busy} onClick={() => void disconnect("instagram")}>
+                <Button type="button" color="secondary" isDisabled={busy} onClick={() => void disconnect("instagram")}>
                   Disconnect
                 </Button>
               ) : null}
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-tertiary">
               Needs an Instagram Business/Creator account linked to the Facebook Page — personal accounts cannot be connected.
             </p>
           </div>
         </div>
 
         {status && !status.oauthConfigured ? (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-tertiary">
             Not enabled on this server yet: set <code>META_APP_ID</code> and <code>META_APP_SECRET</code> in{" "}
             <code>.env.local</code> (the same Meta app as WhatsApp), add the Messenger and Instagram products to it,
             and subscribe both the Page and Instagram webhook objects to the URL above.
@@ -708,8 +708,8 @@ function FacebookConnect() {
         ) : null}
 
         {pages && platform ? (
-          <div className="flex flex-col gap-2 rounded-xl border border-border p-4">
-            <p className="text-sm font-semibold text-foreground">
+          <div className="flex flex-col gap-2 rounded-xl border border-secondary p-4">
+            <p className="text-sm font-semibold text-primary">
               Choose the Page to connect for {platform === "messenger" ? "Messenger" : "Instagram"}:
             </p>
             {pages.map((page) => (
@@ -721,15 +721,15 @@ function FacebookConnect() {
                   checked={selectedPage === page.pageId}
                   onChange={() => setSelectedPage(page.pageId)}
                 />
-                <span className="font-medium text-foreground">{page.pageName}</span>
+                <span className="font-medium text-primary">{page.pageName}</span>
                 {platform === "instagram" ? (
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-xs text-tertiary">
                     {page.instagram ? `@${page.instagram.username ?? page.instagram.id}` : "no Instagram linked"}
                   </span>
                 ) : null}
               </label>
             ))}
-            <Button type="button" className="mt-1 w-fit" disabled={busy} onClick={() => void connect()}>
+            <Button type="button" className="mt-1 w-fit" isDisabled={busy} onClick={() => void connect()}>
               <PlugZap className="size-3.5" />
               Connect this Page
             </Button>

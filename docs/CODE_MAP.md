@@ -88,15 +88,15 @@ hackathon-project/
 │   └── seed-catalog.ts        photos → SAM crop → PE embedding → Storage + Postgres
 ├── src/
 │   ├── app/
-│   │   ├── layout.tsx         fr locale, Geist fonts, metadata
+│   │   ├── layout.tsx         en locale, Inter font (`--font-inter`), metadata
 │   │   ├── page.tsx           provider-status dashboard (server component)
-│   │   ├── globals.css        Tailwind 4 + shadcn tokens (light/dark, charts, sidebar)
+│   │   ├── globals.css        Tailwind 4 + Untitled UI theme (`src/styles/untitledui.css`)
 │   │   └── favicon.ico
-│   ├── components/ui/         shadcn "base-nova" primitives on @base-ui/react
-│   │   ├── badge.tsx  button.tsx  card.tsx  input.tsx  label.tsx
+│   ├── components/base/       Untitled UI primitives on React Aria (buttons, badges, input, select…)
+│   ├── components/foundations/card/  local Card wrapper on Untitled tokens
+│   ├── utils/cx.ts            Untitled `cx`/`sortCx` (tailwind-merge)
 │   ├── lib/
 │   │   ├── env.ts             zod-parsed, cached server env + providerStatus()
-│   │   ├── utils.ts           `export { cn } from "cn"`
 │   │   ├── ai/
 │   │   │   ├── meta.ts        OpenAI SDK pointed at https://api.meta.ai/v1
 │   │   │   ├── baseten.ts     Spark Open client + raw PE predict call
@@ -595,7 +595,7 @@ lands.
 
 ## 10. UI shell (built)
 
-- `src/app/layout.tsx`: `<html lang="fr">`, Geist + Geist Mono variables, metadata title
+- `src/app/layout.tsx`: `<html lang="en">`, Inter variable (`--font-inter`), metadata title
   "Wassalha", body flex column, min-h-full. Uses the Next 16 typed `LayoutProps<"/">`.
 - `src/app/page.tsx`: an async Server Component. `StatusSection` does `await connection()` (Next 16
   `cacheComponents` opt-out) and renders two cards:
@@ -606,17 +606,14 @@ lands.
      `AI_MODE`.
   Wrapped in `<Suspense>`; copy is French per the UI rule. This page is the Day-1 operator
   dashboard: it answers "are my keys wired?" without printing them.
-- `globals.css`: Tailwind 4 import + `tw-animate-css` + `shadcn/tailwind.css`; OKLCH design tokens
-  for light/dark, charts and sidebar; radius scale derived from `--radius: 0.625rem`.
-  **Bug:** `--font-sans: var(--font-sans)` is self-referential in `@theme inline`; it should be
-  `var(--font-geist-sans)`, so the Geist Sans variable set by `layout.tsx` never reaches
-  `font-sans` (the body falls back to a default sans).
-- `src/components/ui/*`: shadcn **base-nova** primitives built on `@base-ui/react`
-  (`useRender` + `mergeProps`), `class-variance-authority`, and `cn` imported straight from the
-  `cn` npm package (`src/lib/utils.ts` only re-exports it). `components.json` pins
-  style `base-nova`, base colour neutral, lucide icons, RSC true.
-- Packaging nit: `shadcn` (the CLI) is a **runtime** dependency; it belongs in devDependencies.
-  `@base-ui/react`, `cva`, `clsx`, `tailwind-merge` and `cn` are all installed simultaneously.
+- `globals.css`: Tailwind 4 import + Untitled UI theme (`src/styles/untitledui.css`, stock brand
+  purple / neutral tokens, light + `.dark` blocks); app-specific utilities are `.bg-dot-grid`,
+  `.bg-chat-canvas`, `.bg-checkerboard` and the Leaflet pin tweaks.
+- Design system (see `docs/DESIGN_SYSTEM.md`): Untitled UI React free components copied in via
+  `npx untitledui@latest add …` under `src/components/base/` + `src/components/application/`,
+  built on React Aria; `Card` is a local wrapper in `src/components/foundations/card/card.tsx`;
+  icons are `@untitledui/icons`. The old shadcn/@base-ui primitives, `components.json`, the
+  `/design-system` route and the Souk & Signal tokens are removed.
 
 ---
 
@@ -842,10 +839,9 @@ behind steps 2–3. The rest is the Day 2–6 build.
 
 **Frontend / packaging**
 
-13. `globals.css` `--font-sans: var(--font-sans)` is self-referential → Geist Sans never applies
-    to `font-sans`.
-14. `shadcn` CLI is a runtime dependency; `cn` (npm) coexists with `clsx` + `tailwind-merge`, and
-    `src/lib/utils.ts` only re-exports `cn` while components import `cn` directly.
+13. ~~`globals.css` font self-reference / shadcn packaging~~ — resolved by the Untitled UI
+    migration: Inter is wired via `--font-inter`, class merging is `src/utils/cx.ts`, and the
+    shadcn/@base-ui/Lucide dependencies are removed.
 15. No `middleware.ts` → no SSR session refresh yet.
 16. `worker/` is empty; the entire courier path is unbuilt, so acceptance test 5 has no foundation.
 

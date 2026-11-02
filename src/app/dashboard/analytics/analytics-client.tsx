@@ -1,8 +1,8 @@
 "use client";
 
-import { BarChart3 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { BarChartSquare01 as BarChart3 } from "@untitledui/icons";
+import { Badge } from "@/components/base/badges/badges";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/foundations/card/card";
 import type { AnalyticsPayload } from "@/lib/dashboard/analytics";
 import { money } from "../bits";
 import { usePoll } from "../use-poll";
@@ -13,13 +13,13 @@ export function AnalyticsClient() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <p className="text-[11px] font-semibold tracking-[0.16em] text-brand-terracotta uppercase">Overview</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">Analytics</h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">Numbers computed from stored orders and events.</p>
+        <p className="text-[11px] font-semibold tracking-[0.16em] text-brand-secondary uppercase">Overview</p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-primary sm:text-3xl">Analytics</h1>
+        <p className="mt-0.5 text-sm text-tertiary">Numbers computed from stored orders and events.</p>
       </div>
 
       {error ? (
-        <p role="alert" className="rounded-xl border border-status-danger-border bg-status-danger-bg px-4 py-2.5 text-sm text-status-danger-fg">{error}</p>
+        <p role="alert" className="rounded-xl border border-utility-red-200 bg-error-primary px-4 py-2.5 text-sm text-error-primary">{error}</p>
       ) : null}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -31,33 +31,33 @@ export function AnalyticsClient() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
-          <CardHeader className="border-b border-border/70">
+          <CardHeader className="border-b border-secondary/70">
             <CardTitle className="flex items-center gap-2">
-              <BarChart3 className="size-4 text-brand-terracotta" />
+              <BarChart3 className="size-4 text-brand-secondary" />
               Orders by status
             </CardTitle>
             <CardDescription>Including statuses after First Delivery sync.</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-2 text-sm">
-            {data && data.ordersByStatus.length === 0 ? <p className="text-muted-foreground">No orders yet.</p> : null}
+            {data && data.ordersByStatus.length === 0 ? <p className="text-tertiary">No orders yet.</p> : null}
             {(data?.ordersByStatus ?? []).map((row) => (
               <div key={row.status} className="flex items-center justify-between gap-4">
                 <span className="font-mono text-xs">{row.status}</span>
-                <Badge variant="outline" className="font-mono tabular-nums">{row.count}</Badge>
+                <Badge color="gray" className="font-mono tabular-nums">{row.count}</Badge>
               </div>
             ))}
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="border-b border-border/70">
+          <CardHeader className="border-b border-secondary/70">
             <CardTitle>Risk & activity</CardTitle>
             <CardDescription>Deliveries, returns and signals feeding the score.</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3 text-sm">
             <div className="flex flex-wrap gap-2">
               {(data?.ordersByRisk ?? []).map((row) => (
-                <Badge key={row.level} variant={row.level === "red" ? "destructive" : row.level === "yellow" ? "warning" : row.level === "green" ? "success" : "outline"}>
+                <Badge key={row.level} color={row.level === "red" ? "error" : row.level === "yellow" ? "warning" : row.level === "green" ? "success" : "gray"}>
                   {row.level}: {row.count}
                 </Badge>
               ))}
@@ -78,9 +78,9 @@ export function AnalyticsClient() {
 
 function Kpi({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-border bg-card px-3.5 py-3 shadow-2xs">
+    <div className="rounded-xl border border-secondary bg-primary px-3.5 py-3 shadow-2xs">
       <p className="font-mono text-base font-semibold tabular-nums leading-none">{value}</p>
-      <p className="mt-1 text-[10px] text-muted-foreground">{label}</p>
+      <p className="mt-1 text-[10px] text-tertiary">{label}</p>
     </div>
   );
 }
@@ -88,7 +88,7 @@ function Kpi({ label, value }: { label: string; value: string }) {
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-4">
-      <span className="text-muted-foreground">{label}</span>
+      <span className="text-tertiary">{label}</span>
       <span className="font-mono tabular-nums">{value}</span>
     </div>
   );

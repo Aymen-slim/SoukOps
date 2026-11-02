@@ -1,12 +1,12 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { CheckCircle2, ImagePlus, Layers, Scissors, Sparkles } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { CheckCircle as CheckCircle2, ImagePlus, LayersThree01 as Layers, Scissors01 as Scissors, Stars01 as Sparkles } from "@untitledui/icons";
+import { Badge } from "@/components/base/badges/badges";
+import { Button } from "@/components/base/buttons/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/foundations/card/card";
+import { Input } from "@/components/base/input/input";
+import { Label } from "@/components/base/input/label";
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -110,29 +110,29 @@ export function CatalogClient() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-[11px] font-semibold tracking-[0.16em] text-brand-terracotta uppercase">
+          <p className="text-[11px] font-semibold tracking-[0.16em] text-brand-secondary uppercase">
             Vision &amp; Vector Index
           </p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-primary sm:text-3xl">
             Catalog
           </h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
+          <p className="mt-0.5 text-sm text-tertiary">
             Photo, cutout, then save. The embedding runs only after you confirm.
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant="info" className="font-mono">SAM 3.1 Cutout</Badge>
-          <Badge variant="outline" className="font-mono">PE 1024-dim</Badge>
+          <Badge color="blue" className="font-mono">SAM 3.1 Cutout</Badge>
+          <Badge color="gray" className="font-mono">PE 1024-dim</Badge>
         </div>
       </div>
 
       {error ? (
-        <p role="alert" className="rounded-xl border border-status-danger-border bg-status-danger-bg px-4 py-2.5 text-sm text-status-danger-fg">
+        <p role="alert" className="rounded-xl border border-utility-red-200 bg-error-primary px-4 py-2.5 text-sm text-error-primary">
           {error}
         </p>
       ) : null}
       {message ? (
-        <p className="flex items-center gap-2 rounded-xl border border-status-success-border bg-status-success-bg px-4 py-2.5 text-sm font-medium text-status-success-fg">
+        <p className="flex items-center gap-2 rounded-xl border border-utility-green-200 bg-success-primary px-4 py-2.5 text-sm font-medium text-success-primary">
           <CheckCircle2 className="size-4" />
           {message}
         </p>
@@ -140,9 +140,9 @@ export function CatalogClient() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="h-fit">
-          <CardHeader className="border-b border-border/70">
+          <CardHeader className="border-b border-secondary/70">
             <CardTitle className="flex items-center gap-2">
-              <ImagePlus className="size-4 text-brand-terracotta" />
+              <ImagePlus className="size-4 text-brand-secondary" />
               New photo
             </CardTitle>
             <CardDescription>
@@ -153,22 +153,23 @@ export function CatalogClient() {
             <form onSubmit={(event) => void preview(event)} className="flex flex-col gap-4">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="photo">Photo</Label>
-                <Input
+                <input
                   id="photo"
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
                   onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                  className="w-full rounded-lg bg-primary px-3 py-2 text-sm text-primary shadow-xs ring-1 ring-primary ring-inset file:mr-3 file:rounded-md file:border-0 file:bg-brand-solid file:px-2.5 file:py-1.5 file:text-xs file:font-semibold file:text-white focus-visible:outline-2 focus-visible:outline-brand focus-visible:outline-offset-2"
                 />
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="phrase">Category (short English, for the cutout)</Label>
-                <Input
+                <Input aria-label="Category (short English, for the cutout)"
                   id="phrase"
                   value={phrase}
-                  onChange={(event) => setPhrase(event.target.value)}
+                  onChange={setPhrase}
                 />
               </div>
-              <Button type="submit" disabled={busy || !file} className="w-fit">
+              <Button type="submit" isDisabled={busy || !file} className="w-fit">
                 <Scissors className="size-3.5" />
                 Preview cutout
               </Button>
@@ -178,9 +179,9 @@ export function CatalogClient() {
 
         {cropBase64 ? (
           <Card>
-            <CardHeader className="border-b border-border/70">
+            <CardHeader className="border-b border-secondary/70">
               <CardTitle className="flex items-center gap-2">
-                <Sparkles className="size-4 text-brand-cobalt" />
+                <Sparkles className="size-4 text-utility-blue-600" />
                 Preview
               </CardTitle>
               <CardDescription>
@@ -190,11 +191,11 @@ export function CatalogClient() {
             <CardContent>
               <form onSubmit={(event) => void confirm(event)} className="flex flex-col gap-4">
                 {usedOriginal ? (
-                  <p className="text-xs text-status-warning-fg">
+                  <p className="text-xs text-warning-primary">
                     No cutout found. The full photo will be used.
                   </p>
                 ) : null}
-                <div className="flex justify-center rounded-2xl border border-border bg-checkerboard p-4">
+                <div className="flex justify-center rounded-2xl border border-secondary bg-checkerboard p-4">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={`data:image/png;base64,${cropBase64}`}
@@ -205,53 +206,53 @@ export function CatalogClient() {
                 <div className="grid gap-3.5 sm:grid-cols-2">
                   <div className="flex flex-col gap-1.5 sm:col-span-2">
                     <Label htmlFor="name">Name</Label>
-                    <Input
+                    <Input aria-label="Name"
                       id="name"
                       value={name}
-                      onChange={(event) => setName(event.target.value)}
-                      required
+                      onChange={setName}
+                      isRequired
                     />
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor="price">Price (DT)</Label>
-                    <Input
+                    <Input aria-label="Price (DT)"
                       id="price"
                       value={priceDt}
-                      onChange={(event) => setPriceDt(event.target.value)}
+                      onChange={setPriceDt}
                       inputMode="decimal"
-                      className="font-mono tabular-nums"
+                      inputClassName="font-mono tabular-nums"
                     />
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor="floor">Floor (DT)</Label>
-                    <Input
+                    <Input aria-label="Floor (DT)"
                       id="floor"
                       value={floorDt}
-                      onChange={(event) => setFloorDt(event.target.value)}
+                      onChange={setFloorDt}
                       inputMode="decimal"
-                      className="font-mono tabular-nums"
+                      inputClassName="font-mono tabular-nums"
                     />
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor="stock">Stock</Label>
-                    <Input
+                    <Input aria-label="Stock"
                       id="stock"
                       value={stock}
-                      onChange={(event) => setStock(event.target.value)}
+                      onChange={setStock}
                       inputMode="numeric"
-                      className="font-mono tabular-nums"
+                      inputClassName="font-mono tabular-nums"
                     />
                   </div>
                   <div className="flex flex-col justify-end">
-                    <div className="rounded-lg bg-muted/65 px-3 py-2 text-xs">
-                      <span className="text-muted-foreground">Max negotiation room: </span>
-                      <span className="font-mono font-semibold tabular-nums text-foreground">
+                    <div className="rounded-lg bg-tertiary/65 px-3 py-2 text-xs">
+                      <span className="text-tertiary">Max negotiation room: </span>
+                      <span className="font-mono font-semibold tabular-nums text-primary">
                         {maxDiscountDt} DT
                       </span>
                     </div>
                   </div>
                 </div>
-                <Button type="submit" variant="brand" disabled={busy}>
+                <Button type="submit" color="primary" isDisabled={busy}>
                   <Layers className="size-4" />
                   Save to catalog
                 </Button>

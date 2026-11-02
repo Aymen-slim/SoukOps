@@ -13,18 +13,18 @@ async function SimulatorWithQuery({ searchParams }: Pick<PageProps<"/simulator">
 export default function SimulatorPage({ searchParams }: PageProps<"/simulator">) {
   if (!simulatorIsPublic()) {
     return (
-      <main className="min-h-screen bg-medina-grid">
+      <main className="min-h-screen bg-dot-grid">
         <SiteBar />
-        <p className="mx-auto w-full max-w-6xl px-4 py-10 text-sm text-muted-foreground sm:px-6">
+        <p className="mx-auto w-full max-w-6xl px-4 py-10 text-sm text-tertiary sm:px-6">
           Simulator is closed for now. Set <span className="font-mono">SIMULATOR_PUBLIC</span> back to true to reopen the demo.
         </p>
       </main>
     );
   }
   return (
-    <main className="min-h-screen bg-medina-grid">
+    <main className="min-h-screen bg-dot-grid">
       <SiteBar />
-      <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">Loading the chat…</p>}>
+      <Suspense fallback={<p className="p-6 text-sm text-tertiary">Loading the chat…</p>}>
         <SimulatorWithQuery searchParams={searchParams} />
       </Suspense>
     </main>

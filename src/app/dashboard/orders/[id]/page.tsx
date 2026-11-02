@@ -8,7 +8,7 @@ async function Gate({ params }: { params: Promise<{ id: string }> }) {
 
 export default function OrderPage({ params }: { params: Promise<{ id: string }> }) {
   return (
-    <Suspense fallback={<p className="text-sm text-muted-foreground">Loading the order…</p>}>
+    <Suspense fallback={<p className="text-sm text-tertiary">Loading the order…</p>}>
       <Gate params={params} />
     </Suspense>
   );

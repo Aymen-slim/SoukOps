@@ -1,10 +1,11 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { AlertCircle, Inbox, MessageSquareReply, PlayCircle, Send } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { AlertCircle, Inbox01 as Inbox, MessageChatSquare as MessageSquareReply, PlayCircle, Send01 as Send } from "@untitledui/icons";
+import { Badge } from "@/components/base/badges/badges";
+import { Button } from "@/components/base/buttons/button";
+import { Card, CardContent } from "@/components/foundations/card/card";
+import { TextArea } from "@/components/base/textarea/textarea";
 import { usePoll } from "../use-poll";
 
 interface ConversationRow {
@@ -62,33 +63,33 @@ export function ConversationsClient() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-[11px] font-semibold tracking-[0.16em] text-brand-terracotta uppercase">
+          <p className="text-[11px] font-semibold tracking-[0.16em] text-brand-secondary uppercase">
             Human Handover
           </p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-primary sm:text-3xl">
             Inbox
           </h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
+          <p className="mt-0.5 text-sm text-tertiary">
             Take over when the agent is paused.
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant={pausedCount > 0 ? "warning" : "outline"} className="font-mono tabular-nums">
+          <Badge color={pausedCount > 0 ? "warning" : "gray"} className="font-mono tabular-nums">
             {pausedCount} paused
           </Badge>
-          <Badge variant="outline" className="font-mono tabular-nums">
+          <Badge color="gray" className="font-mono tabular-nums">
             {rows.length} total
           </Badge>
         </div>
       </div>
 
       {error ? (
-        <p role="alert" className="rounded-xl border border-status-danger-border bg-status-danger-bg px-4 py-2.5 text-sm text-status-danger-fg">
+        <p role="alert" className="rounded-xl border border-utility-red-200 bg-error-primary px-4 py-2.5 text-sm text-error-primary">
           {error}
         </p>
       ) : null}
       {actionError ? (
-        <p role="alert" className="rounded-xl border border-status-danger-border bg-status-danger-bg px-4 py-2.5 text-sm text-status-danger-fg">
+        <p role="alert" className="rounded-xl border border-utility-red-200 bg-error-primary px-4 py-2.5 text-sm text-error-primary">
           {actionError}
         </p>
       ) : null}
@@ -96,9 +97,9 @@ export function ConversationsClient() {
       {data && rows.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center gap-2 py-12 text-center">
-            <Inbox className="size-8 text-muted-foreground/60" />
-            <p className="text-sm font-medium text-foreground">No conversations.</p>
-            <p className="text-xs text-muted-foreground">
+            <Inbox className="size-8 text-tertiary/60" />
+            <p className="text-sm font-medium text-primary">No conversations.</p>
+            <p className="text-xs text-tertiary">
               Active and handed-over WhatsApp conversations will appear here.
             </p>
           </CardContent>
@@ -113,7 +114,7 @@ export function ConversationsClient() {
               key={row.id}
               className={
                 row.aiPaused
-                  ? "ring-status-warning-border bg-card shadow-xs"
+                  ? "ring-utility-yellow-200 bg-primary shadow-xs"
                   : ""
               }
             >
@@ -121,57 +122,57 @@ export function ConversationsClient() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <button
                     type="button"
-                    className="flex cursor-pointer items-center gap-2 text-left text-base font-semibold text-foreground hover:text-brand-terracotta"
+                    className="flex cursor-pointer items-center gap-2 text-left text-base font-semibold text-primary hover:text-brand-secondary"
                     onClick={() => setOpenId(isOpen ? null : row.id)}
                   >
-                    <MessageSquareReply className="size-4 text-brand-terracotta" />
+                    <MessageSquareReply className="size-4 text-brand-secondary" />
                     <span>{row.customerName ?? "Buyer"}</span>
-                    <span className="font-mono text-xs font-normal tabular-nums text-muted-foreground">
+                    <span className="font-mono text-xs font-normal tabular-nums text-tertiary">
                       {row.phone}
                     </span>
                   </button>
                   <div className="flex items-center gap-2">
                     {row.aiPaused ? (
-                      <Badge variant="destructive">AI paused</Badge>
+                      <Badge color="error">AI paused</Badge>
                     ) : (
-                      <Badge variant="success">AI on</Badge>
+                      <Badge color="success">AI on</Badge>
                     )}
                   </div>
                 </div>
 
                 {row.handoverReason ? (
-                  <div className="flex items-center gap-2 rounded-xl border border-status-warning-border bg-status-warning-bg/70 px-3 py-1.5 text-xs text-status-warning-fg">
+                  <div className="flex items-center gap-2 rounded-xl border border-utility-yellow-200 bg-warning-primary/70 px-3 py-1.5 text-xs text-warning-primary">
                     <AlertCircle className="size-3.5 shrink-0" />
                     <span>Reason: {row.handoverReason}</span>
                   </div>
                 ) : null}
 
                 {row.lastMessage ? (
-                  <p className="rounded-xl bg-muted/55 px-3 py-2 text-sm text-muted-foreground" dir="auto">
+                  <p className="rounded-xl bg-tertiary/55 px-3 py-2 text-sm text-tertiary" dir="auto">
                     {row.lastMessage}
                   </p>
                 ) : null}
 
                 {isOpen ? (
                   <form className="flex flex-col gap-2.5 pt-1" onSubmit={(event) => void reply(event, row.id)}>
-                    <textarea
+                    <TextArea
                       value={draft}
-                      onChange={(event) => setDraft(event.target.value)}
+                      onChange={setDraft}
                       rows={3}
-                      className="w-full rounded-xl border border-input bg-card px-3 py-2 text-sm shadow-2xs outline-none transition-[border-color,box-shadow] focus-visible:border-foreground/45 focus-visible:ring-3 focus-visible:ring-ring/25"
                       placeholder="Write to the buyer…"
                       dir="auto"
+                      aria-label="Write to the buyer"
                     />
                     <div className="flex flex-wrap gap-2">
-                      <Button type="submit" disabled={busy}>
+                      <Button type="submit" isDisabled={busy}>
                         <Send className="size-3.5" />
                         Send
                       </Button>
                       {row.aiPaused ? (
                         <Button
                           type="button"
-                          variant="outline"
-                          disabled={busy}
+                          color="secondary"
+                          isDisabled={busy}
                           onClick={() => void resume(row.id)}
                         >
                           <PlayCircle className="size-3.5" />

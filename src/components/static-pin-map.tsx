@@ -47,5 +47,5 @@ export function StaticPinMap({ lat, lng }: { lat: number; lng: number }) {
     };
   }, [lat, lng]);
 
-  return <div ref={mapRef} className="h-56 w-full rounded-xl border border-border/80" />;
+  return <div ref={mapRef} className="h-56 w-full rounded-xl border border-secondary/80" />;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@/components/base/badges/badges";
 import { formatMillimesForChat } from "@/lib/domain/pricing";
 import { osmTilePin } from "@/lib/couriers/osmTile";
 
@@ -9,25 +9,25 @@ export function money(millimes: number): string {
 }
 
 export function RiskBadge({ level, score }: { level: string | null; score: number | null }) {
-  const variant =
+  const color =
     level === "red"
-      ? "destructive"
+      ? "error"
       : level === "yellow"
         ? "warning"
         : level === "green"
           ? "success"
-          : "outline";
+          : "gray";
   const dotColor =
     level === "red"
-      ? "bg-red-600"
+      ? "bg-utility-red-600"
       : level === "yellow"
-        ? "bg-amber-600"
+        ? "bg-utility-yellow-600"
         : level === "green"
-          ? "bg-emerald-600"
-          : "bg-stone-400";
+          ? "bg-utility-green-600"
+          : "bg-neutral-400";
   const label = level === "green" ? "Green" : level === "yellow" ? "Amber" : level === "red" ? "Red" : "—";
   return (
-    <Badge variant={variant} className="font-mono tabular-nums">
+    <Badge color={color} className="font-mono tabular-nums">
       <span className={`size-1.5 rounded-full ${dotColor}`} />
       {score == null ? label : `${label} ${score}`}
     </Badge>
@@ -37,11 +37,11 @@ export function RiskBadge({ level, score }: { level: string | null; score: numbe
 export function OsmThumb({ lat, lng }: { lat: number; lng: number }) {
   const pin = osmTilePin(lat, lng);
   return (
-    <div className="relative size-24 shrink-0 overflow-hidden rounded-xl border border-border bg-muted shadow-2xs">
+    <div className="relative size-24 shrink-0 overflow-hidden rounded-xl border border-secondary bg-tertiary shadow-2xs">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={pin.url} alt="" className="h-full w-full object-cover" />
       <span
-        className="absolute size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-surface-ink ring-2 ring-brand-saffron shadow-sm"
+        className="absolute size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary-solid ring-2 ring-brand-300 shadow-sm"
         style={{ left: `${pin.leftPct}%`, top: `${pin.topPct}%` }}
       />
     </div>
