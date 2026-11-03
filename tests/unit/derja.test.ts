@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   arabiziToArabic,
+  extractBuildingDetails,
   extractGovernorate,
   extractLandmarks,
   extractCustomerName,
@@ -12,6 +13,8 @@ import {
   parseMoneyMillimes,
   refinePrimaryIntent,
 } from "@/lib/domain/derja";
+import { lookupLocality } from "@/lib/geo/tunisia";
+import { deterministicLocationInterpretation } from "@/lib/pipeline/location-ai";
 
 describe("derja parsers", () => {
   it("parses Derja money into millimes", () => {
@@ -76,5 +79,37 @@ describe("derja parsers", () => {
     expect(extractLandmarks("noskon fi Ennasr ba7dha coffee shop Cosmitto")[0]?.name).toContain("coffee shop Cosmitto");
     expect(extractLandmarks("Ariana, 9ahwet El Baraka")[0]?.name).toContain("9ahwet El Baraka");
     expect(extractLandmarks("Tunis ba7dha Tunisia Mall Lac 2")[0]?.name).toContain("Tunisia Mall");
+  });
+
+  it("extracts multi-landmark descriptions, neighborhoods, and building details", () => {
+    const between = extractLandmarks("noskon fi Tunis entre Pharmacie El Manar et Campus El Manar");
+    expect(between.length).toBeGreaterThanOrEqual(2);
+    expect(between[0]?.relation).toBe("between");
+    expect(between[0]?.name).toContain("Pharmacie El Manar");
+    expect(between[1]?.name).toContain("Campus El Manar");
+
+    const chained = extractLandmarks("fi L'Aouina ba7dha Mosquée El Ghofrane w 9oddem Monoprix");
+    expect(chained.length).toBeGreaterThanOrEqual(2);
+    expect(chained[0]?.name).toContain("Mosquée El Ghofrane");
+    expect(chained[1]?.relation).toBe("in front of");
+
+    const ghazela = lookupLocality("noskon fi Cité El Ghazela Ariana");
+    expect(ghazela?.governorate).toBe("Ariana");
+    expect(ghazela?.delegation).toBe("Raoued");
+    expect(ghazela?.lat).toBeCloseTo(36.8926, 2);
+    expect(lookupLocality("fi Sahloul Sousse")?.governorate).toBe("Sousse");
+    expect(lookupLocality("Route Gremda Sfax")?.governorate).toBe("Sfax");
+
+    const details = extractBuildingDetails("ba7dha Café Cosmitto Ennasr, 2ème étage, beb azra9");
+    expect(details.floor).toContain("2");
+    expect(details.driverNote).toBeTruthy();
+
+    const interpreted = deterministicLocationInterpretation({
+      description: "fi Ennasr 2 wra 9ahwet Cosmitto, etage 3",
+    });
+    expect(interpreted.governorate).toBe("Ariana");
+    expect(interpreted.delegation).toBe("Ennasr");
+    expect(interpreted.places[0]?.osmQueryFr.toLowerCase()).toContain("cafe cosmitto");
+    expect(interpreted.floor).toContain("3");
   });
 });

@@ -348,6 +348,23 @@ function runCourierJob(jobId: string): Promise<void> {
   });
 }
 
+/** Gives the acceptance browser a session for the seeded shop, which the desk now requires. */
+async function signInAsSeller(merchantId: string) {
+  const supabase = adminClient();
+  const email = "e2e-seller@wassalha.test";
+  const password = "wassalha-e2e-pass";
+  const created = await supabase.auth.admin.createUser({ email, password, email_confirm: true });
+  let userId = created.data.user?.id;
+  if (!userId) {
+    const listed = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    userId = listed.data.users.find((user) => user.email === email)?.id;
+    if (userId) await supabase.auth.admin.updateUserById(userId, { password, email_confirm: true });
+  }
+  if (!userId) throw new Error(created.error?.message ?? "Could not prepare the e2e seller");
+  const { error } = await supabase.from("merchants").update({ owner_user_id: userId }).eq("id", merchantId);
+  if (error) throw new Error(error.message);
+}
+
 /** Buyer-confirmed order the courier test can approve without re-running SAM. */
 async function insertConfirmedOrder(opts: { localityId: number | null; label: string }) {
   const supabase = adminClient();
@@ -438,6 +455,11 @@ async function insertConfirmedOrder(opts: { localityId: number | null; label: st
 test("acceptance 5: approve, read back, confirm, waybill, buyer message", async ({ page, request }) => {
   test.setTimeout(180_000);
   const fixture = await insertConfirmedOrder({ localityId: 101, label: "Test bordereau" });
+  await signInAsSeller(fixture.merchantId);
+  const login = await page.request.post("/api/auth/login", {
+    data: { email: "e2e-seller@wassalha.test", password: "wassalha-e2e-pass" },
+  });
+  if (!login.ok()) throw new Error(await login.text());
   await fixture.supabase.from("merchants").update({ courier_mode: "browser" }).eq("id", fixture.merchantId);
   try {
     await page.goto(`/dashboard/orders/${fixture.orderId}`);

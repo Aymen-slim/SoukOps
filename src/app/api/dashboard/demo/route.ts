@@ -1,12 +1,21 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { resetDemoData } from "@/lib/demo/reset";
 import { requireMerchant } from "@/lib/dashboard/guard";
 import { getServerEnv } from "@/lib/env";
 
-export async function GET() {
+const querySchema = z.object({
+  scope: z.enum(["banner"]).optional(),
+});
+
+export async function GET(request: Request) {
   const gate = await requireMerchant();
   if ("error" in gate) return gate.error;
   const { supabase, merchant } = gate;
+  const parsed = querySchema.safeParse({
+    scope: new URL(request.url).searchParams.get("scope") ?? undefined,
+  });
+  const bannerOnly = parsed.success && parsed.data.scope === "banner";
   const { data: beat } = await supabase
     .from("agent_events")
     .select("created_at")
@@ -16,6 +25,9 @@ export async function GET() {
     .maybeSingle();
   const lastHeartbeatAt = (beat?.created_at as string | null) ?? null;
   const workerOnline = Boolean(lastHeartbeatAt && Date.now() - new Date(lastHeartbeatAt).getTime() < 20_000);
+  if (bannerOnly) {
+    return NextResponse.json({ courierMode: merchant.courier_mode, workerOnline });
+  }
 
   const { data: orders } = await supabase.from("orders").select("id").eq("merchant_id", merchant.id).limit(200);
   const orderIds = (orders ?? []).map((row) => row.id as string);

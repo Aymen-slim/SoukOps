@@ -196,11 +196,21 @@ const ORDER_COLUMNS =
   "id, status, total_millimes, subtotal_millimes, discount_millimes, delivery_fee_millimes, risk_score, risk_level, risk_reasons, customer_id, address_id, conversation_id, created_at";
 
 export async function loadOrderQueue(supabase: Admin, merchantId: string): Promise<QueueOrder[]> {
+  const filtered = await supabase
+    .from("orders")
+    .select(ORDER_COLUMNS)
+    .eq("merchant_id", merchantId)
+    .neq("status", "CANCELLED")
+    .is("hidden_at", null)
+    .order("created_at", { ascending: false })
+    .limit(40);
+  if (!filtered.error) return hydrate(supabase, (filtered.data ?? []) as OrderRow[]);
+  if (!/hidden_at/i.test(filtered.error.message)) throw new Error(filtered.error.message);
   const { data, error } = await supabase
     .from("orders")
     .select(ORDER_COLUMNS)
     .eq("merchant_id", merchantId)
-    .in("status", ["CONFIRMED_BY_BUYER", "WAYBILL_CREATED"])
+    .neq("status", "CANCELLED")
     .order("created_at", { ascending: false })
     .limit(40);
   if (error) throw new Error(error.message);

@@ -7,7 +7,7 @@ import {
   type InboundWhatsAppMessage,
 } from "@/lib/channels/whatsapp";
 import { oggOpusToWav16k } from "@/lib/channels/oggToWav";
-import { getDemoMerchant } from "@/lib/dashboard/merchant";
+import { merchantForWhatsAppPhone, whatsAppPhoneNumberId } from "@/lib/dashboard/merchant";
 import { getServerEnv } from "@/lib/env";
 import { burstDelayMs, runTurn } from "@/lib/pipeline/handleTurn";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -21,7 +21,7 @@ export async function GET(request: Request) {
   const token = url.searchParams.get("hub.verify_token");
   const challenge = url.searchParams.get("hub.challenge");
   const supabase = createAdminClient();
-  const merchant = await getDemoMerchant(supabase);
+  const merchant = await merchantForWhatsAppPhone(supabase, null);
   const config = merchant ? await resolveWhatsAppConfig(supabase, merchant.id) : null;
   const expected = config?.verifyToken ?? getServerEnv().WHATSAPP_VERIFY_TOKEN;
   if (mode === "subscribe" && expected && token === expected && challenge) {
@@ -153,7 +153,7 @@ export async function POST(request: Request) {
   }
 
   const supabase = createAdminClient();
-  const merchant = await getDemoMerchant(supabase);
+  const merchant = await merchantForWhatsAppPhone(supabase, whatsAppPhoneNumberId(payload));
   if (!merchant) return NextResponse.json({ received: true, stored: 0 });
 
   const stored: Array<{ conversationId: string; kind: "text" | "image" | "audio" | "button" }> = [];

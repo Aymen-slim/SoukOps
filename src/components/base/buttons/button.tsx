@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { FC, ReactElement, ReactNode } from "react";
 import { isValidElement } from "react";
 import type { ButtonProps as AriaButtonProps, LinkProps as AriaLinkProps } from "react-aria-components";
@@ -254,6 +255,22 @@ export const Button: {
     };
 
     if ("href" in commonProps) {
+        if (typeof href === "string" && href.startsWith("/") && !href.startsWith("//") && !disabled) {
+            return (
+                <Link
+                    href={href}
+                    target={commonProps.target}
+                    rel={commonProps.rel}
+                    aria-label={commonProps["aria-label"]}
+                    aria-current={commonProps["aria-current"]}
+                    data-loading={commonProps["data-loading"]}
+                    data-icon-only={commonProps["data-icon-only"]}
+                    className={commonProps.className}
+                >
+                    {commonChildren}
+                </Link>
+            );
+        }
         return <AriaLink {...commonProps} href={disabled ? undefined : href} />;
     }
 

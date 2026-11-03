@@ -93,6 +93,20 @@ interface RpcRow {
   distance: number;
 }
 
+async function loadMatchableProducts(supabase: AdminClient, productIds: string[]) {
+  const withFlag = await supabase
+    .from("products")
+    .select("id, name, category_phrase, price_millimes, floor_millimes, stock, ai_enabled")
+    .in("id", productIds);
+  if (!withFlag.error) return (withFlag.data ?? []).filter((product) => product.ai_enabled !== false);
+  const plain = await supabase
+    .from("products")
+    .select("id, name, category_phrase, price_millimes, floor_millimes, stock")
+    .in("id", productIds);
+  if (plain.error) throw new Error(plain.error.message);
+  return plain.data ?? [];
+}
+
 async function fetchCandidates(
   supabase: AdminClient,
   merchantId: string,
@@ -110,13 +124,11 @@ async function fetchCandidates(
 
   const productIds = [...new Set(rows.map((r) => r.product_id))];
   const imageIds = rows.map((r) => r.product_image_id);
-  const [{ data: products }, { data: images }] = await Promise.all([
-    supabase
-      .from("products")
-      .select("id, name, category_phrase, price_millimes, floor_millimes, stock")
-      .in("id", productIds),
+  const [products, imageResult] = await Promise.all([
+    loadMatchableProducts(supabase, productIds),
     supabase.from("product_images").select("id, crop_path, source_path").in("id", imageIds),
   ]);
+  const images = imageResult.data;
   const productById = new Map((products ?? []).map((p) => [p.id as string, p]));
   const photoByImageId = new Map(
     (images ?? []).map((i) => [
@@ -257,13 +269,23 @@ async function matchAllCatalog(req: {
   descriptionEn?: string | null;
   conversationId?: string;
 }): Promise<MatchResult> {
-  const { data: products } = await req.supabase
+  const withFlag = await req.supabase
     .from("products")
-    .select("id, name, category_phrase, price_millimes, floor_millimes, stock")
+    .select("id, name, category_phrase, price_millimes, floor_millimes, stock, ai_enabled")
     .eq("merchant_id", req.merchantId)
     .eq("active", true)
     .limit(50);
-  const catalog = (products ?? []).map((p) => ({
+  const plain = withFlag.error
+    ? await req.supabase
+        .from("products")
+        .select("id, name, category_phrase, price_millimes, floor_millimes, stock")
+        .eq("merchant_id", req.merchantId)
+        .eq("active", true)
+        .limit(50)
+    : null;
+  const products = (withFlag.error ? plain?.data : withFlag.data) ?? [];
+  const listed = products.filter((product) => (product as { ai_enabled?: boolean }).ai_enabled !== false);
+  const catalog = listed.map((p) => ({
     productId: p.id as string,
     productImageId: null,
     name: p.name as string,

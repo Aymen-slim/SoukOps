@@ -43,6 +43,10 @@ describe("landmarks domain core", () => {
     const derjaCafe = landmarkQueryVariants("9rib le 9ahwet El Baraka Ariana");
     expect(derjaCafe).toContain("cafe el baraka ariana");
     expect(derjaCafe).toContain("el baraka ariana");
+
+    const streetVariants = landmarkQueryVariants("wra jema3 El Ghofrane chera3 Habib Bourguiba");
+    expect(streetVariants.some((v) => v.includes("mosquee el ghofrane"))).toBe(true);
+    expect(streetVariants.some((v) => v.includes("avenue habib bourguiba"))).toBe(true);
   });
 
   it("thresholds and ranks candidates (RPC has no minimum score)", () => {

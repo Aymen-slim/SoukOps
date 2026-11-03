@@ -19,12 +19,24 @@ function decodeImage(input: string): Buffer {
 export async function POST(request: Request) {
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "invalid photo or category" }, { status: 400 });
-  const bytes = decodeImage(parsed.data.imageBase64);
+  const rawBytes = decodeImage(parsed.data.imageBase64);
+  let meta: sharp.Metadata;
   try {
-    await sharp(bytes).metadata();
+    meta = await sharp(rawBytes).metadata();
   } catch {
     return NextResponse.json({ error: "Image illisible." }, { status: 400 });
   }
+
+  // Only downscale oversized camera images (>1280px); smaller images keep exact bytes for cassette stability.
+  const needsResize = (meta.width ?? 0) > 1280 || (meta.height ?? 0) > 1280;
+  const bytes = needsResize
+    ? await sharp(rawBytes)
+      .rotate()
+      .resize({ width: 1280, height: 1280, fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: 86 })
+      .toBuffer()
+    : rawBytes;
+
   if (await isBlurry(bytes)) {
     return NextResponse.json(
       { error: "Photo too blurry. Retake it closer, without moving." },
@@ -32,11 +44,13 @@ export async function POST(request: Request) {
     );
   }
 
-  const ext = parsed.data.mediaExt === "jpg" ? "jpeg" : parsed.data.mediaExt;
+  const ext = needsResize ? "jpeg" : parsed.data.mediaExt === "jpg" ? "jpeg" : parsed.data.mediaExt;
   const dataUrl = `data:image/${ext};base64,${bytes.toString("base64")}`;
   try {
     const sam = await segmentImage({ imageDataUrl: dataUrl, nounPhrase: parsed.data.categoryPhrase });
-    const crop = sam.objects[0] ? await cropWithMask(bytes, sam.objects[0]) : await sharp(bytes).png().toBuffer();
+    const crop = sam.objects[0]
+      ? await cropWithMask(bytes, sam.objects[0])
+      : await sharp(bytes).png({ compressionLevel: 8 }).toBuffer();
     return NextResponse.json({
       cropBase64: crop.toString("base64"),
       usedOriginal: sam.objects.length === 0,

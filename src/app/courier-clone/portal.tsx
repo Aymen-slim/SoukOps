@@ -8,6 +8,7 @@ import { Button } from "@/components/base/buttons/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/foundations/card/card";
 import { Input } from "@/components/base/input/input";
 import { Label } from "@/components/base/input/label";
+import { Alert } from "@/components/foundations/alert/alert";
 
 export function LoginForm() {
   const router = useRouter();
@@ -66,9 +67,7 @@ export function LoginForm() {
             />
           </div>
           {error ? (
-            <p role="alert" className="text-sm text-error-primary">
-              {error}
-            </p>
+            <Alert color="error">{error}</Alert>
           ) : null}
           <Button type="submit" isDisabled={sending} onClick={onClick} className="bg-brand-solid text-white hover:bg-brand-solid/90">
             Log in
@@ -191,9 +190,7 @@ export function ParcelForm() {
             </div>
           ))}
           {error ? (
-            <p role="alert" className="text-sm text-error-primary sm:col-span-2">
-              {error}
-            </p>
+            <Alert color="error">{error}</Alert>
           ) : null}
           <div className="pt-2 sm:col-span-2">
             <Button
@@ -228,7 +225,7 @@ export function ColisView({ barcode }: { barcode: string }) {
     });
   }, [barcode]);
 
-  if (error) return <p role="alert" className="text-sm text-error-primary">{error}</p>;
+  if (error) return <Alert color="error">{error}</Alert>;
   if (!parcel) return <p className="text-sm text-tertiary">Loading parcel…</p>;
   const fields = parcel.fields ?? {};
 

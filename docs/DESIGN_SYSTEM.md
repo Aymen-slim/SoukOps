@@ -33,8 +33,9 @@ Dark mode tokens ship in the `.dark` block of `src/styles/untitledui.css`; no th
 | Badge | `src/components/base/badges/badges.tsx` — `color="gray\|brand\|success\|warning\|error\|blue…"`, `type="pill-color"` default. |
 | Input | `src/components/base/input/input.tsx` — built-in `label`/`hint`; `onChange` receives the string value, not an event. `isDisabled`, `isRequired`, `isReadOnly`, `inputClassName` styles the inner input. File inputs stay native `<input type="file">` styled with Untitled tokens. |
 | Label | `src/components/base/input/label.tsx` |
-| Select / TextArea / Checkbox / Toggle / Tabs / Pagination / Dropdown / Tooltip | `src/components/base/select/`, `src/components/base/textarea/`, `src/components/base/checkbox/`, `src/components/base/toggle/`, `src/components/application/` (added via CLI as needed) |
-| Card | `src/components/foundations/card/card.tsx` — local wrapper on Untitled tokens (Untitled has no free generic Card; card headers/metrics/modals/alerts are PRO and must not be copied). Keeps the `Card/CardHeader/CardTitle/CardDescription/CardContent/CardFooter` API. |
+| Select / TextArea / Checkbox / Toggle / Radio / Dropdown / Tooltip / Avatar | `src/components/base/select/`, `textarea/`, `checkbox/` (also auto-inserted by Table selection), `toggle/`, `radio-buttons/`, `dropdown/`, `tooltip/`, `avatar/` — wired in orders (Select/Dropdown), conversations (Toggle/Avatar/Tabs), settings (NativeSelect/RadioGroup) |
+| Table / Tabs / Pagination / EmptyState | `src/components/application/table/` (`Table` + `TableCard`, used for orders, analytics, demand, delivery fees), `application/tabs/` (conversation filters), `application/pagination/` (`PaginationCardMinimal` in orders), `application/empty-state/` (orders + inbox empty views) |
+| Card / Alert / Metric / Modal | Local wrappers on Untitled tokens in `src/components/foundations/{card,alert,metric,modal}/` (Untitled has no free generic Card; its metric/modal/alert equivalents are PRO and must not be copied). `Alert` replaces inline `role="alert"` blocks, `Metric` replaces KPI boxes, `Modal` (React Aria Dialog) confirms demo reset and channel disconnects. |
 
 Numbers (millimes from `src/lib/domain/pricing.ts`, barcodes, coordinates, latencies) keep `font-mono tabular-nums`. Buyer chat content stays Derja with `dir="auto"`; UI copy stays English.
 

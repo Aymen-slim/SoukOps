@@ -1,8 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import "leaflet/dist/leaflet.css";
-import { CheckCircle as CheckCircle2, ChevronDown, ChevronUp, Target03 as LocateFixed, MarkerPin01 as MapPin } from "@untitledui/icons";
+import {
+  CheckCircle as CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Target03 as LocateFixed,
+  MarkerPin01 as MapPin,
+  SearchLg,
+  Stars01 as Sparkles,
+  XClose,
+} from "@untitledui/icons";
 import { Badge } from "@/components/base/badges/badges";
 import { Input } from "@/components/base/input/input";
 import type { PendingAddress } from "@/lib/pipeline/address";
@@ -25,13 +34,56 @@ type MapHandle = {
   on: (event: string, handler: () => void) => void;
 };
 
+interface SearchCandidate {
+  id: string;
+  name: string;
+  governorate: string | null;
+  delegation: string | null;
+  lat: number;
+  lng: number;
+  source: string;
+}
+
+interface SearchResponse {
+  candidates: SearchCandidate[];
+  triangulated: { a: string; b: string; distanceKm: number; midpoint: { lat: number; lng: number } } | null;
+  floor: string | null;
+  driverNote: string | null;
+  aiUsed: boolean;
+}
+
+function sourceBadgeMeta(source: string): { label: string; color: "success" | "brand" | "blue" | "gray" } {
+  if (source === "triangulated" || source === "ai_triangulated") {
+    return { label: "Triangulated midpoint", color: "brand" };
+  }
+  if (source === "snapshot" || source === "choice") {
+    return { label: "Matched landmark", color: "success" };
+  }
+  if (source === "ai_description" || source === "nominatim") {
+    return { label: "AI + OpenStreetMap", color: "blue" };
+  }
+  return { label: "Neighborhood", color: "gray" };
+}
+
 export default function PinClient({ token, pending }: { token: string; pending: PendingAddress }) {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstance = useRef<MapHandle | null>(null);
   const [coords, setCoords] = useState({ lat: pending.lat, lng: pending.lng });
-  const [floor, setFloor] = useState("");
-  const [driverNote, setDriverNote] = useState("");
-  const [details, setDetails] = useState(false);
+  const [activeLandmark, setActiveLandmark] = useState(pending.landmarkName);
+  const [activeGovernorate, setActiveGovernorate] = useState<string | null>(pending.governorate);
+  const [activeSource, setActiveSource] = useState(pending.source);
+  const [landmarkOverride, setLandmarkOverride] = useState<string | null>(null);
+
+  const [floor, setFloor] = useState(pending.floor ?? "");
+  const [driverNote, setDriverNote] = useState(pending.driverNote ?? "");
+  const [details, setDetails] = useState(Boolean(pending.floor || pending.driverNote));
+
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<SearchCandidate[]>([]);
+  const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
+  const [searchMessage, setSearchMessage] = useState<string | null>(null);
+
   const [state, setState] = useState<"idle" | "sending" | "done" | "error">("idle");
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
@@ -92,10 +144,79 @@ export default function PinClient({ token, pending }: { token: string; pending: 
   }, [pending.lat, pending.lng]);
 
   function focus(lat: number, lng: number, zoom = 17) {
+    setCoords({ lat, lng });
     const map = mapInstance.current;
     if (!map) return;
     map.setView([lat, lng], zoom);
     map.panBy([0, PIN_LIFT], { animate: false });
+  }
+
+  async function runDescriptionSearch(e?: FormEvent, presetQuery?: string) {
+    e?.preventDefault();
+    const q = (presetQuery ?? searchQuery).trim();
+    if (q.length < 2 || searching) return;
+    if (presetQuery) setSearchQuery(presetQuery);
+
+    setSearching(true);
+    setSearchMessage(null);
+    try {
+      const res = await fetch(`/api/pin/${token}/search`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: q }),
+      });
+      if (!res.ok) {
+        setSearchMessage("Could not search right now. Drag the map directly to your door.");
+        return;
+      }
+      const data = (await res.json()) as SearchResponse;
+      setSearchResults(data.candidates ?? []);
+
+      if (data.floor && !floor.trim()) {
+        setFloor(data.floor);
+        setDetails(true);
+      }
+      if (data.driverNote && !driverNote.trim()) {
+        setDriverNote(data.driverNote);
+        setDetails(true);
+      }
+
+      if (data.triangulated && inTunisia(data.triangulated.midpoint.lat, data.triangulated.midpoint.lng)) {
+        const label = `${data.triangulated.a} · ${data.triangulated.b}`;
+        setActiveLandmark(label);
+        setLandmarkOverride(label);
+        setActiveSource("ai_triangulated");
+        setSelectedCandidateId("triangulated");
+        focus(data.triangulated.midpoint.lat, data.triangulated.midpoint.lng, 17);
+        return;
+      }
+
+      const top = data.candidates?.[0];
+      if (top && inTunisia(top.lat, top.lng)) {
+        setActiveLandmark(top.name);
+        setLandmarkOverride(top.name);
+        if (top.governorate) setActiveGovernorate(top.governorate);
+        setActiveSource(data.aiUsed ? "ai_description" : top.source);
+        setSelectedCandidateId(top.id);
+        focus(top.lat, top.lng, 17);
+      } else {
+        setSearchMessage("No exact spot matched. Try naming a nearby café, pharmacy, mosque, or street.");
+      }
+    } catch {
+      setSearchMessage("Search unavailable offline. Drag the map to your building.");
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  function pickCandidate(c: SearchCandidate) {
+    if (!inTunisia(c.lat, c.lng)) return;
+    setSelectedCandidateId(c.id);
+    setActiveLandmark(c.name);
+    setLandmarkOverride(c.name);
+    if (c.governorate) setActiveGovernorate(c.governorate);
+    setActiveSource(c.source);
+    focus(c.lat, c.lng, 17);
   }
 
   function locateMe() {
@@ -113,7 +234,6 @@ export default function PinClient({ token, pending }: { token: string; pending: 
           setGeoMessage("That location is outside Tunisia. Drag the map to your door.");
           return;
         }
-        setCoords(next);
         focus(next.lat, next.lng);
       },
       () => {
@@ -131,7 +251,13 @@ export default function PinClient({ token, pending }: { token: string; pending: 
     const res = await fetch(`/api/pin/${token}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ lat: coords.lat, lng: coords.lng, floor: floor || null, driverNote: driverNote || null }),
+      body: JSON.stringify({
+        lat: coords.lat,
+        lng: coords.lng,
+        floor: floor || null,
+        driverNote: driverNote || null,
+        ...(landmarkOverride ? { landmarkOverride } : {}),
+      }),
     });
     if (res.ok) {
       mapInstance.current?.remove();
@@ -172,20 +298,22 @@ export default function PinClient({ token, pending }: { token: string; pending: 
     );
   }
 
+  const badge = sourceBadgeMeta(activeSource);
+
   return (
-    <div className="relative h-dvh w-full overflow-hidden bg-[#e7e2d8]">
+    <div className="relative h-dvh w-full overflow-hidden bg-secondary">
       {mapFailed ? (
-        <div className="grid h-full place-items-center px-6 text-center text-sm text-stone-700">
+        <div className="grid h-full place-items-center px-6 text-center text-sm text-secondary">
           The map didn&apos;t open. You can still confirm the landmark, or reload the page.
         </div>
       ) : (
         <div ref={mapRef} className="pin-map absolute inset-0" />
       )}
 
-      {/* Top Floating Coordinate HUD */}
-      <div className="pointer-events-none absolute inset-x-0 top-4 z-[500] flex justify-center px-4">
-        <div className="flex items-center gap-2.5 rounded-full border border-secondary/90 bg-primary/90 px-4 py-1.5 shadow-md backdrop-blur-md">
-          <span className="flex size-5 items-center justify-center rounded-full bg-primary-solid text-[10px] font-bold text-brand-200">
+      {/* Top Floating HUD + AI Location Description Search */}
+      <div className="pointer-events-none absolute inset-x-0 top-3 z-[500] flex flex-col items-center gap-2 px-3 sm:px-4">
+        <div className="flex items-center gap-2.5 rounded-full border border-secondary bg-primary/95 px-3.5 py-1 shadow-sm backdrop-blur-md">
+          <span className="flex size-5 items-center justify-center rounded-full bg-primary-solid text-[10px] font-bold text-white">
             W
           </span>
           <span className="text-xs font-semibold text-primary">Wassalha Pin</span>
@@ -193,6 +321,83 @@ export default function PinClient({ token, pending }: { token: string; pending: 
             {coords.lat.toFixed(4)}, {coords.lng.toFixed(4)}
           </span>
         </div>
+
+        <form
+          onSubmit={(e) => void runDescriptionSearch(e)}
+          className="pointer-events-auto flex w-full max-w-lg items-center gap-1.5 rounded-2xl border border-secondary bg-primary/95 p-1.5 shadow-md backdrop-blur-md"
+        >
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-brand-primary text-brand-secondary">
+            <Sparkles className={`size-4 ${searching ? "animate-spin" : ""}`} />
+          </div>
+          <input
+            type="text"
+            dir="auto"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Describe your spot (Derja, French, Arabic)…"
+            aria-label="Describe your spot"
+            className="min-w-0 flex-1 bg-transparent px-1.5 text-sm text-primary placeholder:text-tertiary focus:outline-none"
+          />
+          {searchQuery ? (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery("");
+                setSearchResults([]);
+                setSearchMessage(null);
+              }}
+              aria-label="Clear search"
+              className="grid size-7 shrink-0 cursor-pointer place-items-center rounded-lg text-tertiary hover:bg-tertiary hover:text-primary"
+            >
+              <XClose className="size-4" />
+            </button>
+          ) : null}
+          <button
+            type="submit"
+            disabled={searching || searchQuery.trim().length < 2}
+            aria-label="Find location"
+            className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-xl bg-brand-solid px-3 text-xs font-semibold text-white transition-opacity hover:opacity-95 disabled:opacity-45"
+          >
+            <SearchLg className="size-3.5" />
+            <span>{searching ? "Finding…" : "Find"}</span>
+          </button>
+        </form>
+
+        {searchResults.length > 1 ? (
+          <div className="pointer-events-auto flex w-full max-w-lg gap-1.5 overflow-x-auto pb-1">
+            {searchResults.map((c) => {
+              const active = selectedCandidateId === c.id;
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => pickCandidate(c)}
+                  className={`inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium shadow-xs backdrop-blur-md transition-colors ${
+                    active
+                      ? "border-brand bg-brand-solid text-white"
+                      : "border-secondary bg-primary/95 text-secondary hover:bg-tertiary"
+                  }`}
+                >
+                  <MapPin className="size-3 shrink-0" />
+                  <span className="max-w-[180px] truncate" dir="auto">
+                    {c.name}
+                  </span>
+                  {c.delegation || c.governorate ? (
+                    <span className={active ? "text-white/80" : "text-tertiary"}>
+                      · {c.delegation ?? c.governorate}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+
+        {searchMessage ? (
+          <div className="pointer-events-auto rounded-full border border-secondary bg-primary/95 px-3 py-1 text-xs font-medium text-warning-primary shadow-xs">
+            {searchMessage}
+          </div>
+        ) : null}
       </div>
 
       {/* Central Target Pin */}
@@ -212,7 +417,7 @@ export default function PinClient({ token, pending }: { token: string; pending: 
         onClick={locateMe}
         disabled={locating || mapFailed}
         aria-label="Use my location"
-        className="absolute right-4 bottom-[248px] z-[500] grid size-12 cursor-pointer place-items-center rounded-full bg-primary text-primary shadow-lg ring-1 ring-secondary transition-transform duration-150 ease-linear hover:bg-tertiary active:scale-[0.96] disabled:opacity-50"
+        className="absolute right-4 bottom-[256px] z-[500] grid size-12 cursor-pointer place-items-center rounded-full bg-primary text-primary shadow-lg ring-1 ring-secondary transition-transform duration-150 ease-linear hover:bg-tertiary active:scale-[0.96] disabled:opacity-50"
       >
         <LocateFixed className={`size-5 ${locating ? "animate-pulse text-brand-secondary" : ""}`} />
       </button>
@@ -220,23 +425,28 @@ export default function PinClient({ token, pending }: { token: string; pending: 
       {/* Bottom Sheet */}
       <div className="absolute inset-x-0 bottom-0 z-[500]">
         <div className="mx-auto w-full max-w-lg rounded-t-[28px] border-t border-secondary bg-primary px-5 pt-3 pb-6 shadow-[0_-12px_40px_rgba(28,25,23,0.14)]">
-          <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-border" />
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-[11px] font-semibold tracking-wider text-brand-secondary uppercase">
-              Deliver here
-            </p>
-            {pending.governorate ? (
-              <Badge color="gray" className="text-[11px]">
-                {pending.governorate}
+          <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-quaternary" />
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <p className="text-[11px] font-semibold tracking-wider text-brand-secondary uppercase">
+                Deliver here
+              </p>
+              <Badge color={badge.color} size="sm">
+                {badge.label}
+              </Badge>
+            </div>
+            {activeGovernorate ? (
+              <Badge color="gray" size="sm">
+                {activeGovernorate}
               </Badge>
             ) : null}
           </div>
 
-          <h1 className="mt-1 text-lg font-semibold tracking-tight text-primary">
-            Near {pending.landmarkName}
+          <h1 className="mt-1.5 truncate text-lg font-semibold tracking-tight text-primary" dir="auto">
+            Near {activeLandmark}
           </h1>
           <p className="mt-0.5 text-sm text-tertiary">
-            Drag the map until the pin sits directly on your door.
+            Drag the map until the pin sits directly on your door, or search by landmark above.
           </p>
 
           {geoMessage ? <p className="mt-2 text-xs font-medium text-warning-primary">{geoMessage}</p> : null}
@@ -275,7 +485,7 @@ export default function PinClient({ token, pending }: { token: string; pending: 
             type="button"
             onClick={() => void confirm()}
             disabled={state === "sending" || !pinOk}
-            className="mt-4 h-12 w-full cursor-pointer rounded-full bg-brand-solid text-sm font-semibold text-primary shadow-[0_2px_8px_rgba(28,25,23,0.14)] transition-[transform,filter] duration-150 ease-linear hover:brightness-95 active:scale-[0.98] disabled:opacity-50"
+            className="mt-4 h-12 w-full cursor-pointer rounded-full bg-brand-solid text-sm font-semibold text-white shadow-[0_2px_8px_rgba(28,25,23,0.14)] transition-[transform,filter] duration-150 ease-linear hover:brightness-95 active:scale-[0.98] disabled:opacity-50"
           >
             {state === "sending" ? "Saving…" : "Confirm this spot"}
           </button>

@@ -8,8 +8,7 @@ import {
   resolveWhatsAppConfig,
   type WhatsAppConfig,
 } from "@/lib/channels/whatsapp";
-import { getDemoMerchant } from "@/lib/dashboard/merchant";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { requireMerchant } from "@/lib/dashboard/guard";
 
 /**
  * OAuth redirect callback for WhatsApp / Messenger / Instagram linking.
@@ -21,7 +20,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const settings = (params: Record<string, string>) =>
-    NextResponse.redirect(new URL(`/dashboard/settings?${new URLSearchParams(params).toString()}`, url.origin));
+    NextResponse.redirect(new URL(`/dashboard/channels?${new URLSearchParams(params).toString()}`, url.origin));
 
   const state = url.searchParams.get("state") ?? "";
   const [platform] = state.split(".");
@@ -37,9 +36,10 @@ export async function GET(request: Request) {
   const code = url.searchParams.get("code");
   if (!code) return settings({ social: "error", platform, msg: "no_code" });
 
-  const supabase = createAdminClient();
-  const merchant = await getDemoMerchant(supabase);
-  if (!merchant) return settings({ social: "error", platform, msg: "no_shop" });
+  const gate = await requireMerchant();
+  if ("error" in gate) return settings({ social: "error", platform, msg: "no_shop" });
+  if (gate.merchant.is_sandbox) return settings({ social: "error", platform, msg: "sandbox" });
+  const { supabase, merchant } = gate;
 
   try {
     if (platform === "whatsapp") {

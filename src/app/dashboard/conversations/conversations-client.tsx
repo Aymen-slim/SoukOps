@@ -1,11 +1,16 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-import { AlertCircle, Inbox01 as Inbox, MessageChatSquare as MessageSquareReply, PlayCircle, Send01 as Send } from "@untitledui/icons";
+import { FormEvent, useEffect, useState } from "react";
+import { AlertCircle, Inbox01 as Inbox, PlayCircle, Send01 as Send } from "@untitledui/icons";
+import { Avatar } from "@/components/base/avatar/avatar";
 import { Badge } from "@/components/base/badges/badges";
 import { Button } from "@/components/base/buttons/button";
+import { Toggle } from "@/components/base/toggle/toggle";
 import { Card, CardContent } from "@/components/foundations/card/card";
 import { TextArea } from "@/components/base/textarea/textarea";
+import { EmptyState } from "@/components/application/empty-state/empty-state";
+import { Tabs } from "@/components/application/tabs/tabs";
+import { Alert } from "@/components/foundations/alert/alert";
 import { usePoll } from "../use-poll";
 
 interface ConversationRow {
@@ -46,18 +51,29 @@ export function ConversationsClient() {
     await reload();
   }
 
-  async function resume(id: string) {
+  async function setPaused(id: string, paused: boolean) {
     setBusy(true);
     setActionError(null);
-    const res = await fetch(`/api/dashboard/conversations/${id}/resume`, { method: "POST" });
+    const res = await fetch(`/api/dashboard/conversations/${id}/${paused ? "pause" : "resume"}`, { method: "POST" });
     const body = (await res.json().catch(() => null)) as { error?: string } | null;
     setBusy(false);
     if (!res.ok) setActionError(body?.error ?? "Couldn't resume.");
     await reload();
   }
 
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const open = new URLSearchParams(window.location.search).get("open");
+      if (open) setOpenId(open);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+
   const rows = data?.conversations ?? [];
   const pausedCount = rows.filter((r) => r.aiPaused).length;
+  const [tab, setTab] = useState("all");
+  const visibleRows =
+    tab === "paused" ? rows.filter((r) => r.aiPaused) : tab === "active" ? rows.filter((r) => !r.aiPaused) : rows;
 
   return (
     <div className="flex flex-col gap-6">
@@ -84,30 +100,38 @@ export function ConversationsClient() {
       </div>
 
       {error ? (
-        <p role="alert" className="rounded-xl border border-utility-red-200 bg-error-primary px-4 py-2.5 text-sm text-error-primary">
-          {error}
-        </p>
+        <Alert color="error">{error}</Alert>
       ) : null}
       {actionError ? (
-        <p role="alert" className="rounded-xl border border-utility-red-200 bg-error-primary px-4 py-2.5 text-sm text-error-primary">
-          {actionError}
-        </p>
+        <Alert color="error">{actionError}</Alert>
       ) : null}
 
       {data && rows.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center gap-2 py-12 text-center">
-            <Inbox className="size-8 text-tertiary/60" />
-            <p className="text-sm font-medium text-primary">No conversations.</p>
-            <p className="text-xs text-tertiary">
-              Active and handed-over WhatsApp conversations will appear here.
-            </p>
-          </CardContent>
-        </Card>
+        <div className="rounded-xl bg-primary py-12 shadow-xs ring-1 ring-secondary">
+          <EmptyState size="md">
+            <EmptyState.Header>
+              <EmptyState.FeaturedIcon color="gray" icon={Inbox} />
+            </EmptyState.Header>
+            <EmptyState.Content>
+              <EmptyState.Title>No conversations</EmptyState.Title>
+              <EmptyState.Description>
+                Active and handed-over WhatsApp conversations will appear here.
+              </EmptyState.Description>
+            </EmptyState.Content>
+          </EmptyState>
+        </div>
       ) : null}
 
+      <Tabs selectedKey={tab} onSelectionChange={(key) => setTab(String(key))}>
+        <Tabs.List type="button-brand" aria-label="Filter conversations">
+          <Tabs.Item id="all">All</Tabs.Item>
+          <Tabs.Item id="paused">AI paused</Tabs.Item>
+          <Tabs.Item id="active">AI on</Tabs.Item>
+        </Tabs.List>
+      </Tabs>
+
       <div className="flex flex-col gap-3">
-        {rows.map((row) => {
+        {visibleRows.map((row) => {
           const isOpen = openId === row.id;
           return (
             <Card
@@ -120,23 +144,44 @@ export function ConversationsClient() {
             >
               <CardContent className="flex flex-col gap-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    className="flex cursor-pointer items-center gap-2 text-left text-base font-semibold text-primary hover:text-brand-secondary"
+                  <Button
+                    color="tertiary"
+                    size="sm"
                     onClick={() => setOpenId(isOpen ? null : row.id)}
+                    aria-expanded={isOpen}
+                    iconLeading={
+                      <Avatar
+                        size="sm"
+                        initials={(row.customerName ?? "B")
+                          .split(/\s+/)
+                          .slice(0, 2)
+                          .map((part) => part[0])
+                          .join("")
+                          .toUpperCase()}
+                        alt={row.customerName ?? "Buyer"}
+                      />
+                    }
                   >
-                    <MessageSquareReply className="size-4 text-brand-secondary" />
-                    <span>{row.customerName ?? "Buyer"}</span>
-                    <span className="font-mono text-xs font-normal tabular-nums text-tertiary">
+                    {row.customerName ?? "Buyer"}
+                    <span className="ml-2 font-mono text-xs font-normal tabular-nums text-tertiary">
                       {row.phone}
                     </span>
-                  </button>
+                  </Button>
                   <div className="flex items-center gap-2">
                     {row.aiPaused ? (
                       <Badge color="error">AI paused</Badge>
                     ) : (
                       <Badge color="success">AI on</Badge>
                     )}
+                    <Toggle
+                      size="sm"
+                      aria-label={`AI agent for ${row.customerName ?? "buyer"}`}
+                      isSelected={!row.aiPaused}
+                      isDisabled={busy}
+                      onChange={(selected) => {
+                        void setPaused(row.id, !selected);
+                      }}
+                    />
                   </div>
                 </div>
 
@@ -173,7 +218,7 @@ export function ConversationsClient() {
                           type="button"
                           color="secondary"
                           isDisabled={busy}
-                          onClick={() => void resume(row.id)}
+                          onClick={() => void setPaused(row.id, false)}
                         >
                           <PlayCircle className="size-3.5" />
                           Resume the agent

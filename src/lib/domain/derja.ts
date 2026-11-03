@@ -1,3 +1,5 @@
+import { lookupLocality } from "@/lib/geo/tunisia";
+
 /**
  * Derja (Tunisian dialect) parsing helpers. Pure functions, unit-tested.
  * Money is always integer millimes (1 DT = 1000 millimes).
@@ -200,92 +202,140 @@ export function extractQuantity(text: string): number | null {
   return null;
 }
 
-const LOCALITY_TO_GOV: Array<{ pattern: RegExp; governorate: string; delegation?: string }> = [
-  // Delegations & well-known neighborhoods first (implies governorate automatically)
-  { pattern: /\b(?:el\s*manar|manar)\b|المنار/i, governorate: "Tunis", delegation: "El Manar" },
-  { pattern: /\b(?:la\s*marsa|marsa)\b|المرسى/i, governorate: "Tunis", delegation: "La Marsa" },
-  { pattern: /\b(?:berges\s*du\s*lac|lac\s*[123]?)\b|البحيرة/i, governorate: "Tunis", delegation: "Les Berges du Lac" },
-  { pattern: /\b(?:le\s*bardo|bardo)\b|باردو/i, governorate: "Tunis", delegation: "Le Bardo" },
-  { pattern: /\b(?:carthage|9artaj)\b|قرطاج/i, governorate: "Tunis", delegation: "Carthage" },
-  { pattern: /\b(?:el\s*menzah|menzah)\b|المنزه/i, governorate: "Tunis", delegation: "El Menzah" },
-  { pattern: /\b(?:ennasr|el\s*nasr|nasr)\b|النصر/i, governorate: "Ariana", delegation: "Ennasr" },
-  { pattern: /\b(?:la\s*soukra|soukra)\b|سكرة/i, governorate: "Ariana", delegation: "La Soukra" },
-  { pattern: /\b(?:raoued|rawed)\b|رواد/i, governorate: "Ariana", delegation: "Raoued" },
-  { pattern: /\b(?:el\s*mourouj|mourouj)\b|المروج/i, governorate: "Ben Arous", delegation: "El Mourouj" },
-  { pattern: /\b(?:mégrine|megrine)\b|مقرين/i, governorate: "Ben Arous", delegation: "Mégrine" },
-  { pattern: /\b(?:radès|rades)\b|رادس/i, governorate: "Ben Arous", delegation: "Radès" },
-  { pattern: /\b(?:hammam\s*lif|hamem\s*lif)\b|حمام الأنف/i, governorate: "Ben Arous", delegation: "Hammam Lif" },
-  { pattern: /\b(?:boumhel)\b|بومهل/i, governorate: "Ben Arous", delegation: "Boumhel" },
-  { pattern: /\b(?:denden)\b|دندان/i, governorate: "Manouba", delegation: "Denden" },
-  { pattern: /\b(?:oued\s*ellil|wed\s*ellil)\b|وادي الليل/i, governorate: "Manouba", delegation: "Oued Ellil" },
-  { pattern: /\b(?:hammamet|7ammamet)\b|الحمامات/i, governorate: "Nabeul", delegation: "Hammamet" },
-  { pattern: /\b(?:djerba|jerba|houmt\s*souk|midoun)\b|جربة/i, governorate: "Médenine", delegation: "Djerba" },
-  { pattern: /\b(?:sahloul|kantaoui|khzema)\b|سسهلول|القنطاوي|خزامة/i, governorate: "Sousse" },
-  // 24 Governorates
-  { pattern: /\b(?:tunis|tounes)\b|تونس/i, governorate: "Tunis" },
-  { pattern: /\b(?:ariana|aryana|aryanah)\b|أريانة|اريانة/i, governorate: "Ariana" },
-  { pattern: /\b(?:ben\s*arous|benarous)\b|بن عروس/i, governorate: "Ben Arous" },
-  { pattern: /\b(?:manouba|mannouba)\b|منوبة/i, governorate: "Manouba" },
-  { pattern: /\b(?:nabeul)\b|نابل/i, governorate: "Nabeul" },
-  { pattern: /\b(?:zaghouan|zaghwan)\b|زغوان/i, governorate: "Zaghouan" },
-  { pattern: /\b(?:bizerte|benzart)\b|بنزرت/i, governorate: "Bizerte" },
-  { pattern: /\b(?:béja|beja)\b|باجة/i, governorate: "Béja" },
-  { pattern: /\b(?:jendouba)\b|جندوبة/i, governorate: "Jendouba" },
-  { pattern: /\b(?:le\s*kef|el\s*kef|kef)\b|الكاف/i, governorate: "Le Kef" },
-  { pattern: /\b(?:siliana)\b|سليانة/i, governorate: "Siliana" },
-  { pattern: /\b(?:sousse|soussa)\b|سوسة/i, governorate: "Sousse" },
-  { pattern: /\b(?:monastir|mestir)\b|المنستير/i, governorate: "Monastir" },
-  { pattern: /\b(?:mahdia|mahdiya)\b|المهدية/i, governorate: "Mahdia" },
-  { pattern: /\b(?:sfax|sfe9es)\b|صفاقس/i, governorate: "Sfax" },
-  { pattern: /\b(?:kairouan|9ayrawan|kayrawan)\b|القيروان/i, governorate: "Kairouan" },
-  { pattern: /\b(?:kasserine|gasrine)\b|القصرين/i, governorate: "Kasserine" },
-  { pattern: /\b(?:sidi\s*bouzid)\b|سيدي بوزيد/i, governorate: "Sidi Bouzid" },
-  { pattern: /\b(?:gabès|gabes|9abes)\b|قابس/i, governorate: "Gabès" },
-  { pattern: /\b(?:médenine|medenine)\b|مدنين/i, governorate: "Médenine" },
-  { pattern: /\b(?:tataouine|tatawin)\b|تطاوين/i, governorate: "Tataouine" },
-  { pattern: /\b(?:gafsa|9afsa)\b|قفصة/i, governorate: "Gafsa" },
-  { pattern: /\b(?:tozeur|touzer)\b|توزر/i, governorate: "Tozeur" },
-  { pattern: /\b(?:kébili|kebili|9bili)\b|قبلي/i, governorate: "Kébili" },
-];
-
 /** Extracts Tunisian governorate (and delegation when implied by neighborhood). */
 export function extractGovernorate(text: string): { governorate: string; delegation?: string } | null {
-  for (const entry of LOCALITY_TO_GOV) {
-    if (entry.pattern.test(text)) {
-      return { governorate: entry.governorate, delegation: entry.delegation };
-    }
-  }
-  return null;
+  const hit = lookupLocality(text);
+  if (!hit) return null;
+  return { governorate: hit.governorate, ...(hit.delegation ? { delegation: hit.delegation } : {}) };
 }
 
-const PLACE_TYPE_PATTERN =
-  /\b((?:café|cafe|coffee\s*shop|coffeeshop|coffee|9ahwa|9ahwet|kahwa|kahwet|qahwa|salon\s*de\s*thé|salon\s*de\s*the|قهوة|مقهى|pharmacie|صيدلية|mosquée|mosquee|jamaa|jema3|jama3|جامع|مسجد|école|ecole|lycée|lycee|collège|college|faculté|faculte|université|universite|campus|مدرسة|معهد|كلية|la\s*poste|poste|bosta|bousta|بوسطة|supermarché|supermarche|monoprix|carrefour|magasin\s*général|magasin\s*general|mg|aziza|géant|geant|tunisia\s*mall|azur\s*city|mall|clinique|hôpital|hopital|sbitar|مصحة|مستشفى|سبيطار|station|kiosque|totalenergies|total|shell|agil|métro|metro|gare|rond[\s\-]*point|banque|biat|attijari|amen\s*bank|stb|bna|restaurant|resto|pizzeria|pâtisserie|patisserie|salle\s*de\s*sport|gym|stade|parc|hôtel|hotel|cité|cite|avenue|rue|شارع|نهج|حي)(?:\s+[a-zA-Z0-9àâçéèêëîïôûùüÿñæœ\u0600-\u06FF'\-]+){1,6})/i;
+function classifyRelation(raw: string | undefined): string {
+  if (!raw) return "near";
+  const lower = raw.toLowerCase();
+  if (/(?:derri[eè]re|wra|ورا|وراء)/.test(lower)) return "behind";
+  if (/(?:devant|en\s*face|9oddem|قدام|مقابل)/.test(lower)) return "in front of";
+  if (/(?:entre|bin|بين)/.test(lower)) return "between";
+  if (/(?:c[oô]t[eé]|ba7dha|bahdha|بجانب|بحذا)/.test(lower)) return "next to";
+  return "near";
+}
 
-const RELATION_EXTRACT_PATTERN =
-  /(?:ba7dha|bahdha|9rib\s*(?:le|l|men)?|près\s*de|pres\s*de|à\s*côté\s*de|a\s*cote\s*de|derrière|derriere|devant|en\s*face\s*de|wra|9oddem|landmark\s*(?:howa)?|repère\s*(?:howa)?|repere\s*(?:howa)?|بجانب|قرب|بحذا|وراء|قدام)\s+([^,.!?\n]{3,60})/i;
+function cleanLandmarkCandidate(raw: string): string {
+  return raw
+    .replace(
+      /\s*(?:[,;]|\b(?:taille|num(?:ero|éro)?|t[eé]l(?:[eé]phone)?|esmi|ismi|\d+(?:er|ère|eme|ème)?\s*[eé]tage|etage\s*\d+|طابق|الطابق|appartement|appt|bloc|imm(?:euble)?|porte|bab)\b).*$/i,
+      "",
+    )
+    .replace(/\s+(?:w|et|ou|و)\s*$/i, "")
+    .replace(/^[,\s:;.\-]+|[,\s:;.\-!?؟]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const PLACE_TYPE_GLOBAL =
+  /\b((?:caf[eé]|coffee\s*shop|coffeeshop|coffee|9ahwa|9ahwet|kahwa|kahwet|qahwa|salon\s*de\s*th[eé]|قهوة|مقهى|pharmacie|صيدلية|mosqu[eé]e|jamaa|jema3|jama3|جامع|مسجد|[eé]cole|lyc[eé]e|coll[eè]ge|facult[eé]|universit[eé]|campus|esprit|insat|ihec|fst|enit|foyer|مدرسة|معهد|كلية|la\s*poste|poste|bosta|bousta|بوسطة|بريد|municipalit[eé]|baladiya|بلدية|supermarch[eé]|monoprix|carrefour|magasin\s*g[eé]n[eé]ral|mg|aziza|g[eé]ant|tunisia\s*mall|azur\s*city|mall|clinique|klinik|h[oô]pital|sbitar|مصحة|مستشفى|سبيطار|station|terminus|kiosque|totalenergies|total|shell|agil|oilibya|m[eé]tro|gare|rond[\s\-]*point|مفترق|banque|biat|attijari|amen\s*bank|stb|bna|zitouna|ambassade|restaurant|resto|pizzeria|p[aâ]tisserie|boulangerie|koucha|مخبزة|salle\s*de\s*sport|gym|stade|parc|plage|corniche|souk|h[oô]tel|avenue|av\.|rue|boulevard|bd|impasse|chera3|chere3|tri9|route\s*(?:de\s*)?[a-zA-ZÀ-ÿ]+|شارع|نهج|طريق)(?:\s+[a-zA-Z0-9àâçéèêëîïôûùüÿñæœ\u0600-\u06FF'’\-]+){1,6})/gi;
+
+const BETWEEN_PATTERN =
+  /(?:\b(?:entre|bin)\b|بين)\s+([^,.!?\n]{3,55}?)\s+(?:\b(?:et|w|and)\b|و)\s+([^,.!?\n]{3,55})/i;
+
+const RELATION_GLOBAL =
+  /(ba7dha|bahdha|9rib\s*(?:le|l|mel|men)?|pr[eè]s\s*de|[aà]\s*c[oô]t[eé]\s*de|derri[eè]re|devant|en\s*face\s*de|wra|9oddem|landmark\s*(?:howa)?|rep[eè]re\s*(?:howa)?|بجانب|قرب|بحذا|وراء|ورا|قدام|مقابل)\s+([^,.!?\n]{3,65})/gi;
 
 /**
- * Deterministically extracts landmark mentions (coffee shops, cafés,
- * pharmacies, restaurants, supermarkets, mosques, stations, streets, etc.)
- * from buyer text when the LLM misses them.
+ * Deterministically extracts 1–3 landmark mentions (coffee shops, cafés,
+ * pharmacies, restaurants, supermarkets, mosques, stations, streets, pairs
+ * like "entre X et Y" or "wra X ba7dha Y", etc.) from buyer descriptions.
  */
 export function extractLandmarks(text: string): Array<{ name: string; relation: string | null }> {
   const trimmed = text.trim();
   if (!trimmed) return [];
 
-  const byPlaceType = trimmed.match(PLACE_TYPE_PATTERN);
-  if (byPlaceType?.[1]) {
-    const name = byPlaceType[1].replace(/\s+(?:w|et|ou|taille|num|tél|tel)\b.*$/i, "").trim();
-    if (name.length >= 3) return [{ name, relation: "near" }];
+  const found: Array<{ name: string; relation: string | null }> = [];
+  const pushUnique = (rawName: string, relation: string | null) => {
+    // Split chained clauses like "station metro bardo w 9oddem monoprix"
+    const subParts = rawName.split(
+      /\s+(?:w|et|&|و)\s+(?=(?:ba7dha|bahdha|9rib|pr[eè]s|derri[eè]re|devant|en\s*face|wra|9oddem|caf[eé]|9ahw|pharmacie|mosqu|jema3|monoprix|carrefour|station|rond|rue|avenue|chera3|klinik|clinique|جامع|قهوة|صيدلية|محطة))/i,
+    );
+    for (const part of subParts) {
+      let rel = relation;
+      let body = part.trim();
+      const relLead = body.match(
+        /^(ba7dha|bahdha|9rib\s*(?:le|l|mel|men)?|pr[eè]s\s*de|[aà]\s*c[oô]t[eé]\s*de|derri[eè]re|devant|en\s*face\s*de|wra|9oddem|بجانب|قرب|بحذا|وراء|ورا|قدام|مقابل)\s+(.+)$/i,
+      );
+      if (relLead) {
+        rel = classifyRelation(relLead[1]);
+        body = relLead[2];
+      }
+      const name = cleanLandmarkCandidate(body);
+      if (name.length < 3) continue;
+      const key = name.toLowerCase();
+      if (found.some((existing) => existing.name.toLowerCase().includes(key) || key.includes(existing.name.toLowerCase()))) {
+        continue;
+      }
+      found.push({ name, relation: rel ?? "near" });
+      if (found.length >= 3) return;
+    }
+  };
+
+  // 1. Explicit "between X and Y" / "bin X w Y" triangulation pattern
+  const between = trimmed.match(BETWEEN_PATTERN);
+  if (between?.[1] && between?.[2]) {
+    pushUnique(between[1], "between");
+    pushUnique(between[2], "between");
   }
 
-  const byRelation = trimmed.match(RELATION_EXTRACT_PATTERN);
-  if (byRelation?.[1]) {
-    const name = byRelation[1].replace(/\s+(?:w|et|ou|taille|num|tél|tel)\b.*$/i, "").trim();
-    if (name.length >= 3) return [{ name, relation: "near" }];
+  // 2. Relation-prefixed mentions ("ba7dha ...", "wra ...", "9oddem ...", "près de ...")
+  for (const match of trimmed.matchAll(RELATION_GLOBAL)) {
+    pushUnique(match[2], classifyRelation(match[1]));
+    if (found.length >= 3) break;
   }
 
-  return [];
+  // 3. Place-type mentions ("coffee shop Cosmitto", "9ahwet El Baraka", "Rue Ibn Khaldoun")
+  if (found.length < 3) {
+    for (const match of trimmed.matchAll(PLACE_TYPE_GLOBAL)) {
+      pushUnique(match[1], "near");
+      if (found.length >= 3) break;
+    }
+  }
+
+  return found.slice(0, 3);
 }
 
+/**
+ * Extracts floor/apartment and building/door notes from natural buyer address
+ * descriptions so courier instructions and the pin sheet are pre-populated.
+ */
+export function extractBuildingDetails(text: string): {
+  floor: string | null;
+  driverNote: string | null;
+} {
+  const trimmed = text.trim();
+  if (!trimmed) return { floor: null, driverNote: null };
 
+  let floor: string | null = null;
+  const floorFr = trimmed.match(
+    /\b(\d{1,2}\s*(?:er|ère|eme|ème|e)?\s*[eé]tage|[eé]tage\s*\d{1,2}|rez[\s\-]*de[\s\-]*chauss[eé]e|rdc|טابق|طابق\s*(?:أول|ثاني|ثالث|رابع|\d{1,2})|الطابق\s*(?:الأول|الثاني|الثالث|الرابع|\d{1,2}))\b/i,
+  );
+  const aptMatch = trimmed.match(/\b((?:appartement|appart|appt|apt|شقة)\s*[a-z0-9\-]{1,6})\b/i);
+  if (floorFr && aptMatch) {
+    floor = `${floorFr[1].trim()}, ${aptMatch[1].trim()}`;
+  } else if (floorFr) {
+    floor = floorFr[1].trim();
+  } else if (aptMatch) {
+    floor = aptMatch[1].trim();
+  }
+
+  const notes: string[] = [];
+  const buildingMatch = trimmed.match(
+    /\b((?:immeuble|imm\.?|bloc|résidence|residence|villa|dar|عمارة|إقامة)\s+[A-Za-zÀ-ÿ0-9\u0600-\u06FF'’\-]+(?:\s+[A-Za-zÀ-ÿ0-9\u0600-\u06FF'’\-]+)?)/i,
+  );
+  if (buildingMatch?.[1]) notes.push(buildingMatch[1].trim());
+  const doorMatch = trimmed.match(
+    /\b((?:porte|beb|bab|portail|باب)\s+(?:bleue?|blanche?|noire?|verte?|rouge|marron|gris|jaune|azra9|abyadh|akhdhar|a7mar|k7al|أبيض|أزرق|أخضر|أحمر|حديد|[0-9]{1,4}))/i,
+  );
+  if (doorMatch?.[1]) notes.push(doorMatch[1].trim());
+
+  return {
+    floor,
+    driverNote: notes.length > 0 ? notes.join(" · ").slice(0, 240) : null,
+  };
+}

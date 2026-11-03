@@ -4,6 +4,8 @@ import Link from "next/link";
 import { NavigationPointerOff01 as MapPinOff, PackageSearch } from "@untitledui/icons";
 import { Badge } from "@/components/base/badges/badges";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/foundations/card/card";
+import { Table, TableCard } from "@/components/application/table/table";
+import { Alert } from "@/components/foundations/alert/alert";
 import type { DemandPayload } from "@/lib/dashboard/demand";
 import { usePoll } from "../use-poll";
 
@@ -19,30 +21,39 @@ export function DemandClient() {
         </p>
       </div>
 
-      {error ? (
-        <p role="alert" className="rounded-xl border border-utility-red-200 bg-error-primary px-4 py-2.5 text-sm text-error-primary">{error}</p>
-      ) : null}
+      {error ? <Alert color="error">{error}</Alert> : null}
 
-      <Card>
-        <CardHeader className="border-b border-secondary/70">
-          <CardTitle className="flex items-center gap-2">
-            <PackageSearch className="size-4 text-brand-secondary" />
-            Most requested descriptions
-          </CardTitle>
-          <CardDescription>Grouped by the buyer&apos;s normalized description.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2 text-sm">
-          {data && data.topDescriptions.length === 0 ? <p className="text-tertiary">No unmet demand.</p> : null}
-          {(data?.topDescriptions ?? []).map((row) => (
-            <div key={row.description} className="flex items-center justify-between gap-4">
-              <span dir="auto">{row.description}</span>
-              <Badge color="gray" className="font-mono tabular-nums">{row.count}×</Badge>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
+      <TableCard.Root>
+        <TableCard.Header
+          title="Most requested descriptions"
+          badge={`${data?.topDescriptions.length ?? 0} groups`}
+          description="Grouped by the buyer's normalized description."
+          contentTrailing={<PackageSearch className="size-5 text-brand-secondary" aria-hidden="true" />}
+        />
+        <Table aria-label="Most requested descriptions">
+          <Table.Header>
+            <Table.Head label="Description" isRowHeader />
+            <Table.Head label="Requests" />
+          </Table.Header>
+          <Table.Body>
+            {(data?.topDescriptions ?? []).map((row) => (
+              <Table.Row key={row.description} id={row.description}>
+                <Table.Cell>
+                  <span dir="auto" className="text-primary">{row.description}</span>
+                </Table.Cell>
+                <Table.Cell>
+                  <Badge color="gray" className="font-mono tabular-nums">{row.count}×</Badge>
+                </Table.Cell>
+              </Table.Row>
+            ))}
+          </Table.Body>
+        </Table>
+        {data && data.topDescriptions.length === 0 ? (
+          <p className="px-6 py-8 text-center text-sm text-tertiary">No unmet demand.</p>
+        ) : null}
+      </TableCard.Root>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid items-start gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader className="border-b border-secondary/70">
             <CardTitle>Latest requests</CardTitle>
@@ -73,24 +84,33 @@ export function DemandClient() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="border-b border-secondary/70">
-            <CardTitle className="flex items-center gap-2">
-              <MapPinOff className="size-4 text-brand-secondary" />
-              Landmarks not found
-            </CardTitle>
-            <CardDescription>Add these to the OSM snapshot or the alias list.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2 text-sm">
-            {data && data.landmarkMisses.length === 0 ? <p className="text-tertiary">No landmark misses.</p> : null}
-            {(data?.landmarkMisses ?? []).map((row) => (
-              <div key={row.id} className="flex items-center justify-between gap-4">
-                <span dir="auto">{row.query}</span>
-                <span className="text-xs text-tertiary">{row.governorate ?? ""}</span>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
+        <TableCard.Root>
+          <TableCard.Header
+            title="Landmarks not found"
+            badge={`${data?.landmarkMisses.length ?? 0}`}
+            description="Add these to the OSM snapshot or the alias list."
+            contentTrailing={<MapPinOff className="size-5 text-brand-secondary" aria-hidden="true" />}
+          />
+          <Table aria-label="Landmarks not found">
+            <Table.Header>
+              <Table.Head label="Query" isRowHeader />
+              <Table.Head label="Governorate" />
+            </Table.Header>
+            <Table.Body>
+              {(data?.landmarkMisses ?? []).map((row) => (
+                <Table.Row key={row.id} id={row.id}>
+                  <Table.Cell>
+                    <span dir="auto" className="text-primary">{row.query}</span>
+                  </Table.Cell>
+                  <Table.Cell>{row.governorate ?? "—"}</Table.Cell>
+                </Table.Row>
+              ))}
+            </Table.Body>
+          </Table>
+          {data && data.landmarkMisses.length === 0 ? (
+            <p className="px-6 py-8 text-center text-sm text-tertiary">No landmark misses.</p>
+          ) : null}
+        </TableCard.Root>
       </div>
     </div>
   );

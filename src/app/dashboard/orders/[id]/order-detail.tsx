@@ -1,23 +1,44 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { ArrowLeft, LinkExternal01 as ExternalLink, File01 as FileText, MarkerPin01 as MapPin, MessageSquare01 as MessageSquare, Receipt, ShieldTick as ShieldCheck, Truck01 as Truck } from "@untitledui/icons";
 import { StaticPinMap } from "@/components/static-pin-map";
 import { Badge } from "@/components/base/badges/badges";
 import { Button } from "@/components/base/buttons/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/foundations/card/card";
+import { Input } from "@/components/base/input/input";
+import { Label } from "@/components/base/input/label";
+import { Alert } from "@/components/foundations/alert/alert";
 import type { QueueOrder, TranscriptLine } from "@/lib/dashboard/orders";
 import { JOB_LABEL, RiskBadge, money } from "../../bits";
 import { usePoll } from "../../use-poll";
 
 export function OrderDetail({ id }: { id: string }) {
+  const router = useRouter();
   const { data, error, reload } = usePoll<{ order: QueueOrder & { messages: TranscriptLine[] } }>(
     `/api/dashboard/orders/${id}`,
   );
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [landmark, setLandmark] = useState("");
+  const [driverNote, setDriverNote] = useState("");
+  const [quantity, setQuantity] = useState("1");
   const order = data?.order;
+  const syncedId = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!order || syncedId.current === order.id) return;
+    syncedId.current = order.id;
+    setName(order.customerName ?? "");
+    setPhone(order.phone ?? "");
+    setLandmark(order.landmark ?? "");
+    setDriverNote(order.driverNote ?? "");
+  }, [order]);
 
   async function post(path: string) {
     setBusy(true);
@@ -31,12 +52,7 @@ export function OrderDetail({ id }: { id: string }) {
 
   if (error && !order) {
     return (
-      <p
-        role="alert"
-        className="rounded-xl border border-utility-red-200 bg-error-primary px-4 py-2.5 text-sm text-error-primary"
-      >
-        {error}
-      </p>
+      <Alert color="error">{error}</Alert>
     );
   }
   if (!order) return <p className="text-sm text-tertiary">Loading the order…</p>;
@@ -55,7 +71,7 @@ export function OrderDetail({ id }: { id: string }) {
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-secondary/80 pb-5">
         <div>
           <Link
-            href="/dashboard"
+            href="/dashboard/orders"
             className="inline-flex items-center gap-1 text-xs font-medium text-tertiary transition-colors hover:text-primary"
           >
             <ArrowLeft className="size-3.5" />
@@ -79,13 +95,93 @@ export function OrderDetail({ id }: { id: string }) {
       </div>
 
       {actionError ? (
-        <p
-          role="alert"
-          className="rounded-xl border border-utility-red-200 bg-error-primary px-4 py-2.5 text-sm text-error-primary"
-        >
-          {actionError}
-        </p>
+        <Alert color="error">{actionError}</Alert>
       ) : null}
+      {saved ? <Alert color="success">Order updated.</Alert> : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Edit order</CardTitle>
+          <CardDescription>Name, phone, landmark, and quantity. Totals are recomputed from the catalog price.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form
+            className="grid gap-3 sm:grid-cols-2"
+            onSubmit={(event) => {
+              void (async (formEvent: FormEvent) => {
+                formEvent.preventDefault();
+                setBusy(true);
+                setSaved(false);
+                setActionError(null);
+                const res = await fetch(`/api/dashboard/orders/${id}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    ...(name.trim() ? { customerName: name.trim() } : {}),
+                    ...(phone.trim() ? { phone: phone.trim() } : {}),
+                    landmark: landmark.trim(),
+                    driverNote: driverNote.trim(),
+                    quantity: Math.max(1, Math.floor(Number(quantity) || 1)),
+                  }),
+                });
+                const body = (await res.json().catch(() => null)) as { error?: string } | null;
+                setBusy(false);
+                if (!res.ok) {
+                  setActionError(body?.error ?? "Couldn't save the order.");
+                  return;
+                }
+                setSaved(true);
+                await reload();
+              })(event);
+            }}
+          >
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="order-name">Name</Label>
+              <Input id="order-name" value={name} onChange={setName} aria-label="Name" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="order-phone">Phone</Label>
+              <Input id="order-phone" value={phone} onChange={setPhone} aria-label="Phone" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="order-landmark">Landmark</Label>
+              <Input id="order-landmark" value={landmark} onChange={setLandmark} aria-label="Landmark" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="order-note">Driver note</Label>
+              <Input id="order-note" value={driverNote} onChange={setDriverNote} aria-label="Driver note" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="order-qty">Quantity</Label>
+              <Input id="order-qty" value={quantity} onChange={setQuantity} inputMode="numeric" aria-label="Quantity" />
+            </div>
+            <div className="flex items-end gap-2">
+              <Button type="submit" isDisabled={busy}>Save</Button>
+              <Button
+                type="button"
+                color="secondary"
+                isDisabled={busy}
+                onClick={() => {
+                  if (!window.confirm("Remove this order from the queue? It will be marked cancelled.")) return;
+                  void (async () => {
+                    setBusy(true);
+                    const res = await fetch(`/api/dashboard/orders/${id}`, { method: "DELETE" });
+                    setBusy(false);
+                    if (!res.ok) {
+                      const body = (await res.json().catch(() => null)) as { error?: string } | null;
+                      setActionError(body?.error ?? "Couldn't remove the order.");
+                      return;
+                    }
+                    router.push("/dashboard/orders");
+                  })();
+                }}
+              >
+                Remove
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
         {/* Amounts & Address Card */}

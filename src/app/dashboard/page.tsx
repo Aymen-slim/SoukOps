@@ -1,5 +1,5 @@
-import { OrdersQueue } from "./orders-queue";
+import { AnalyticsClient } from "./analytics/analytics-client";
 
 export default function DashboardPage() {
-  return <OrdersQueue />;
+  return <AnalyticsClient />;
 }

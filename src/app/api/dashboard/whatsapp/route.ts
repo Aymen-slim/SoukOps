@@ -7,7 +7,7 @@ import {
   testWhatsAppConnection,
   type WhatsAppConfig,
 } from "@/lib/channels/whatsapp";
-import { requireMerchant } from "@/lib/dashboard/guard";
+import { rejectSandbox, requireMerchant } from "@/lib/dashboard/guard";
 import { getServerEnv } from "@/lib/env";
 
 /**
@@ -53,6 +53,8 @@ const testSchema = z.object({
 export async function POST(request: Request) {
   const gate = await requireMerchant();
   if ("error" in gate) return gate.error;
+  const blocked = rejectSandbox(gate.merchant);
+  if (blocked) return blocked;
   const body = (await request.json().catch(() => null)) as { action?: string } | null;
 
   if (body?.action === "connect") {

@@ -6,7 +6,7 @@ import {
   type InboundFacebookMessage,
 } from "@/lib/channels/facebook";
 import { verifyWebhookSignature } from "@/lib/channels/whatsapp";
-import { getDemoMerchant } from "@/lib/dashboard/merchant";
+import { merchantForFacebookPage } from "@/lib/dashboard/merchant";
 import { getServerEnv } from "@/lib/env";
 import { burstDelayMs, runTurn } from "@/lib/pipeline/handleTurn";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -21,7 +21,7 @@ export async function GET(request: Request) {
   const token = url.searchParams.get("hub.verify_token");
   const challenge = url.searchParams.get("hub.challenge");
   const supabase = createAdminClient();
-  const merchant = await getDemoMerchant(supabase);
+  const merchant = await merchantForFacebookPage(supabase, null);
   const expected = merchant ? await resolveFacebookVerifyToken(supabase, merchant.id) : getServerEnv().FACEBOOK_VERIFY_TOKEN;
   if (mode === "subscribe" && expected && token === expected && challenge) {
     return new NextResponse(challenge, { status: 200 });
@@ -136,13 +136,18 @@ export async function POST(request: Request) {
   }
 
   const supabase = createAdminClient();
-  const merchant = await getDemoMerchant(supabase);
-  if (!merchant) return NextResponse.json({ received: true, stored: 0 });
-
   const stored: Array<{ conversationId: string; kind: "text" | "image" | "audio" | "button" }> = [];
+  const byPage = new Map<string, string>();
   for (const message of parseFacebookWebhook(payload)) {
     try {
-      const row = await storeInbound(supabase, merchant.id, message);
+      let merchantId = byPage.get(message.pageId);
+      if (!merchantId) {
+        const merchant = await merchantForFacebookPage(supabase, message.pageId || null);
+        if (!merchant) continue;
+        merchantId = merchant.id;
+        byPage.set(message.pageId, merchantId);
+      }
+      const row = await storeInbound(supabase, merchantId, message);
       if (row) stored.push(row);
     } catch (err) {
       console.error(`[facebook] inbound ${message.externalId} failed:`, err instanceof Error ? err.message : err);

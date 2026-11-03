@@ -2,6 +2,7 @@ import { sparkText } from "@/lib/ai/spark";
 import { extractAmountsMillimes, passesPriceFirewall } from "@/lib/domain/firewall";
 import { firewallChecked, formatMillimesForChat } from "@/lib/domain/pricing";
 import type { NextAction } from "@/lib/domain/slots";
+import { sellerVoiceFor, type ReplyLanguage } from "./seller-voice";
 
 /**
  * Spark phrasing for negotiation and conversational seller replies:
@@ -48,6 +49,41 @@ function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
   });
 }
 
+const LANGUAGE_LINE: Record<ReplyLanguage, string> = {
+  derja: "Reply in natural Tunisian Derja (Arabizi).",
+  ar: "Reply in clear Modern Standard Arabic.",
+  en: "Reply in clear English.",
+  fr: "Reply in clear French.",
+};
+
+/** Default Derja prompts stay byte-for-byte so cassette keys do not move. */
+function applyVoice(system: string, conversationId?: string): string {
+  const voice = sellerVoiceFor(conversationId);
+  if (voice.language === "derja" && !voice.instructions.trim()) return system;
+  const note = voice.instructions.trim().slice(0, 400).replace(/\s+/g, " ");
+  return `${system}\n${LANGUAGE_LINE[voice.language]}${note ? ` Seller note about tone only, never a price: ${note}` : ""}`;
+}
+
+function localizedNegotiation(facts: NegotiationFacts, language: ReplyLanguage): string {
+  const offer = formatMillimesForChat(facts.offerMillimes);
+  if (language === "en") {
+    return facts.isFinal
+      ? `This is my final price: ${offer}. I can't go lower. Do you want to continue?`
+      : `I can do ${offer}. Shall we continue the order?`;
+  }
+  if (language === "fr") {
+    return facts.isFinal
+      ? `C'est mon dernier prix : ${offer}. Je ne peux pas descendre plus. On continue ?`
+      : `Je peux faire ${offer}. On continue la commande ?`;
+  }
+  if (language === "ar") {
+    return facts.isFinal
+      ? `هذا آخر سعر: ${offer}. ما نقدرش ننقص أكثر. نكملو الطلب؟`
+      : `نقدر نعمل ${offer}. نكملو الطلب؟`;
+  }
+  return negotiationTemplate(facts);
+}
+
 export function negotiationTemplate(facts: NegotiationFacts): string {
   const offer = formatMillimesForChat(facts.offerMillimes);
   if (facts.acceptedCounter) {
@@ -63,14 +99,17 @@ export async function phraseNegotiationReply(
   facts: NegotiationFacts,
   conversationId?: string,
 ): Promise<{ text: string; source: "spark" | "template" }> {
-  const fallback = negotiationTemplate(facts);
+  const voice = sellerVoiceFor(conversationId);
+  const fallback = voice.language === "derja" ? negotiationTemplate(facts) : localizedNegotiation(facts, voice.language);
   const offer = formatMillimesForChat(facts.offerMillimes);
   try {
     const raw = await withDeadline(sparkText({
-      system:
+      system: applyVoice(
         "You are a warm, playful, easygoing Tunisian clothing boutique seller chatting on WhatsApp in natural Tunisian Derja (Arabizi). " +
         "Use ONLY the facts given. Never invent or change an amount: the only prices you may write are the offer " +
         "and the list price, exactly as formatted. Sound like a friend who runs the shop (light, kind, a little playful — '3la rasi', 'yesss', '3aychek', 'mrigel'), never a form. One or two short sentences. No markdown.",
+        conversationId,
+      ),
       user: [
         `Product: ${facts.productName}`,
         `List price: ${formatMillimesForChat(facts.listPriceMillimes)}`,
@@ -178,7 +217,7 @@ export async function phraseSellerReply(
 
   try {
     const raw = await withDeadline(sparkText({
-      system:
+      system: applyVoice(
         "You are a warm, playful, easygoing Tunisian clothing boutique seller chatting on WhatsApp in natural Tunisian Derja (Arabizi). " +
         "Sound like a friend who runs the shop (light, kind, a little playful — 'Ahla bik', 'yesss', '3aychek', 'mrigel', '3la rasi'), NEVER like a bot or a form. " +
         "CRITICAL RULES:\n" +
@@ -186,6 +225,8 @@ export async function phraseSellerReply(
         "2. Ask ONLY for the single next needed step described in 'Next step to ask'.\n" +
         "3. Money firewall: NEVER invent or alter any price. If an Exact catalog price is provided and relevant, write it EXACTLY as formatted (e.g. 110DT). If no price is provided, do NOT write any price or money amount.\n" +
         "4. Keep it concise: 1 to 2 natural WhatsApp sentences, no bullet lists, no markdown.",
+        conversationId,
+      ),
       user: [
         `Situation: ${facts.situation}`,
         `Buyer just said: ${facts.buyerText || "(sent product image)"}`,

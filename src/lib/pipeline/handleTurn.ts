@@ -12,6 +12,7 @@ import { findConfirmedAddress, resolveAndSendPin, sendPinForCandidate } from "./
 import { logEvent } from "./events";
 import { createOrderFromAkked, handleBeddel, sendSummary } from "./order";
 import { phraseNegotiationReply, phraseSellerReply } from "./phrasing";
+import { asrBias, bindSellerVoice, clearSellerVoice, loadSellerVoice, sellerVoiceFor } from "./seller-voice";
 import { parseDispatchReconfirm, parseDispatchReconfirmReply } from "@/lib/domain/reconfirm";
 import { applyDispatchReconfirmReply } from "./reconfirm";
 import { applyDeterministicFallbacks, fastPathUnderstanding, understand, type Understanding } from "./understand";
@@ -288,6 +289,7 @@ export async function runTurn(conversationId: string): Promise<void> {
       .single();
     if (convError || !conversation) throw new Error(`conversation not found: ${convError?.message}`);
     const merchantId = conversation.merchant_id as string;
+    bindSellerVoice(conversationId, await loadSellerVoice(supabase, merchantId));
 
     const { data: messages, error: msgError } = await supabase
       .from("messages")
@@ -375,7 +377,12 @@ export async function runTurn(conversationId: string): Promise<void> {
           .download(message.media_path);
         if (dlError || !file) throw new Error(`audio download failed: ${dlError?.message}`);
         const wav = Buffer.from(await file.arrayBuffer());
-        const transcript = await transcribe({ wav, keywords, conversationId });
+        const transcript = await transcribe({
+          wav,
+          keywords,
+          conversationId,
+          languageBias: asrBias(sellerVoiceFor(conversationId).language),
+        });
         textParts.push(transcript);
         await logEvent(conversationId, "asr.transcript", { transcript });
       } else if (message.kind === "image") {
@@ -453,6 +460,9 @@ export async function runTurn(conversationId: string): Promise<void> {
     await logEvent(conversationId, "understand", { understanding: result });
 
     let slots = mergeSlots(currentSlots, result, imageCount > 0);
+    if (combinedText && (result.landmarks.length > 0 || result.delegation || result.governorate)) {
+      slots.locationMeta = { description: combinedText.slice(0, 280) };
+    }
 
     // Handover triggers (Day 2 subset; full policy Day 4).
     const handoverReason = result.flags.insult
@@ -1137,6 +1147,7 @@ export async function runTurn(conversationId: string): Promise<void> {
     await channelAdapter.sendText(conversationId, phrasedAck.text);
     await logEvent(conversationId, "reply.sent", { reply: phrasedAck.text, template: `ack-${phrasedAck.source}` });
   } finally {
+    clearSellerVoice(conversationId);
     running.delete(conversationId);
     if (pendingRerun.has(conversationId)) {
       pendingRerun.delete(conversationId);

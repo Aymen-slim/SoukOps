@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import { buildOAuthDialogUrl, FACEBOOK_PLATFORM_SCOPES } from "@/lib/channels/facebook";
+import { requireMerchant } from "@/lib/dashboard/guard";
 import { getServerEnv } from "@/lib/env";
 
 /**
@@ -16,11 +17,18 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "unknown platform" }, { status: 400 });
   }
   const env = getServerEnv();
+  const gate = await requireMerchant();
+  if ("error" in gate) {
+    return NextResponse.redirect(new URL("/login?next=/dashboard/channels", url.origin));
+  }
+  if (gate.merchant.is_sandbox) {
+    return NextResponse.redirect(new URL("/dashboard/channels?social=error&msg=sandbox", url.origin));
+  }
   if (!env.META_APP_ID) {
-    return NextResponse.redirect(new URL("/dashboard/settings?social=error&msg=meta_app_missing", url.origin));
+    return NextResponse.redirect(new URL("/dashboard/channels?social=error&msg=meta_app_missing", url.origin));
   }
   if (platform === "whatsapp" && !env.WHATSAPP_EMBEDDED_CONFIG_ID) {
-    return NextResponse.redirect(new URL("/dashboard/settings?social=error&msg=config_missing", url.origin));
+    return NextResponse.redirect(new URL("/dashboard/channels?social=error&msg=config_missing", url.origin));
   }
 
   const nonce = randomBytes(16).toString("hex");

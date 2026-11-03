@@ -1,11 +1,24 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
-import { ArrowUpRight, CpuChip01 as Bot, LinkExternal01 as ExternalLink, MessageSquare01 as MessageSquare, Package, RefreshCcw01 as RotateCcw, Truck01 as Truck } from "@untitledui/icons";
+import {
+  ArrowUpRight,
+  CpuChip01 as Bot,
+  LinkExternal01 as ExternalLink,
+  MessageSquare01 as MessageSquare,
+  Package,
+  RefreshCcw01 as RotateCcw,
+  Truck01 as Truck,
+} from "@untitledui/icons";
+import { InstagramIcon, MessengerIcon, WhatsAppIcon } from "@/components/brand-icons";
 import { Badge } from "@/components/base/badges/badges";
 import { Button } from "@/components/base/buttons/button";
+import { Alert } from "@/components/foundations/alert/alert";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/foundations/card/card";
-import { usePoll } from "../use-poll";
+import { Metric } from "@/components/foundations/metric/metric";
+import { Modal } from "@/components/foundations/modal/modal";
+import { invalidateDashboardUrl, usePoll } from "../use-poll";
 
 interface DemoPayload {
   courierMode: string;
@@ -28,9 +41,12 @@ export function DemoClient() {
   const { data, error, reload } = usePoll<DemoPayload>("/api/dashboard/demo", 5000);
   const [resetBusy, setResetBusy] = useState(false);
   const [resetNote, setResetNote] = useState<string | null>(null);
+  const [showReset, setShowReset] = useState(false);
+
+  const simBase = data?.links.simulator ?? "/demo";
 
   async function resetDemo() {
-    if (!window.confirm("Delete all demo conversations and orders? Catalog, landmarks and fees are kept.")) return;
+    setShowReset(false);
     setResetBusy(true);
     setResetNote(null);
     const res = await fetch("/api/dashboard/demo", { method: "POST" });
@@ -40,60 +56,84 @@ export function DemoClient() {
       setResetNote(body?.error ?? "Reset failed.");
       return;
     }
+    invalidateDashboardUrl();
     const counts = body?.counts ?? {};
-    setResetNote(`Reset done: ${counts.orders ?? 0} orders, ${counts.conversations ?? 0} conversations deleted. Re-run npm run seed:day5 if needed.`);
+    setResetNote(
+      `Reset done: ${counts.orders ?? 0} orders, ${counts.conversations ?? 0} conversations deleted. Re-run npm run seed:day5 if needed.`,
+    );
     await reload();
   }
+
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <p className="text-[11px] font-semibold tracking-[0.16em] text-brand-secondary uppercase">
-          Live Stage Control
-        </p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-primary sm:text-3xl">
-          Demo
-        </h1>
+        <p className="text-[11px] font-semibold tracking-[0.16em] text-brand-secondary uppercase">Live Stage Control</p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-primary sm:text-3xl">Demo</h1>
         <p className="mt-0.5 text-sm text-tertiary">
-          Stage links and courier agent status.
+          Omnichannel buyer simulator links (WhatsApp, Instagram, Messenger) and courier agent status.
         </p>
       </div>
 
-      {error ? (
-        <p role="alert" className="rounded-xl border border-utility-red-200 bg-error-primary px-4 py-2.5 text-sm text-error-primary">
-          {error}
-        </p>
-      ) : null}
+      {error ? <Alert color="error">{error}</Alert> : null}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader className="border-b border-secondary/70">
             <CardTitle>Walkthrough</CardTitle>
             <CardDescription>
-              Open these three surfaces side by side for the live 3-minute stage walkthrough.
+              Open these surfaces side by side for the live 3-minute stage walkthrough.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3 text-sm">
-            <a
+            <Link
               className="group flex items-center justify-between rounded-xl border border-secondary bg-tertiary/40 p-3.5 transition-colors hover:bg-tertiary"
-              href={data?.links.simulator ?? "/simulator"}
+              href={simBase}
             >
               <div className="flex items-center gap-3">
-                <span className="flex size-9 items-center justify-center rounded-lg bg-primary-solid text-brand-200">
+                <span className="flex size-9 items-center justify-center rounded-lg bg-primary-solid text-white">
                   <MessageSquare className="size-4" />
                 </span>
                 <div>
-                  <p className="font-semibold text-primary underline-offset-4 group-hover:underline">
-                    Buyer chat
-                  </p>
+                  <p className="font-semibold text-primary underline-offset-4 group-hover:underline">Buyer chat</p>
                   <p className="text-xs text-tertiary">
-                    Public WhatsApp simulator + live AI trace panel
+                    Public WhatsApp, Instagram &amp; Messenger simulator + live AI trace
                   </p>
                 </div>
               </div>
               <ArrowUpRight className="size-4 text-tertiary transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-            </a>
+            </Link>
 
-            <a
+            <div className="grid grid-cols-3 gap-2">
+              <Link
+                href={`${simBase}${simBase.includes("?") ? "&" : "?"}platform=whatsapp`}
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-secondary bg-primary px-2.5 py-2 text-xs font-semibold text-secondary transition-colors hover:bg-secondary hover:text-primary"
+              >
+                <span className="flex size-4 items-center justify-center rounded bg-[#25D366] text-white">
+                  <WhatsAppIcon className="size-2.5" />
+                </span>
+                WhatsApp
+              </Link>
+              <Link
+                href={`${simBase}${simBase.includes("?") ? "&" : "?"}platform=instagram`}
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-secondary bg-primary px-2.5 py-2 text-xs font-semibold text-secondary transition-colors hover:bg-secondary hover:text-primary"
+              >
+                <span className="flex size-4 items-center justify-center rounded bg-gradient-to-tr from-[#FEDA75] via-[#D62976] to-[#4F5BD5] text-white">
+                  <InstagramIcon className="size-2.5" />
+                </span>
+                Instagram
+              </Link>
+              <Link
+                href={`${simBase}${simBase.includes("?") ? "&" : "?"}platform=messenger`}
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-secondary bg-primary px-2.5 py-2 text-xs font-semibold text-secondary transition-colors hover:bg-secondary hover:text-primary"
+              >
+                <span className="flex size-4 items-center justify-center rounded bg-[#0084FF] text-white">
+                  <MessengerIcon className="size-2.5" />
+                </span>
+                Messenger
+              </Link>
+            </div>
+
+            <Link
               className="group flex items-center justify-between rounded-xl border border-secondary bg-tertiary/40 p-3.5 transition-colors hover:bg-tertiary"
               href={data?.links.courierClone ?? "/courier-clone/login"}
             >
@@ -105,15 +145,13 @@ export function DemoClient() {
                   <p className="font-semibold text-primary underline-offset-4 group-hover:underline">
                     First Delivery portal
                   </p>
-                  <p className="text-xs text-tertiary">
-                    Courier portal filled and verified by the Playwright worker
-                  </p>
+                  <p className="text-xs text-tertiary">Courier portal filled and verified by the Playwright worker</p>
                 </div>
               </div>
               <ArrowUpRight className="size-4 text-tertiary transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-            </a>
+            </Link>
 
-            <a
+            <Link
               className="group flex items-center justify-between rounded-xl border border-secondary bg-tertiary/40 p-3.5 transition-colors hover:bg-tertiary"
               href="/dashboard"
             >
@@ -122,16 +160,12 @@ export function DemoClient() {
                   <Package className="size-4" />
                 </span>
                 <div>
-                  <p className="font-semibold text-primary underline-offset-4 group-hover:underline">
-                    Order queue
-                  </p>
-                  <p className="text-xs text-tertiary">
-                    Approve buyer orders, inspect risk, and print A6 waybills
-                  </p>
+                  <p className="font-semibold text-primary underline-offset-4 group-hover:underline">Order queue</p>
+                  <p className="text-xs text-tertiary">Approve buyer orders, inspect risk, and print A6 waybills</p>
                 </div>
               </div>
               <ArrowUpRight className="size-4 text-tertiary transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-            </a>
+            </Link>
           </CardContent>
         </Card>
 
@@ -141,42 +175,21 @@ export function DemoClient() {
               <Bot className="size-4 text-brand-secondary" />
               Courier
             </CardTitle>
-            <CardDescription>
-              Real-time worker heartbeat and latest generated waybill.
-            </CardDescription>
+            <CardDescription>Real-time worker heartbeat and latest generated waybill.</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4 text-sm">
             <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-xl border border-secondary bg-tertiary/45 p-3">
-                <p className="text-[10px] font-semibold tracking-wider text-tertiary uppercase">
-                  Dispatch Mode
-                </p>
-                <p className="mt-1 font-semibold text-primary">
-                  Mode: {MODE_LABEL[data?.courierMode ?? ""] ?? data?.courierMode ?? "…"}
-                </p>
-              </div>
-              <div className="rounded-xl border border-secondary bg-tertiary/45 p-3">
-                <p className="text-[10px] font-semibold tracking-wider text-tertiary uppercase">
-                  Browser Worker
-                </p>
-                <p className="mt-1 flex items-center gap-2">
-                  <span className="font-medium">Agent</span>
+              <Metric label="Dispatch mode" value={MODE_LABEL[data?.courierMode ?? ""] ?? data?.courierMode ?? "…"} />
+              <Metric
+                label="Browser worker"
+                value={
                   <Badge color={data?.workerOnline ? "success" : "gray"}>
                     {data?.workerOnline ? "online" : "offline"}
                   </Badge>
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-xl border border-secondary bg-tertiary/45 p-3">
-                <p className="text-[10px] font-semibold tracking-wider text-tertiary uppercase">AI mode</p>
-                <p className="mt-1 font-mono text-sm font-semibold text-primary">{data?.aiMode ?? "…"}</p>
-              </div>
-              <div className="rounded-xl border border-secondary bg-tertiary/45 p-3">
-                <p className="text-[10px] font-semibold tracking-wider text-tertiary uppercase">Public simulator</p>
-                <p className="mt-1 font-semibold text-primary">{data ? (data.simulatorPublic ? "Open" : "Closed") : "…"}</p>
-              </div>
+                }
+              />
+              <Metric label="AI mode" value={data?.aiMode ?? "…"} />
+              <Metric label="Public simulator" value={data ? (data.simulatorPublic ? "Open" : "Closed") : "…"} />
             </div>
 
             <div className="rounded-xl border border-secondary bg-primary p-4">
@@ -184,15 +197,15 @@ export function DemoClient() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p>
                     Latest waybill:{" "}
-                    <span className="font-mono font-semibold">{data.lastShipment.barcode}</span>
+                    <span className="font-mono font-semibold tabular-nums">{data.lastShipment.barcode}</span>
                   </p>
-                  <a
+                  <Link
                     className="inline-flex items-center gap-1 font-medium text-brand-secondary underline underline-offset-4"
                     href={data.lastShipment.printUrl}
                   >
                     <span>open</span>
                     <ExternalLink className="size-3.5" />
-                  </a>
+                  </Link>
                 </div>
               ) : (
                 <p className="text-tertiary">No waybill yet.</p>
@@ -200,11 +213,27 @@ export function DemoClient() {
             </div>
 
             <div className="flex flex-col gap-2">
-              <Button type="button" color="secondary" isDisabled={resetBusy} onClick={() => void resetDemo()}>
+              <Button type="button" color="secondary" isDisabled={resetBusy} onClick={() => setShowReset(true)}>
                 <RotateCcw className="size-4" />
                 Reset the demo
               </Button>
               {resetNote ? <p className="text-xs text-tertiary">{resetNote}</p> : null}
+              <Modal
+                isOpen={showReset}
+                onOpenChange={setShowReset}
+                title="Reset the demo?"
+                description="Delete all demo conversations and orders? Catalog, landmarks and fees are kept."
+                footer={
+                  <>
+                    <Button color="secondary" onPress={() => setShowReset(false)}>
+                      Cancel
+                    </Button>
+                    <Button color="primary-destructive" isDisabled={resetBusy} onPress={() => void resetDemo()}>
+                      Delete demo data
+                    </Button>
+                  </>
+                }
+              />
             </div>
           </CardContent>
         </Card>

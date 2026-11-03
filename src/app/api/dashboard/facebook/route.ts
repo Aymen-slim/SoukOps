@@ -8,7 +8,7 @@ import {
   type FacebookPageOption,
   type PendingFacebookPages,
 } from "@/lib/channels/facebook";
-import { requireMerchant } from "@/lib/dashboard/guard";
+import { rejectSandbox, requireMerchant } from "@/lib/dashboard/guard";
 import { getServerEnv } from "@/lib/env";
 
 /**
@@ -72,6 +72,8 @@ export async function GET() {
 export async function POST(request: Request) {
   const gate = await requireMerchant();
   if ("error" in gate) return gate.error;
+  const blocked = rejectSandbox(gate.merchant);
+  if (blocked) return blocked;
   const body = (await request.json().catch(() => null)) as { action?: string } | null;
 
   if (body?.action === "exchange") {

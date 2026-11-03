@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { CheckCircle as CheckCircle2, Copy01 as Copy, CreditCard01 as CreditCard, Link02 as Link2, MarkerPin01 as MapPin, MessageCircle01 as MessageCircle, Zap as PlugZap, Save01 as Save, Send01 as Send, Truck01 as Truck } from "@untitledui/icons";
+import { Copy01 as Copy, CreditCard01 as CreditCard, Link02 as Link2, MarkerPin01 as MapPin, MessageCircle01 as MessageCircle, Zap as PlugZap, Save01 as Save, Send01 as Send, Truck01 as Truck } from "@untitledui/icons";
 import { InstagramIcon, MessengerIcon, WhatsAppIcon } from "@/components/brand-icons";
 import { Badge } from "@/components/base/badges/badges";
 import { Button } from "@/components/base/buttons/button";
@@ -9,7 +9,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/base/input/input";
 import { Label } from "@/components/base/input/label";
 import { NativeSelect } from "@/components/base/select/select-native";
+import { RadioButton, RadioGroup } from "@/components/base/radio-buttons/radio-buttons";
+import { Table, TableCard } from "@/components/application/table/table";
+import { Alert } from "@/components/foundations/alert/alert";
+import { Modal } from "@/components/foundations/modal/modal";
+import { invalidateClientSession } from "@/lib/auth/client-session";
 import { money } from "../bits";
+import { getCachedDashboard, setCachedDashboard } from "../use-poll";
 
 interface FeeRow {
   governorate: string;
@@ -26,10 +32,16 @@ interface Settings {
 }
 
 export function SettingsClient() {
-  const [settings, setSettings] = useState<Settings | null>(null);
-  const [paymentLink, setPaymentLink] = useState("");
-  const [thresholdDt, setThresholdDt] = useState("");
-  const [mode, setMode] = useState<Settings["courierMode"]>("mock_api");
+  const cached = getCachedDashboard<Settings & { shopName?: string }>("/api/dashboard/settings");
+  const [settings, setSettings] = useState<Settings | null>(cached);
+  const [shopName, setShopName] = useState(cached?.shopName ?? "");
+  const [paymentLink, setPaymentLink] = useState(cached?.paymentLink ?? "");
+  const [thresholdDt, setThresholdDt] = useState(cached?.freeDeliveryThresholdMillimes == null ? "" : String(cached.freeDeliveryThresholdMillimes / 1000));
+  const [mode, setMode] = useState<Settings["courierMode"]>(cached?.courierMode ?? "mock_api");
+
+
+
+
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
@@ -42,7 +54,9 @@ export function SettingsClient() {
             setError(body.error);
             return;
           }
+          setCachedDashboard("/api/dashboard/settings", body);
           setSettings(body);
+          setShopName((body as Settings & { shopName?: string }).shopName ?? "");
           setPaymentLink(body.paymentLink ?? "");
           setThresholdDt(
             body.freeDeliveryThresholdMillimes == null
@@ -68,6 +82,7 @@ export function SettingsClient() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        shopName: shopName.trim() || undefined,
         paymentLink: paymentLink.trim() || null,
         freeDeliveryThresholdMillimes: threshold,
         courierMode: mode,
@@ -78,6 +93,7 @@ export function SettingsClient() {
       setError(body?.error ?? "Couldn't save.");
       return;
     }
+    invalidateClientSession();
     setSaved(true);
   }
 
@@ -95,21 +111,8 @@ export function SettingsClient() {
         </p>
       </div>
 
-      {error ? (
-        <p role="alert" className="rounded-xl border border-utility-red-200 bg-error-primary px-4 py-2.5 text-sm text-error-primary">
-          {error}
-        </p>
-      ) : null}
-      {saved ? (
-        <p className="flex items-center gap-2 rounded-xl border border-utility-green-200 bg-success-primary px-4 py-2.5 text-sm font-medium text-success-primary">
-          <CheckCircle2 className="size-4" />
-          Settings saved.
-        </p>
-      ) : null}
-
-      <WhatsAppConnect />
-
-      <FacebookConnect />
+      {error ? <Alert color="error">{error}</Alert> : null}
+      {saved ? <Alert color="success">Settings saved.</Alert> : null}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_1.15fr]">
         <Card className="h-fit">
@@ -124,6 +127,10 @@ export function SettingsClient() {
           </CardHeader>
           <CardContent>
             <form onSubmit={(event) => void onSubmit(event)} className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="shop-name">Shop name</Label>
+                <Input id="shop-name" aria-label="Shop name" value={shopName} onChange={setShopName} />
+              </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="pay">Payment link (Flouci / Konnect)</Label>
                 <Input aria-label="Payment link (Flouci / Konnect)"
@@ -163,64 +170,52 @@ export function SettingsClient() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="border-b border-secondary/70">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <Truck className="size-4 text-brand-secondary" />
-                  Delivery fees
-                </CardTitle>
-                <CardDescription>
-                  Deterministic governorate &amp; First Delivery <code>locality_id</code> mapping.
-                </CardDescription>
-              </div>
-              <Badge color="gray" className="font-mono tabular-nums">
-                {(settings?.fees ?? []).length} zones
-              </Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-secondary text-[11px] font-semibold tracking-wider text-tertiary uppercase">
-                  <th className="py-2.5 pr-3">Governorate</th>
-                  <th className="py-2.5 px-3">Delegation</th>
-                  <th className="py-2.5 px-3">locality_id</th>
-                  <th className="py-2.5 pl-3 text-right">Fee</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-secondary/60">
-                {(settings?.fees ?? []).map((fee) => (
-                  <tr
-                    key={`${fee.governorate}-${fee.delegation ?? ""}-${fee.locality_id ?? ""}`}
-                    className="hover:bg-tertiary/40"
-                  >
-                    <td className="py-2.5 pr-3 font-medium text-primary">
-                      <span className="inline-flex items-center gap-1.5">
-                        <MapPin className="size-3 text-brand-secondary" />
-                        {fee.governorate}
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-3 text-tertiary">{fee.delegation ?? "—"}</td>
-                    <td className="py-2.5 px-3">
-                      {fee.locality_id != null ? (
-                        <Badge color="gray" className="font-mono tabular-nums">
-                          {fee.locality_id}
-                        </Badge>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td className="py-2.5 pl-3 text-right font-mono font-medium tabular-nums text-primary">
+        <TableCard.Root>
+          <TableCard.Header
+            title="Delivery fees"
+            badge={`${(settings?.fees ?? []).length} zones`}
+            description="Deterministic governorate & First Delivery locality_id mapping."
+            contentTrailing={<Truck className="size-5 text-brand-secondary" aria-hidden="true" />}
+          />
+          <Table aria-label="Delivery fees" size="sm">
+            <Table.Header>
+              <Table.Head label="Governorate" isRowHeader />
+              <Table.Head label="Delegation" />
+              <Table.Head label="locality_id" />
+              <Table.Head label="Fee" />
+            </Table.Header>
+            <Table.Body>
+              {(settings?.fees ?? []).map((fee) => (
+                <Table.Row
+                  key={`${fee.governorate}-${fee.delegation ?? ""}-${fee.locality_id ?? ""}`}
+                  id={`${fee.governorate}-${fee.delegation ?? ""}-${fee.locality_id ?? ""}`}
+                >
+                  <Table.Cell>
+                    <span className="inline-flex items-center gap-1.5 font-medium text-primary">
+                      <MapPin className="size-3 text-brand-secondary" />
+                      {fee.governorate}
+                    </span>
+                  </Table.Cell>
+                  <Table.Cell>{fee.delegation ?? "—"}</Table.Cell>
+                  <Table.Cell>
+                    {fee.locality_id != null ? (
+                      <Badge color="gray" className="font-mono tabular-nums">
+                        {fee.locality_id}
+                      </Badge>
+                    ) : (
+                      "—"
+                    )}
+                  </Table.Cell>
+                  <Table.Cell>
+                    <span className="font-mono font-medium tabular-nums text-primary">
                       {money(fee.fee_millimes)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
+                    </span>
+                  </Table.Cell>
+                </Table.Row>
+              ))}
+            </Table.Body>
+          </Table>
+        </TableCard.Root>
       </div>
     </div>
   );
@@ -241,7 +236,7 @@ interface WhatsAppStatus {
  * Meta gives you, test, save, then copy the webhook into Meta. The access
  * token is write-only — it is never displayed back.
  */
-function WhatsAppConnect() {
+export function WhatsAppConnect() {
   const [status, setStatus] = useState<WhatsAppStatus | null>(null);
   const [open, setOpen] = useState(false);
   const [phoneNumberId, setPhoneNumberId] = useState("");
@@ -375,15 +370,10 @@ function WhatsAppConnect() {
       {open ? (
         <CardContent className="flex flex-col gap-5">
           {waError ? (
-            <p role="alert" className="rounded-xl border border-utility-red-200 bg-error-primary px-4 py-2.5 text-sm text-error-primary">
-              {waError}
-            </p>
+            <Alert color="error">{waError}</Alert>
           ) : null}
           {note ? (
-            <p className="flex items-center gap-2 rounded-xl border border-utility-green-200 bg-success-primary px-4 py-2.5 text-sm font-medium text-success-primary">
-              <CheckCircle2 className="size-4" />
-              {note}
-            </p>
+            <Alert color="success">{note}</Alert>
           ) : null}
 
           <div className="flex flex-col gap-2 rounded-xl border border-secondary bg-tertiary/40 p-4">
@@ -522,11 +512,12 @@ interface PageOption {
  * then the seller picks which of his Pages to connect. Page tokens are
  * cached server-side during the pick — the browser never sees a token.
  */
-function FacebookConnect() {
+export function FacebookConnect() {
   const [status, setStatus] = useState<FacebookStatus | null>(null);
   const [platform, setPlatform] = useState<"messenger" | "instagram" | null>(null);
   const [pages, setPages] = useState<PageOption[] | null>(null);
   const [selectedPage, setSelectedPage] = useState("");
+  const [confirmDisconnect, setConfirmDisconnect] = useState<"messenger" | "instagram" | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [fbError, setFbError] = useState<string | null>(null);
@@ -627,15 +618,10 @@ function FacebookConnect() {
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {fbError ? (
-          <p role="alert" className="rounded-xl border border-utility-red-200 bg-error-primary px-4 py-2.5 text-sm text-error-primary">
-            {fbError}
-          </p>
+          <Alert color="error">{fbError}</Alert>
         ) : null}
         {note ? (
-          <p className="flex items-center gap-2 rounded-xl border border-utility-green-200 bg-success-primary px-4 py-2.5 text-sm font-medium text-success-primary">
-            <CheckCircle2 className="size-4" />
-            {note}
-          </p>
+          <Alert color="success">{note}</Alert>
         ) : null}
 
         <div className="grid gap-3 sm:grid-cols-2">
@@ -660,7 +646,7 @@ function FacebookConnect() {
                 Link Messenger
               </a>
               {status?.messenger.connected ? (
-                <Button type="button" color="secondary" isDisabled={busy} onClick={() => void disconnect("messenger")}>
+                <Button type="button" color="secondary" isDisabled={busy} onClick={() => setConfirmDisconnect("messenger")}>
                   Disconnect
                 </Button>
               ) : null}
@@ -688,7 +674,7 @@ function FacebookConnect() {
                 Link Instagram
               </a>
               {status?.instagram.connected ? (
-                <Button type="button" color="secondary" isDisabled={busy} onClick={() => void disconnect("instagram")}>
+                <Button type="button" color="secondary" isDisabled={busy} onClick={() => setConfirmDisconnect("instagram")}>
                   Disconnect
                 </Button>
               ) : null}
@@ -712,29 +698,60 @@ function FacebookConnect() {
             <p className="text-sm font-semibold text-primary">
               Choose the Page to connect for {platform === "messenger" ? "Messenger" : "Instagram"}:
             </p>
-            {pages.map((page) => (
-              <label key={page.pageId} className="flex cursor-pointer items-center gap-2 text-sm">
-                <input
-                  type="radio"
-                  name="fb-page"
+            <RadioGroup
+              aria-label="Facebook Page"
+              value={selectedPage}
+              onChange={setSelectedPage}
+              className="flex flex-col gap-2"
+            >
+              {pages.map((page) => (
+                <RadioButton
+                  key={page.pageId}
                   value={page.pageId}
-                  checked={selectedPage === page.pageId}
-                  onChange={() => setSelectedPage(page.pageId)}
+                  label={page.pageName}
+                  hint={
+                    platform === "instagram"
+                      ? page.instagram
+                        ? `@${page.instagram.username ?? page.instagram.id}`
+                        : "no Instagram linked"
+                      : undefined
+                  }
                 />
-                <span className="font-medium text-primary">{page.pageName}</span>
-                {platform === "instagram" ? (
-                  <span className="text-xs text-tertiary">
-                    {page.instagram ? `@${page.instagram.username ?? page.instagram.id}` : "no Instagram linked"}
-                  </span>
-                ) : null}
-              </label>
-            ))}
+              ))}
+            </RadioGroup>
             <Button type="button" className="mt-1 w-fit" isDisabled={busy} onClick={() => void connect()}>
               <PlugZap className="size-3.5" />
               Connect this Page
             </Button>
           </div>
         ) : null}
+
+        <Modal
+          isOpen={confirmDisconnect !== null}
+          onOpenChange={(open) => {
+            if (!open) setConfirmDisconnect(null);
+          }}
+          title={`Disconnect ${confirmDisconnect === "instagram" ? "Instagram" : "Messenger"}?`}
+          description="The agent will stop answering buyers on this channel. You can reconnect at any time."
+          footer={
+            <>
+              <Button color="secondary" onPress={() => setConfirmDisconnect(null)}>
+                Keep connected
+              </Button>
+              <Button
+                color="primary-destructive"
+                isDisabled={busy}
+                onPress={() => {
+                  const target = confirmDisconnect;
+                  setConfirmDisconnect(null);
+                  if (target) void disconnect(target);
+                }}
+              >
+                Disconnect
+              </Button>
+            </>
+          }
+        />
       </CardContent>
     </Card>
   );

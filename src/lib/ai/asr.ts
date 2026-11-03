@@ -10,6 +10,8 @@ export interface TranscribeRequest {
   /** Biasing terms: product names, landmark names, common Derja words. */
   keywords?: string[];
   conversationId?: string;
+  /** Set only when the shop is not on the Derja default, so replay keys stay stable. */
+  languageBias?: string[];
 }
 
 const metaAsrResponseSchema = z
@@ -28,7 +30,10 @@ function wavHash(wav: Buffer): string {
 export async function transcribeWithMeta(req: TranscribeRequest): Promise<string> {
   const env = getServerEnv();
   requireEnv("MODEL_API_KEY");
-  return withCassette("asr.meta", { model: env.ASR_MODEL, wav: wavHash(req.wav), keywords: req.keywords ?? [] }, () =>
+  const cassetteInput = req.languageBias
+    ? { model: env.ASR_MODEL, wav: wavHash(req.wav), keywords: req.keywords ?? [], languageBias: req.languageBias }
+    : { model: env.ASR_MODEL, wav: wavHash(req.wav), keywords: req.keywords ?? [] };
+  return withCassette("asr.meta", cassetteInput, () =>
     traced({ kind: "asr.transcribe", model: env.ASR_MODEL, provider: "meta", conversationId: req.conversationId }, async () => {
       const form = new FormData();
       form.append(
@@ -36,7 +41,7 @@ export async function transcribeWithMeta(req: TranscribeRequest): Promise<string
         JSON.stringify({
           model: env.ASR_MODEL,
           audioEncoding: "WAV",
-          languageBias: ["Arabic", "French"],
+          languageBias: req.languageBias ?? ["Arabic", "French"],
           keywords: req.keywords ?? [],
         }),
       );

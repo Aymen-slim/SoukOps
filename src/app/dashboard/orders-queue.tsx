@@ -3,29 +3,46 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { ArrowUpRight, CheckCircle as CheckCircle2, Clock, Package, AlertOctagon as ShieldAlert, Truck01 as Truck } from "@untitledui/icons";
+import { CheckCircle as CheckCircle2, Clock, Package, AlertOctagon as ShieldAlert, Truck01 as Truck } from "@untitledui/icons";
+import type { Selection } from "react-aria-components";
 import { Badge } from "@/components/base/badges/badges";
 import { Button } from "@/components/base/buttons/button";
-import { Card, CardContent } from "@/components/foundations/card/card";
+import { Dropdown } from "@/components/base/dropdown/dropdown";
+import { Select } from "@/components/base/select/select";
+import { Table, TableCard } from "@/components/application/table/table";
+import { PaginationCardMinimal } from "@/components/application/pagination/pagination";
+import { EmptyState } from "@/components/application/empty-state/empty-state";
+import { Alert } from "@/components/foundations/alert/alert";
+import { Metric } from "@/components/foundations/metric/metric";
 import type { QueueOrder } from "@/lib/dashboard/orders";
-import { JOB_LABEL, OsmThumb, RiskBadge, money } from "./bits";
+import { JOB_LABEL, RiskBadge, money } from "./bits";
 import { usePoll } from "./use-poll";
+
+const FILTERS = [
+  { id: "all", label: "All orders" },
+  { id: "awaiting", label: "To approve" },
+  { id: "waybilled", label: "Waybilled" },
+  { id: "red", label: "Red risk" },
+];
 
 export function OrdersQueue() {
   const router = useRouter();
-  const { data, error } = usePoll<{ orders: QueueOrder[] }>("/api/dashboard/orders");
+  const { data, error, reload } = usePoll<{ orders: QueueOrder[] }>("/api/dashboard/orders");
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [filter, setFilter] = useState("all");
+  const [selected, setSelected] = useState<Selection>(new Set());
   const orders = data?.orders ?? [];
 
-  async function approve(id: string) {
+  async function approve(id: string, navigate = true) {
     setBusy(id);
     setActionError(null);
     const res = await fetch(`/api/orders/${id}/approve`, { method: "POST" });
     const body = (await res.json().catch(() => null)) as { error?: string } | null;
     setBusy(null);
     if (!res.ok) setActionError(body?.error ?? "Couldn't approve.");
-    else router.push(`/dashboard/orders/${id}`);
+    else if (navigate) router.push(`/dashboard/orders/${id}`);
+    return res.ok;
   }
 
   const awaitingCount = orders.filter(
@@ -34,9 +51,36 @@ export function OrdersQueue() {
   const shippedCount = orders.filter((o) => Boolean(o.shipment)).length;
   const redRiskCount = orders.filter((o) => o.riskLevel === "red").length;
 
+  const visible = orders.filter((o) => {
+    if (filter === "awaiting") return o.status === "CONFIRMED_BY_BUYER" && !o.job && !o.shipment;
+    if (filter === "waybilled") return Boolean(o.shipment);
+    if (filter === "red") return o.riskLevel === "red";
+    return true;
+  });
+
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
+  const totalPages = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
+  const paged = visible.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const selectedIds = selected === "all" ? paged.map((o) => o.id) : [...selected].map(String);
+  const approvableSelected = visible.filter(
+    (o) =>
+      selectedIds.includes(o.id) &&
+      o.status === "CONFIRMED_BY_BUYER" &&
+      !o.job &&
+      !o.shipment,
+  );
+
+  async function approveSelected() {
+    for (const order of approvableSelected) {
+      await approve(order.id, false);
+    }
+    setSelected(new Set());
+  }
+
   return (
     <div className="flex flex-col gap-6">
-      {/* Header & KPI Strip */}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-[11px] font-semibold tracking-[0.16em] text-brand-secondary uppercase">
@@ -50,146 +94,209 @@ export function OrdersQueue() {
           </p>
         </div>
 
-        <div className="grid grid-cols-3 gap-2.5 sm:flex sm:items-center">
-          <div className="flex items-center gap-2.5 rounded-xl border border-secondary bg-primary px-3.5 py-2 shadow-2xs">
-            <Clock className="size-4 text-brand-secondary" />
-            <div>
-              <p className="font-mono text-sm font-semibold tabular-nums leading-none">
-                {awaitingCount}
-              </p>
-              <p className="mt-0.5 text-[10px] text-tertiary">To approve</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2.5 rounded-xl border border-secondary bg-primary px-3.5 py-2 shadow-2xs">
-            <Truck className="size-4 text-utility-green-700" />
-            <div>
-              <p className="font-mono text-sm font-semibold tabular-nums leading-none">
-                {shippedCount}
-              </p>
-              <p className="mt-0.5 text-[10px] text-tertiary">Waybills</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2.5 rounded-xl border border-secondary bg-primary px-3.5 py-2 shadow-2xs">
-            <ShieldAlert className="size-4 text-error-primary" />
-            <div>
-              <p className="font-mono text-sm font-semibold tabular-nums leading-none">
-                {redRiskCount}
-              </p>
-              <p className="mt-0.5 text-[10px] text-tertiary">Red risk</p>
-            </div>
-          </div>
+        <div className="grid grid-cols-3 gap-2.5">
+          <Metric label="To approve" value={awaitingCount} icon={Clock} />
+          <Metric label="Waybills" value={shippedCount} icon={Truck} iconClassName="text-utility-green-700" />
+          <Metric label="Red risk" value={redRiskCount} icon={ShieldAlert} iconClassName="text-error-primary" />
         </div>
       </div>
 
-      {error ? (
-        <p role="alert" className="rounded-xl border border-utility-red-200 bg-error-primary px-4 py-2.5 text-sm text-error-primary">
-          {error}
-        </p>
-      ) : null}
-      {actionError ? (
-        <p role="alert" className="rounded-xl border border-utility-red-200 bg-error-primary px-4 py-2.5 text-sm text-error-primary">
-          {actionError}
-        </p>
-      ) : null}
+      {error ? <Alert color="error">{error}</Alert> : null}
+      {actionError ? <Alert color="error">{actionError}</Alert> : null}
 
       {data && orders.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center gap-2 py-12 text-center">
-            <Package className="size-8 text-tertiary/60" />
-            <p className="text-sm font-medium text-primary">No orders waiting.</p>
-            <p className="text-xs text-tertiary">
-              Buyer orders confirmed with Akked in the simulator will appear here automatically.
-            </p>
-          </CardContent>
-        </Card>
-      ) : null}
-
-      <div className="flex flex-col gap-3">
-        {orders.map((order) => {
-          const canApprove = order.status === "CONFIRMED_BY_BUYER" && !order.job && !order.shipment;
-          return (
-            <Card key={order.id} className="transition-shadow hover:shadow-md">
-              <CardContent className="flex flex-wrap items-center gap-4">
-                {order.cropUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={order.cropUrl}
-                    alt=""
-                    className="size-24 shrink-0 rounded-xl border border-secondary bg-checkerboard object-cover"
-                  />
-                ) : (
-                  <div className="flex size-24 shrink-0 items-center justify-center rounded-xl border border-secondary bg-tertiary text-tertiary">
-                    <Package className="size-6 opacity-40" />
-                  </div>
-                )}
-
-                {order.lat != null && order.lng != null ? (
-                  <OsmThumb lat={order.lat} lng={order.lng} />
-                ) : null}
-
-                <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Link
-                      href={`/dashboard/orders/${order.id}`}
-                      className="text-base font-semibold tracking-tight text-primary hover:text-brand-secondary hover:underline"
-                    >
-                      {order.customerName ?? "Buyer"} — {order.designation ?? "Order"}
-                    </Link>
-                    <span className="rounded-md bg-tertiary px-2 py-0.5 font-mono text-xs font-semibold tabular-nums text-primary">
-                      {money(order.totalMillimes)}
-                    </span>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <RiskBadge level={order.riskLevel} score={order.riskScore} />
-                    {order.job ? (
-                      <Badge color={order.job.status === "failed" ? "error" : "blue"}>
-                        {JOB_LABEL[order.job.status] ?? order.job.status}
-                      </Badge>
-                    ) : null}
-                    {order.shipment ? (
-                      <Badge color="gray" className="font-mono tabular-nums">
-                        <CheckCircle2 className="size-3 text-utility-green-600" />
-                        Code {order.shipment.barcode}
-                      </Badge>
-                    ) : null}
-                    {order.governorate ? (
-                      <span className="text-xs text-tertiary">
-                        {order.governorate}
-                        {order.landmark ? ` · ${order.landmark}` : ""}
+        <div className="rounded-xl bg-primary py-12 shadow-xs ring-1 ring-secondary">
+          <EmptyState size="md">
+            <EmptyState.Header>
+              <EmptyState.FeaturedIcon color="gray" icon={Package} />
+            </EmptyState.Header>
+            <EmptyState.Content>
+              <EmptyState.Title>No orders waiting</EmptyState.Title>
+              <EmptyState.Description>
+                Buyer orders confirmed with Akked in the simulator will appear here automatically.
+              </EmptyState.Description>
+            </EmptyState.Content>
+          </EmptyState>
+        </div>
+      ) : (
+        <TableCard.Root>
+          <TableCard.Header
+            title="Orders"
+            badge={`${visible.length} shown`}
+            description="Approve, check the risk, then send."
+            contentTrailing={
+              <div className="w-44">
+                <Select
+                  aria-label="Filter orders"
+                  selectedKey={filter}
+                  onSelectionChange={(key) => {
+                    setFilter(String(key));
+                    setPage(1);
+                  }}
+                  items={FILTERS}
+                >
+                  {(item) => <Select.Item id={item.id}>{item.label}</Select.Item>}
+                </Select>
+              </div>
+            }
+          />
+          {selectedIds.length > 0 ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-secondary bg-secondary px-4 py-2.5 text-sm">
+              <span className="text-secondary">
+                {selectedIds.length} selected
+                {approvableSelected.length ? ` · ${approvableSelected.length} can be approved` : ""}
+              </span>
+              <span className="flex gap-2">
+                <Button size="sm" color="tertiary" onClick={() => setSelected(new Set())}>
+                  Clear
+                </Button>
+                <Button
+                  size="sm"
+                  isDisabled={approvableSelected.length === 0 || busy !== null}
+                  onClick={() => void approveSelected()}
+                >
+                  Approve selected
+                </Button>
+              </span>
+            </div>
+          ) : null}
+          <Table aria-label="Orders" selectionMode="multiple" selectedKeys={selected} onSelectionChange={setSelected}>
+            <Table.Header>
+              <Table.Head label="Order" isRowHeader />
+              <Table.Head label="Total" />
+              <Table.Head label="Risk" />
+              <Table.Head label="Status" />
+              <Table.Head label="Location" />
+              <Table.Head label="Action" />
+            </Table.Header>
+            <Table.Body>
+              {paged.map((order) => {
+                const canApprove = order.status === "CONFIRMED_BY_BUYER" && !order.job && !order.shipment;
+                return (
+                  <Table.Row key={order.id} id={order.id}>
+                    <Table.Cell>
+                      <div className="flex items-center gap-3">
+                        {order.cropUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={order.cropUrl}
+                            alt=""
+                            className="size-11 shrink-0 rounded-lg border border-secondary bg-checkerboard object-cover"
+                          />
+                        ) : (
+                          <div className="flex size-11 shrink-0 items-center justify-center rounded-lg border border-secondary bg-tertiary text-tertiary">
+                            <Package className="size-5 opacity-40" />
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <Link
+                            href={`/dashboard/orders/${order.id}`}
+                            className="block truncate font-medium text-primary hover:text-brand-secondary hover:underline"
+                          >
+                            {order.customerName ?? "Buyer"} — {order.designation ?? "Order"}
+                          </Link>
+                          {order.riskReasons[0] ? (
+                            <p className="truncate text-xs text-tertiary">{order.riskReasons[0]}</p>
+                          ) : null}
+                        </div>
+                      </div>
+                    </Table.Cell>
+                    <Table.Cell>
+                      <span className="font-mono font-semibold whitespace-nowrap tabular-nums text-primary">
+                        {money(order.totalMillimes)}
                       </span>
-                    ) : null}
-                  </div>
-
-                  {order.riskReasons[0] ? (
-                    <span className="text-xs text-tertiary">{order.riskReasons[0]}</span>
-                  ) : null}
-                </div>
-
-                <div className="flex items-center gap-2">
-                  {canApprove ? (
-                    <Button
-                      type="button"
-                      isDisabled={busy === order.id}
-                      onClick={() => void approve(order.id)}
-                    >
-                      Approve
-                    </Button>
-                  ) : (
-                    <Link
-                      href={`/dashboard/orders/${order.id}`}
-                      className="inline-flex h-8 items-center gap-1 rounded-lg border border-secondary bg-primary px-3 text-xs font-medium text-primary shadow-2xs transition-colors hover:bg-tertiary"
-                    >
-                      <span>Open</span>
-                      <ArrowUpRight className="size-3.5 text-tertiary" />
-                    </Link>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+                    </Table.Cell>
+                    <Table.Cell>
+                      <RiskBadge level={order.riskLevel} score={order.riskScore} />
+                    </Table.Cell>
+                    <Table.Cell>
+                      <div className="flex flex-wrap gap-1.5">
+                        {order.job ? (
+                          <Badge color={order.job.status === "failed" ? "error" : "blue"}>
+                            {JOB_LABEL[order.job.status] ?? order.job.status}
+                          </Badge>
+                        ) : null}
+                        {order.shipment ? (
+                          <Badge color="gray" className="font-mono tabular-nums">
+                            <CheckCircle2 className="size-3 text-utility-green-600" />
+                            Code {order.shipment.barcode}
+                          </Badge>
+                        ) : null}
+                        {!order.job && !order.shipment ? <Badge color="gray">{order.status}</Badge> : null}
+                      </div>
+                    </Table.Cell>
+                    <Table.Cell>
+                      {order.governorate
+                        ? `${order.governorate}${order.landmark ? ` · ${order.landmark}` : ""}`
+                        : "—"}
+                    </Table.Cell>
+                    <Table.Cell>
+                      <div className="flex items-center gap-1.5">
+                        {canApprove ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            isDisabled={busy === order.id}
+                            onClick={() => void approve(order.id)}
+                          >
+                            Approve
+                          </Button>
+                        ) : (
+                          <Button href={`/dashboard/orders/${order.id}`} color="secondary" size="sm">
+                            Open
+                          </Button>
+                        )}
+                        <Dropdown.Root>
+                          <Dropdown.DotsButton />
+                          <Dropdown.Popover className="w-min">
+                            <Dropdown.Menu
+                              onAction={(key) => {
+                                if (key === "approve" && canApprove) void approve(order.id);
+                                if (key === "remove") {
+                                  if (!window.confirm("Remove this order from the queue?")) return;
+                                  void (async () => {
+                                    setBusy(order.id);
+                                    const res = await fetch(`/api/dashboard/orders/${order.id}`, { method: "DELETE" });
+                                    setBusy(null);
+                                    if (!res.ok) {
+                                      const body = (await res.json().catch(() => null)) as { error?: string } | null;
+                                      setActionError(body?.error ?? "Couldn't remove the order.");
+                                      return;
+                                    }
+                                    await reload();
+                                  })();
+                                }
+                              }}
+                            >
+                              <Dropdown.Item id="open" href={`/dashboard/orders/${order.id}`}>
+                                <span className="pr-4">View order</span>
+                              </Dropdown.Item>
+                              {canApprove ? (
+                                <Dropdown.Item id="approve">
+                                  <span className="pr-4">Approve</span>
+                                </Dropdown.Item>
+                              ) : null}
+                              <Dropdown.Item id="remove">
+                                <span className="pr-4">Remove</span>
+                              </Dropdown.Item>
+                            </Dropdown.Menu>
+                          </Dropdown.Popover>
+                        </Dropdown.Root>
+                      </div>
+                    </Table.Cell>
+                  </Table.Row>
+                );
+              })}
+            </Table.Body>
+          </Table>
+          {visible.length === 0 && orders.length > 0 ? (
+            <p className="px-6 py-8 text-center text-sm text-tertiary">No orders match this filter.</p>
+          ) : null}
+          {totalPages > 1 ? (
+            <PaginationCardMinimal page={page} total={totalPages} onPageChange={setPage} />
+          ) : null}
+        </TableCard.Root>
+      )}
     </div>
   );
 }

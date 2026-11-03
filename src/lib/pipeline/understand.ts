@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { sparkJson } from "@/lib/ai/spark";
 import {
+  extractBuildingDetails,
   extractGovernorate,
   extractLandmarks,
   extractPhone,
@@ -123,11 +124,31 @@ export function applyDeterministicFallbacks(
     : extractPhone(cleanText);
   const extractedName = base.customerName?.trim() || extractCustomerName(cleanText);
   const extractedQty = base.quantity ?? extractQuantity(cleanText);
-  const landmarks = base.landmarks.length > 0 ? base.landmarks : extractLandmarks(cleanText);
+  const detLandmarks = extractLandmarks(cleanText);
+  const landmarks = [...base.landmarks];
+  for (const det of detLandmarks) {
+    const detLower = det.name.toLowerCase();
+    const alreadyPresent = landmarks.some((existing) => {
+      const exLower = existing.name.toLowerCase();
+      return exLower.includes(detLower) || detLower.includes(exLower);
+    });
+    if (!alreadyPresent && landmarks.length < 3) {
+      landmarks.push(det);
+    }
+  }
   const landmarkText = landmarks.map((l) => l.name).join(" ");
   const govFromText = extractGovernorate(`${cleanText} ${landmarkText}`);
   const governorate = base.governorate ?? govFromText?.governorate ?? null;
   const delegation = base.delegation ?? govFromText?.delegation ?? null;
+  // When the buyer states a specific delegation/suburb (e.g. "noskon fel Aouina")
+  // without a separate POI yet, treat that suburb as a resolvable place anchor so
+  // the map pin can still center on their neighborhood instead of looping.
+  if (landmarks.length === 0 && delegation && /\b(?:noskon|askon|sakna|saken|j['’]habite|habite|adresse|darna|dari|livraison|بلاصة|نسكن|حي|cit[eé])\b/i.test(cleanText)) {
+    landmarks.push({ name: delegation, relation: "in" });
+  }
+  const building = extractBuildingDetails(cleanText);
+  const floor = base.floor ?? building.floor;
+  const driverNote = base.driverNote ?? building.driverNote;
   const counterOfferMillimes = base.counterOfferMillimes ?? parseMoneyMillimes(cleanText);
 
   return {
@@ -143,6 +164,8 @@ export function applyDeterministicFallbacks(
     governorate,
     delegation,
     landmarks,
+    floor,
+    driverNote,
     counterOfferMillimes,
   };
 }

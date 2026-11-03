@@ -9,6 +9,7 @@ const confirmSchema = z.object({
   lng: z.number().min(7).max(12),
   floor: z.string().max(50).optional().nullable(),
   driverNote: z.string().max(300).optional().nullable(),
+  landmarkOverride: z.string().max(140).optional().nullable(),
 });
 
 export async function GET(_request: Request, ctx: RouteContext<"/api/pin/[token]">) {
@@ -34,6 +35,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/pin/[token]
     lng: parsed.data.lng,
     floor: parsed.data.floor ?? null,
     driverNote: parsed.data.driverNote ?? null,
+    landmarkOverride: parsed.data.landmarkOverride ?? null,
   });
   if ("error" in result) {
     return NextResponse.json(

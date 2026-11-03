@@ -21,6 +21,18 @@ export interface AnalyticsPayload {
     unmatchedDemands: number;
     landmarkMisses: number;
   };
+  periods: {
+    month: SalesBucket;
+    year: SalesBucket;
+    all: SalesBucket;
+  };
+}
+
+export interface SalesBucket {
+  orders: number;
+  revenueMillimes: number;
+  discountMillimes: number;
+  deliveryMillimes: number;
 }
 
 function countBy(values: Array<string | null>): Array<{ status: string; count: number }> {
@@ -37,7 +49,7 @@ export async function loadAnalytics(supabase: Admin, merchantId: string): Promis
   const [{ data: orders }, { data: riskEvents }, conversations, handovers, unmatched, misses] = await Promise.all([
     supabase
       .from("orders")
-      .select("status, risk_level, total_millimes, discount_millimes, delivery_fee_millimes")
+      .select("status, risk_level, total_millimes, discount_millimes, delivery_fee_millimes, created_at")
       .eq("merchant_id", merchantId)
       .limit(1000),
     supabase.from("risk_events").select("kind").eq("merchant_id", merchantId).limit(1000),
@@ -48,6 +60,23 @@ export async function loadAnalytics(supabase: Admin, merchantId: string): Promis
   ]);
 
   const rows = orders ?? [];
+  const now = new Date();
+  const monthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+  const yearStart = Date.UTC(now.getUTCFullYear(), 0, 1);
+  const bucket = (from: number | null): SalesBucket => {
+    const picked = rows.filter((row) => {
+      if (row.status === "CANCELLED") return false;
+      if (from == null) return true;
+      const created = Date.parse(row.created_at as string);
+      return Number.isFinite(created) && created >= from;
+    });
+    return {
+      orders: picked.length,
+      revenueMillimes: picked.reduce((sum, row) => sum + ((row.total_millimes as number) ?? 0), 0),
+      discountMillimes: picked.reduce((sum, row) => sum + ((row.discount_millimes as number) ?? 0), 0),
+      deliveryMillimes: picked.reduce((sum, row) => sum + ((row.delivery_fee_millimes as number) ?? 0), 0),
+    };
+  };
   const kinds = (riskEvents ?? []).map((row) => row.kind as string);
   const delivered = kinds.filter((k) => k === "delivered").length;
   const returned = kinds.filter((k) => k === "returned").length;
@@ -75,6 +104,11 @@ export async function loadAnalytics(supabase: Admin, merchantId: string): Promis
       handovers: handovers.count ?? 0,
       unmatchedDemands: unmatched.count ?? 0,
       landmarkMisses: misses.count ?? 0,
+    },
+    periods: {
+      month: bucket(monthStart),
+      year: bucket(yearStart),
+      all: bucket(null),
     },
   };
 }

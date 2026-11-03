@@ -6,10 +6,13 @@ import {
   nominatimSearch,
   resolveLandmark,
   resolveLandmarkPair,
+  searchLandmarkSnapshot,
+  searchNominatimCandidates,
   type LandmarkCandidate,
 } from "@/lib/domain/landmarks";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logEvent } from "./events";
+import { interpretLocationDescription, type LocationInterpretation } from "./location-ai";
 
 type SupabaseClient = ReturnType<typeof createAdminClient>;
 
@@ -31,6 +34,9 @@ export interface PendingAddress {
   lat: number;
   lng: number;
   source: string;
+  floor?: string | null;
+  driverNote?: string | null;
+  descriptionHint?: string | null;
 }
 
 function slotStr(slots: Record<string, unknown>, key: string): string | null {
@@ -56,8 +62,13 @@ export async function sendPinForCandidate(input: {
   governorate: string | null;
   delegation: string | null;
   source: string;
+  floor?: string | null;
+  driverNote?: string | null;
+  descriptionHint?: string | null;
 }): Promise<void> {
   const rawToken = generatePinToken();
+  const floorHint = input.floor ?? slotStr(input.slots, "floor");
+  const driverNoteHint = input.driverNote ?? slotStr(input.slots, "driverNote");
   const pending: PendingAddress = {
     landmarkName: input.landmarkName,
     governorate: input.governorate,
@@ -65,9 +76,16 @@ export async function sendPinForCandidate(input: {
     lat: input.centre.lat,
     lng: input.centre.lng,
     source: input.source,
+    ...(floorHint ? { floor: floorHint } : {}),
+    ...(driverNoteHint ? { driverNote: driverNoteHint } : {}),
+    ...(input.descriptionHint ? { descriptionHint: input.descriptionHint } : {}),
   };
   const slots: Record<string, unknown> = {
     ...input.slots,
+    ...(input.governorate ? { governorate: input.governorate } : {}),
+    ...(input.delegation ? { delegation: input.delegation } : {}),
+    ...(floorHint ? { floor: floorHint } : {}),
+    ...(driverNoteHint ? { driverNote: driverNoteHint } : {}),
     pinPending: true,
     pendingAddress: pending,
   };
@@ -96,15 +114,119 @@ export async function sendPinForCandidate(input: {
   });
 }
 
+export interface DescriptionSearchResult {
+  candidates: LandmarkCandidate[];
+  triangulated: { a: string; b: string; distanceKm: number; midpoint: { lat: number; lng: number } } | null;
+  interpretation: LocationInterpretation;
+  aiUsed: boolean;
+}
+
+/**
+ * Resolves a free-form Tunisian location description (Derja, Arabizi, Arabic,
+ * or French) into ranked map candidates using:
+ * 1) DB `landmarks` snapshot
+ * 2) Muse Spark AI Location Interpreter (`spark.json.location_interpret`)
+ * 3) Cross-source 2-landmark triangulation + geo-ranked OpenStreetMap search
+ */
+export async function searchLocationByDescription(
+  supabase: SupabaseClient,
+  input: {
+    description: string;
+    governorate?: string | null;
+    delegation?: string | null;
+    conversationId?: string;
+  },
+): Promise<DescriptionSearchResult> {
+  const { interpretation, aiUsed } = await interpretLocationDescription({
+    description: input.description,
+    governorate: input.governorate,
+    delegation: input.delegation,
+    conversationId: input.conversationId,
+  });
+
+  const gov = interpretation.governorate ?? input.governorate ?? null;
+  const del = interpretation.delegation ?? input.delegation ?? null;
+
+  // Multi-landmark triangulation across snapshot + OpenStreetMap
+  if (interpretation.places.length >= 2) {
+    const q1 = interpretation.places[0].osmQueryFr || interpretation.places[0].rawName;
+    const q2 = interpretation.places[1].osmQueryFr || interpretation.places[1].rawName;
+    const pair = await resolveLandmarkPair(supabase, {
+      queries: [q1, q2],
+      governorate: gov,
+      delegation: del,
+      conversationId: input.conversationId,
+      allowOsmFallback: true,
+    }).catch(() => null);
+    if (pair) {
+      const midpointCandidate: LandmarkCandidate = {
+        id: "triangulated",
+        name: `${pair.a.name} / ${pair.b.name}`,
+        governorate: pair.a.governorate ?? gov,
+        delegation: pair.a.delegation ?? del,
+        lat: pair.midpoint.lat,
+        lng: pair.midpoint.lng,
+        score: 0.96,
+        source: "ai_osm",
+      };
+      return {
+        candidates: [midpointCandidate, pair.a, pair.b],
+        triangulated: {
+          a: pair.a.name,
+          b: pair.b.name,
+          distanceKm: Math.round(pair.distanceKm * 100) / 100,
+          midpoint: pair.midpoint,
+        },
+        interpretation,
+        aiUsed,
+      };
+    }
+  }
+
+  const queries: string[] = [];
+  for (const place of interpretation.places) {
+    if (place.osmQueryFr) queries.push(place.osmQueryFr);
+    if (place.osmQueryAr) queries.push(place.osmQueryAr);
+    if (place.rawName) queries.push(place.rawName);
+  }
+  if (interpretation.streetOrZone) queries.push(interpretation.streetOrZone);
+  if (queries.length === 0 && input.description.trim()) queries.push(input.description.trim());
+  const uniqueQueries = [...new Set(queries)];
+
+  // Check curated DB snapshot on AI-cleaned queries first
+  for (const q of uniqueQueries.slice(0, 3)) {
+    const snap = await searchLandmarkSnapshot(supabase, q, gov).catch(() => []);
+    if (snap.length > 0) {
+      return { candidates: snap, triangulated: null, interpretation, aiUsed };
+    }
+  }
+
+  const osmCandidates = await searchNominatimCandidates({
+    queries: uniqueQueries,
+    governorate: gov,
+    delegation: del,
+    source: aiUsed ? "ai_osm" : "nominatim",
+  });
+
+  return {
+    candidates: osmCandidates,
+    triangulated: null,
+    interpretation,
+    aiUsed,
+  };
+}
+
 export type ResolveOutcome =
   | { status: "sent" }
   | { status: "miss" }
   | { status: "ambiguous"; candidates: LandmarkCandidate[] };
 
 /**
- * Address step: resolve the buyer's landmark(s) from the slots and send the
- * pin link. Two named landmarks triangulate to their closest-pair midpoint.
- * A close top-2 asks the buyer to pick (buttons) instead of guessing.
+ * Address step: resolve the buyer's landmark(s) or natural location description
+ * from the slots and send the pin link.
+ * - Fast-paths curated snapshot matches (zero extra AI latency, replay-identical).
+ * - Falls back to AI Location Description Interpreter + multi-candidate OSM +
+ *   cross-source triangulation + 95+ Tunisian suburb centroids.
  */
 export async function resolveAndSendPin(input: {
   supabase: SupabaseClient;
@@ -116,13 +238,23 @@ export async function resolveAndSendPin(input: {
   const names = rawLandmarks
     .map((l) => (l && typeof l === "object" ? (l as { name?: unknown }).name : null))
     .filter((n): n is string => typeof n === "string" && Boolean(n.trim()));
-  if (names.length === 0) return { status: "miss" };
-  const governorate = slotStr(slots, "governorate");
+  const locationMeta = slots.locationMeta as { description?: unknown } | undefined;
+  const locationDescription =
+    slotStr(slots, "locationDescription") ??
+    (typeof locationMeta?.description === "string" && locationMeta.description.trim()
+      ? locationMeta.description.trim()
+      : null);
+  if (names.length === 0 && !locationDescription) return { status: "miss" };
 
+  const governorate = slotStr(slots, "governorate");
+  const delegation = slotStr(slots, "delegation");
+
+  // 1. Fast path: 2-landmark triangulation in curated snapshot
   if (names.length >= 2) {
     const pair = await resolveLandmarkPair(supabase, {
       queries: [names[0], names[1]],
       governorate,
+      delegation,
       conversationId,
     }).catch(() => null);
     if (pair) {
@@ -138,40 +270,132 @@ export async function resolveAndSendPin(input: {
         centre: pair.midpoint,
         landmarkName: `${pair.a.name} / ${pair.b.name}`,
         governorate: pair.a.governorate ?? governorate,
-        delegation: pair.a.delegation,
+        delegation: pair.a.delegation ?? delegation,
         source: "triangulation",
+        descriptionHint: locationDescription,
       });
       return { status: "sent" };
     }
   }
 
-  const candidates = await resolveLandmark(supabase, {
-    query: names[0],
+  // 2. Fast path: single landmark in curated snapshot (keeps seeded landmarks & replay tests 0-AI-call fast)
+  if (names.length > 0) {
+    const snap = await searchLandmarkSnapshot(supabase, names[0], governorate).catch(() => []);
+    if (snap.length > 0) {
+      const top = snap[0];
+      const second = snap[1];
+      if (second && top.score - second.score < 0.05) {
+        const topCandidates = snap.slice(0, 3);
+        await saveSlots(supabase, conversationId, { ...slots, pendingLandmarkChoice: topCandidates });
+        await logEvent(conversationId, "address.ambiguous", {
+          query: names[0],
+          candidates: topCandidates.map((c) => c.name),
+        });
+        return { status: "ambiguous", candidates: topCandidates };
+      }
+      await logEvent(conversationId, "address.resolved", {
+        mode: "single",
+        landmark: top.name,
+        score: Math.round(top.score * 1000) / 1000,
+        source: "snapshot",
+      });
+      await sendPinForCandidate({
+        supabase,
+        conversationId,
+        slots,
+        centre: { lat: top.lat, lng: top.lng },
+        landmarkName: top.name,
+        governorate: top.governorate ?? governorate,
+        delegation: top.delegation ?? delegation,
+        source: "snapshot",
+        descriptionHint: locationDescription,
+      });
+      return { status: "sent" };
+    }
+  }
+
+  // 3. Rich AI Location Description Interpreter + Geo-Ranked OpenStreetMap + Suburb Gazetteer
+  const fullDescription = locationDescription ?? names.join(", ");
+  const aiSearch = await searchLocationByDescription(supabase, {
+    description: fullDescription,
     governorate,
+    delegation,
     conversationId,
-    nominatim: nominatimSearch,
   });
+
+  if (aiSearch.aiUsed) {
+    await logEvent(conversationId, "address.ai_interpreted", {
+      places: aiSearch.interpretation.places.map((p) => p.osmQueryFr),
+      governorate: aiSearch.interpretation.governorate,
+      delegation: aiSearch.interpretation.delegation,
+    });
+  }
+
+  if (aiSearch.triangulated) {
+    const mid = aiSearch.candidates[0];
+    await logEvent(conversationId, "address.resolved", {
+      mode: "triangulation",
+      landmarks: [aiSearch.triangulated.a, aiSearch.triangulated.b],
+      distanceKm: aiSearch.triangulated.distanceKm,
+      source: aiSearch.aiUsed ? "ai_osm" : "nominatim",
+    });
+    await sendPinForCandidate({
+      supabase,
+      conversationId,
+      slots,
+      centre: aiSearch.triangulated.midpoint,
+      landmarkName: mid.name,
+      governorate: mid.governorate ?? governorate,
+      delegation: mid.delegation ?? delegation,
+      source: "triangulation",
+      floor: aiSearch.interpretation.floor,
+      driverNote: aiSearch.interpretation.driverNote,
+      descriptionHint: fullDescription,
+    });
+    return { status: "sent" };
+  }
+
+  let candidates = aiSearch.candidates;
+  if (candidates.length === 0 && names[0]) {
+    candidates = await resolveLandmark(supabase, {
+      query: names[0],
+      governorate,
+      delegation,
+      conversationId,
+      nominatim: nominatimSearch,
+    });
+  }
+
   if (candidates.length === 0) {
-    await logEvent(conversationId, "address.miss", { query: names[0], governorate });
+    await logEvent(conversationId, "address.miss", { query: fullDescription, governorate });
     return { status: "miss" };
   }
+
   const top = candidates[0];
   const second = candidates[1];
-  if (second && top.score - second.score < 0.05 && second.id !== "nominatim") {
+  if (
+    second &&
+    top.score - second.score < 0.04 &&
+    top.source === "snapshot" &&
+    second.source === "snapshot"
+  ) {
     const topCandidates = candidates.slice(0, 3);
     await saveSlots(supabase, conversationId, { ...slots, pendingLandmarkChoice: topCandidates });
     await logEvent(conversationId, "address.ambiguous", {
-      query: names[0],
+      query: fullDescription,
       candidates: topCandidates.map((c) => c.name),
     });
     return { status: "ambiguous", candidates: topCandidates };
   }
 
+  const resolvedSource = top.source ?? (top.id === "nominatim" ? "nominatim" : "snapshot");
   await logEvent(conversationId, "address.resolved", {
     mode: "single",
     landmark: top.name,
     score: Math.round(top.score * 1000) / 1000,
-    source: top.id === "nominatim" ? "nominatim" : "snapshot",
+    source: resolvedSource,
+    lat: Math.round(top.lat * 10000) / 10000,
+    lng: Math.round(top.lng * 10000) / 10000,
   });
   await sendPinForCandidate({
     supabase,
@@ -179,9 +403,12 @@ export async function resolveAndSendPin(input: {
     slots,
     centre: { lat: top.lat, lng: top.lng },
     landmarkName: top.name,
-    governorate: top.governorate ?? governorate,
-    delegation: top.delegation,
-    source: top.id === "nominatim" ? "nominatim" : "snapshot",
+    governorate: top.governorate ?? aiSearch.interpretation.governorate ?? governorate,
+    delegation: top.delegation ?? aiSearch.interpretation.delegation ?? delegation,
+    source: resolvedSource,
+    floor: aiSearch.interpretation.floor,
+    driverNote: aiSearch.interpretation.driverNote,
+    descriptionHint: fullDescription,
   });
   return { status: "sent" };
 }
@@ -234,6 +461,7 @@ export async function confirmPin(input: {
   lng: number;
   floor?: string | null;
   driverNote?: string | null;
+  landmarkOverride?: string | null;
 }): Promise<{ conversationId: string; distanceKm: number } | { error: string }> {
   const { supabase } = input;
   const session = await getPinSession(supabase, input.rawToken);
@@ -262,6 +490,8 @@ export async function confirmPin(input: {
     localityId = (match?.locality_id as number | null) ?? null;
   }
 
+  const finalLandmark = input.landmarkOverride?.trim() || pending.landmarkName;
+
   const { data: address, error: addrError } = await supabase
     .from("addresses")
     .insert({
@@ -269,11 +499,11 @@ export async function confirmPin(input: {
       governorate: pending.governorate,
       delegation: pending.delegation,
       locality_id: localityId,
-      landmark: pending.landmarkName,
+      landmark: finalLandmark,
       lat: input.lat,
       lng: input.lng,
-      floor: input.floor ?? slotStr(slots, "floor"),
-      driver_note: input.driverNote ?? slotStr(slots, "driverNote"),
+      floor: input.floor ?? pending.floor ?? slotStr(slots, "floor"),
+      driver_note: input.driverNote ?? pending.driverNote ?? slotStr(slots, "driverNote"),
       confirmed_at: new Date().toISOString(),
     })
     .select("id")
@@ -303,7 +533,7 @@ export async function confirmPin(input: {
   if (convError) return { error: `conversation update failed: ${convError.message}` };
 
   await logEvent(session.conversationId, "address.pin_confirmed", {
-    landmark: pending.landmarkName,
+    landmark: finalLandmark,
     distanceKm: Math.round(distanceKm * 1000) / 1000,
   });
   return { conversationId: session.conversationId, distanceKm };

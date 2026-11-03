@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { getShopBySlug, getDemoMerchant } from "@/lib/dashboard/merchant";
 import { getPersona } from "@/lib/sim/personas";
 import { simulatorGuard } from "@/lib/security/simulatorGuard";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-const bodySchema = z.object({ persona: z.enum(["new", "returning", "bad"]).default("new") });
+const bodySchema = z.object({
+  persona: z.enum(["new", "returning", "bad"]).default("new"),
+  slug: z.string().trim().min(2).max(48).nullable().optional(),
+});
 
 /** Creates a simulator conversation for a persona against the demo merchant. */
 export async function POST(request: Request) {
@@ -14,14 +18,10 @@ export async function POST(request: Request) {
   if (!parsed.success) return NextResponse.json({ error: "invalid body" }, { status: 400 });
 
   const supabase = createAdminClient();
-  const { data: merchant, error: merchantError } = await supabase
-    .from("merchants")
-    .select("id")
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .single();
-  if (merchantError || !merchant) {
-    return NextResponse.json({ error: "no merchant seeded (run npm run seed:catalog)" }, { status: 500 });
+  const slug = parsed.data.slug ?? null;
+  const merchant = slug ? await getShopBySlug(supabase, slug) : await getDemoMerchant(supabase);
+  if (!merchant) {
+    return NextResponse.json({ error: "no merchant seeded (run npm run seed:catalog)" }, { status: slug ? 404 : 500 });
   }
 
   const persona = getPersona(parsed.data.persona);
