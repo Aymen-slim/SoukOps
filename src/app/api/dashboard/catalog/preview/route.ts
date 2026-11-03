@@ -20,7 +20,7 @@ export async function POST(request: Request) {
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "invalid photo or category" }, { status: 400 });
   const rawBytes = decodeImage(parsed.data.imageBase64);
-  let meta: sharp.Metadata;
+  let meta: { width?: number; height?: number };
   try {
     meta = await sharp(rawBytes).metadata();
   } catch {
