@@ -538,18 +538,101 @@ interface GooglePlaceRaw {
   location?: { latitude?: number; longitude?: number };
 }
 
+/** Distance tiers shared with the Nominatim ranker (see searchNominatimCandidates). */
+function geoBoostForDistance(distKm: number): number {
+  if (distKm <= 4) return 0.3;
+  if (distKm <= 12) return 0.2;
+  if (distKm <= 30) return 0.08;
+  if (distKm > 65) return -0.35;
+  return 0;
+}
+
+/**
+ * Merges candidate lists (e.g. one per Google query variant) into one ranked
+ * list: same place (same coordinates) keeps its best score. Pure.
+ */
+export function dedupeLandmarkCandidates(candidates: LandmarkCandidate[]): LandmarkCandidate[] {
+  const byKey = new Map<string, LandmarkCandidate>();
+  for (const c of candidates) {
+    const key = `${c.lat.toFixed(4)}:${c.lng.toFixed(4)}`;
+    const prev = byKey.get(key);
+    if (!prev || c.score > prev.score) byKey.set(key, c);
+  }
+  return [...byKey.values()].sort((a, b) => b.score - a.score);
+}
+
+/**
+ * True when two named candidates score too closely for code to pick one
+ * silently — the buyer must choose. Centroid fallbacks never compete.
+ */
+export function isAmbiguousPair(
+  top: LandmarkCandidate | undefined,
+  second: LandmarkCandidate | undefined,
+): boolean {
+  if (!top || !second || top.id === second.id) return false;
+  if (second.source === "neighborhood") return false;
+  if (Math.abs(top.lat - second.lat) < 1e-6 && Math.abs(top.lng - second.lng) < 1e-6) return false;
+  // Google results are distance-ordered to the buyer's city: a same-named
+  // branch kilometres away is not a real alternative, however it scored.
+  if (top.source === "google" && haversineKm(top, second) > 3) return false;
+  return top.score - second.score < 0.04;
+}
+
 /**
  * Parses a Google Places API (New) `places:searchText` response into ranked
- * candidates. Pure and deterministic: Google's relevance order is kept, hits
- * outside Tunisia are dropped. Exported for unit tests.
+ * candidates. Pure and deterministic: hits outside Tunisia are dropped, then
+ * code re-ranks by Google relevance + name-token overlap + distance to the
+ * buyer's city anchor, so the nearest credible match wins over a same-named
+ * place in another governorate. Exported for unit tests.
  */
+/** Generic place-type words: matching only these never proves a name match. */
+const GENERIC_PLACE_TOKENS = new Set([
+  "cafe",
+  "coffee",
+  "pharmacie",
+  "mosquee",
+  "mosque",
+  "restaurant",
+  "resto",
+  "boulangerie",
+  "patisserie",
+  "clinique",
+  "hopital",
+  "hotel",
+  "station",
+  "rue",
+  "avenue",
+  "route",
+  "boulevard",
+  "cite",
+  "municipalite",
+  "poste",
+  "banque",
+  "ecole",
+  "lycee",
+  "universite",
+  "supermarche",
+  "mall",
+  "salon",
+  "مقهى",
+  "قهوة",
+  "صيدلية",
+  "جامع",
+  "مسجد",
+  "شارع",
+  "طريق",
+]);
+
 export function parseGooglePlacesResponse(
   body: unknown,
   fallback: { governorate?: string | null; delegation?: string | null } = {},
+  opts: { anchor?: LatLng | null; query?: string } = {},
 ): LandmarkCandidate[] {
   const places = (body as { places?: GooglePlaceRaw[] } | null)?.places;
   if (!Array.isArray(places)) return [];
-  const out: LandmarkCandidate[] = [];
+  const queryTokens = opts.query ? landmarkTokens(opts.query) : new Set<string>();
+  const distinctiveTokens = new Set([...queryTokens].filter((t) => !GENERIC_PLACE_TOKENS.has(t)));
+  const valid: Array<{ place: GooglePlaceRaw; lat: number; lng: number }> = [];
   const seen = new Set<string>();
   for (const place of places) {
     const lat = place.location?.latitude;
@@ -558,21 +641,59 @@ export function parseGooglePlacesResponse(
     const key = `${lat.toFixed(4)}:${lng.toFixed(4)}`;
     if (seen.has(key)) continue;
     seen.add(key);
+    valid.push({ place, lat, lng });
+  }
+  const n = valid.length;
+  const scored = valid.map(({ place, lat, lng }, i) => {
     const address = place.formattedAddress?.trim() ?? "";
     const detected = lookupLocality(address);
-    out.push({
-      id: place.id ? `google-${place.id}` : `google-${key}`,
-      name: place.displayName?.text?.trim() || address.split(",")[0]?.trim() || "Google Maps place",
+    const name = place.displayName?.text?.trim() || address.split(",")[0]?.trim() || "Google Maps place";
+    const relevance = n <= 1 ? 1 : (n - i) / n;
+    let tokenScore = 0.5;
+    if (queryTokens.size > 0) {
+      const hitTokens = landmarkTokens(`${name} ${address}`);
+      let overlap = 0;
+      for (const t of queryTokens) {
+        if (hitTokens.has(t)) overlap += 1;
+      }
+      tokenScore = overlap / queryTokens.size;
+    }
+    const geoBoost = opts.anchor ? geoBoostForDistance(haversineKm({ lat, lng }, opts.anchor)) : 0;
+    // Name gate: Google always returns *something* fuzzy. When the buyer
+    // named a specific place, a hit sharing no distinctive (non-type) token
+    // with the query is not that place — drop it so the caller can fall
+    // back instead of pinning a random same-type shop.
+    if (distinctiveTokens.size > 0) {
+      const hitTokens = landmarkTokens(`${name} ${address}`);
+      if (![...distinctiveTokens].some((t) => hitTokens.has(t))) return null;
+    }
+    const score = Math.round(Math.max(0.36, Math.min(0.99, 0.45 + relevance * 0.25 + tokenScore * 0.2 + geoBoost)) * 1000) / 1000;
+    const candidate: LandmarkCandidate = {
+      id: place.id ? `google-${place.id}` : `google-${lat.toFixed(4)}:${lng.toFixed(4)}`,
+      name,
       governorate: detected?.governorate ?? fallback.governorate ?? null,
       delegation: detected?.delegation ?? fallback.delegation ?? null,
       lat,
       lng,
-      score: Math.max(0.6, 0.93 - out.length * 0.04),
+      score,
       source: "google",
-    });
-    if (out.length >= 5) break;
-  }
-  return out;
+    };
+    const distanceKm = opts.anchor ? haversineKm({ lat, lng }, opts.anchor) : null;
+    return { candidate, index: i, distanceKm };
+  });
+  const kept = scored.filter(
+    (s): s is { candidate: LandmarkCandidate; index: number; distanceKm: number | null } => s !== null,
+  );
+  // With a city anchor, nearest credible match wins (the buyer's café is the
+  // one in their city, not a famous same-named branch across town); score
+  // only breaks ties. Without an anchor, Google relevance rules via score.
+  kept.sort((a, b) => {
+    if (a.distanceKm !== null && b.distanceKm !== null && Math.abs(a.distanceKm - b.distanceKm) > 0.5) {
+      return a.distanceKm - b.distanceKm;
+    }
+    return b.candidate.score - a.candidate.score || a.index - b.index;
+  });
+  return kept.slice(0, 5).map((s) => s.candidate);
 }
 
 const googleCache = new Map<string, { expiresAt: number; candidates: LandmarkCandidate[] }>();
@@ -597,55 +718,72 @@ export async function searchGooglePlaces(req: {
   const anchor = localityPoint(req.delegation, req.governorate) ?? governoratePoint(req.governorate);
   const area = req.delegation ?? req.governorate ?? "Tunisie";
 
-  for (const rawQuery of req.queries.slice(0, 2)) {
-    const query = rawQuery.trim();
-    if (!query) continue;
-    const textQuery = query.toLowerCase().includes(area.toLowerCase()) ? query : `${query}, ${area}, Tunisie`;
-    const cacheKey = textQuery.toLowerCase();
-    const cached = googleCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) {
-      if (cached.candidates.length > 0) return cached.candidates;
-      continue;
-    }
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 4_000);
-    try {
-      const response = await fetch("https://places.googleapis.com/v1/places:searchText", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Goog-Api-Key": apiKey,
-          "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.location",
-        },
-        body: JSON.stringify({
-          textQuery,
-          regionCode: "TN",
-          languageCode: "fr",
-          maxResultCount: 5,
-          ...(anchor
-            ? {
-                locationBias: {
-                  circle: {
-                    center: { latitude: anchor.lat, longitude: anchor.lng },
-                    radius: 20_000,
+  // Merge up to 3 query variants (French / Arabic / raw) instead of taking
+  // the first non-empty answer: code re-ranks the merged set by distance to
+  // the buyer's city anchor, so the nearest credible place wins.
+  const jobs = req.queries
+    .map((q) => q.trim())
+    .filter(Boolean)
+    .slice(0, 3)
+    .map(async (query): Promise<LandmarkCandidate[]> => {
+      const textQuery = query.toLowerCase().includes(area.toLowerCase()) ? query : `${query}, ${area}, Tunisie`;
+      const cacheKey = textQuery.toLowerCase();
+      const cached = googleCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) return cached.candidates;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4_000);
+      try {
+        const response = await fetch("https://places.googleapis.com/v1/places:searchText", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": apiKey,
+            "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.location",
+          },
+          body: JSON.stringify({
+            textQuery,
+            regionCode: "TN",
+            languageCode: "fr",
+            // Recall first (10 hits), then code keeps the 5 nearest ranked.
+            maxResultCount: 10,
+            ...(anchor
+              ? {
+                  locationBias: {
+                    circle: {
+                      center: { latitude: anchor.lat, longitude: anchor.lng },
+                      radius: 20_000,
+                    },
                   },
-                },
-              }
-            : {}),
-        }),
-        signal: controller.signal,
-      });
-      if (!response.ok) return [];
-      const candidates = parseGooglePlacesResponse(await response.json().catch(() => null), req);
-      googleCache.set(cacheKey, { expiresAt: Date.now() + GOOGLE_TTL_MS, candidates });
-      if (candidates.length > 0) return candidates;
-    } catch {
-      return [];
-    } finally {
-      clearTimeout(timeout);
-    }
+                }
+              : {}),
+          }),
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          // Never break the turn, but leave the reason in the server log
+          // (e.g. 403 when Places API (New) is not enabled on the project).
+          console.error(`[landmarks] Google Places search failed: HTTP ${response.status}`);
+          return [];
+        }
+        const candidates = parseGooglePlacesResponse(await response.json().catch(() => null), req, {
+          anchor,
+          query,
+        });
+        googleCache.set(cacheKey, { expiresAt: Date.now() + GOOGLE_TTL_MS, candidates });
+        return candidates;
+      } catch {
+        return [];
+      } finally {
+        clearTimeout(timeout);
+      }
+    });
+
+  const lists = await Promise.all(jobs);
+  const merged = dedupeLandmarkCandidates(lists.flat());
+  if (anchor) {
+    merged.sort((a, b) => haversineKm(a, anchor) - haversineKm(b, anchor) || b.score - a.score);
   }
-  return [];
+  return merged.slice(0, 5);
 }
 
 /**

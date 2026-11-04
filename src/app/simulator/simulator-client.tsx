@@ -685,6 +685,13 @@ export default function SimulatorClient({
   const hasComposerPayload = Boolean(draft.trim()) || Boolean(pendingImage) || Boolean(pendingVoice);
   const showSend = hasComposerPayload && !recording;
   const visibleSlots = Object.entries(slots).filter(([, v]) => v !== null && typeof v !== "object");
+  const draftItems = Array.isArray(slots.items) ? (slots.items as Array<Record<string, unknown>>) : [];
+  const draftSummary =
+    draftItems.length > 0
+      ? draftItems
+          .map((i) => `${typeof i.productName === "string" ? i.productName : "produit"}${i.size ? ` (${String(i.size)})` : ""} x${typeof i.quantity === "number" ? i.quantity : 1}`)
+          .join(" · ")
+      : null;
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
@@ -1249,6 +1256,9 @@ export default function SimulatorClient({
             {visibleSlots.length > 0 ? (
               <div className="rounded-xl border border-secondary/80 bg-tertiary/45 p-3">
                 <p className="mb-2 text-[11px] font-semibold tracking-wider text-tertiary uppercase">{t.slots}</p>
+                {draftSummary ? (
+                  <p className="mb-2 font-mono text-[11px] text-secondary">Draft: {draftSummary}</p>
+                ) : null}
                 <div className="flex flex-wrap gap-1.5">
                   {visibleSlots.map(([k, v]) => (
                     <Badge key={k} color="gray" className="bg-primary font-mono text-[11px]">

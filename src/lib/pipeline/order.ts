@@ -1,6 +1,7 @@
 import { channelAdapter } from "@/lib/channels";
+import { draftFromSlots } from "@/lib/domain/draft";
 import { agreedUnitMillimes, parseNegotiationState } from "@/lib/domain/negotiation";
-import { computeTotals, firewallChecked, formatMillimesForChat, type Totals } from "@/lib/domain/pricing";
+import { computeCartTotals, computeTotals, firewallChecked, formatMillimesForChat, type Totals } from "@/lib/domain/pricing";
 import { computeRisk, PIN_FAR_KM, type RiskResult } from "@/lib/domain/risk";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logEvent } from "./events";
@@ -8,6 +9,16 @@ import { logEvent } from "./events";
 type SupabaseClient = ReturnType<typeof createAdminClient>;
 
 export const SUMMARY_HEADING = "Récap el commande:";
+
+export interface OrderPreviewItem {
+  productId: string;
+  productName: string;
+  size: string | null;
+  quantity: number;
+  listUnitMillimes: number;
+  agreedUnitMillimes: number;
+  stock: number;
+}
 
 export interface OrderPreview {
   conversationId: string;
@@ -17,6 +28,7 @@ export interface OrderPreview {
   productName: string;
   size: string | null;
   quantity: number;
+  items?: OrderPreviewItem[];
   listUnitMillimes: number;
   agreedUnitMillimes: number;
   stock: number;
@@ -78,13 +90,48 @@ async function loadPreview(supabase: SupabaseClient, conversationId: string): Pr
   const negotiation = parseNegotiationState(conversation.negotiation);
   const agreed = agreedUnitMillimes(negotiation, product.price_millimes as number);
   const quantity = typeof slots.quantity === "number" && slots.quantity > 0 ? Math.floor(slots.quantity) : 1;
-  const totals = computeTotals({
-    listUnitMillimes: product.price_millimes as number,
-    agreedUnitMillimes: agreed,
-    quantity,
-    feeMillimes,
-    freeDeliveryThresholdMillimes: (merchant?.free_delivery_threshold_millimes as number | null) ?? null,
-  });
+  // Cart: the draft (synced with the flat matched* slots) wins when present.
+  const draftItems = draftFromSlots(slots).items;
+  const itemSpecs =
+    draftItems.length > 0
+      ? draftItems
+          .map((i) => ({ productId: i.productId, size: i.size, quantity: i.quantity }))
+          .filter((i): i is { productId: string; size: string | null; quantity: number } => Boolean(i.productId))
+      : [{ productId: product.id as string, size: slotStr(slots, "size"), quantity }];
+  const items: OrderPreviewItem[] = [];
+  for (const spec of itemSpecs) {
+    const { data: ip } =
+      spec.productId === (product.id as string)
+        ? { data: product }
+        : await supabase.from("products").select("id, name, price_millimes, floor_millimes, stock").eq("id", spec.productId).maybeSingle();
+    if (!ip) return null;
+    const list = ip.price_millimes as number;
+    items.push({
+      productId: ip.id as string,
+      productName: ip.name as string,
+      size: spec.size,
+      quantity: spec.quantity,
+      listUnitMillimes: list,
+      // Negotiation ladder applies to the primary item; added items stay at list.
+      agreedUnitMillimes: spec.productId === (product.id as string) ? agreed : list,
+      stock: ip.stock as number,
+    });
+  }
+  if (items.length === 0) return null;
+  const totals =
+    items.length === 1
+      ? computeTotals({
+          listUnitMillimes: items[0].listUnitMillimes,
+          agreedUnitMillimes: items[0].agreedUnitMillimes,
+          quantity: items[0].quantity,
+          feeMillimes,
+          freeDeliveryThresholdMillimes: (merchant?.free_delivery_threshold_millimes as number | null) ?? null,
+        })
+      : computeCartTotals({
+          items: items.map((i) => ({ listUnitMillimes: i.listUnitMillimes, agreedUnitMillimes: i.agreedUnitMillimes, quantity: i.quantity })),
+          feeMillimes,
+          freeDeliveryThresholdMillimes: (merchant?.free_delivery_threshold_millimes as number | null) ?? null,
+        });
 
   let historyKinds: string[] = [];
   if (conversation.customer_id) {
@@ -105,6 +152,7 @@ async function loadPreview(supabase: SupabaseClient, conversationId: string): Pr
     productName: product.name as string,
     size: slotStr(slots, "size"),
     quantity,
+    items,
     listUnitMillimes: product.price_millimes as number,
     agreedUnitMillimes: agreed,
     stock: product.stock as number,
@@ -121,12 +169,17 @@ async function loadPreview(supabase: SupabaseClient, conversationId: string): Pr
 
 /** Fixed summary template — never model text. Every amount comes from pricing.ts. */
 export function buildSummaryText(p: OrderPreview): string {
-  const lines = [
-    "Mrigel! Haka el commande mte3ek, choufha bel 3ayni w akked:",
-    SUMMARY_HEADING,
-    `• Produit: ${p.productName}${p.size ? ` (taille ${p.size})` : ""} x${p.quantity}`,
-    `• Soum: ${formatMillimesForChat(p.agreedUnitMillimes)}`,
-  ];
+  const items = p.items && p.items.length > 0 ? p.items : null;
+  const lines = ["Mrigel! Haka el commande mte3ek, choufha bel 3ayni w akked:", SUMMARY_HEADING];
+  if (items) {
+    for (const item of items) {
+      lines.push(`• Produit: ${item.productName}${item.size ? ` (taille ${item.size})` : ""} x${item.quantity}`);
+      lines.push(`• Soum: ${formatMillimesForChat(item.agreedUnitMillimes)}`);
+    }
+  } else {
+    lines.push(`• Produit: ${p.productName}${p.size ? ` (taille ${p.size})` : ""} x${p.quantity}`);
+    lines.push(`• Soum: ${formatMillimesForChat(p.agreedUnitMillimes)}`);
+  }
   if (p.totals.discountMillimes > 0) lines.push(`• Remise: -${formatMillimesForChat(p.totals.discountMillimes)}`);
   lines.push(
     p.totals.freeDelivery
@@ -149,8 +202,10 @@ export function buildSummaryText(p: OrderPreview): string {
 }
 
 export function summaryAllowedAmounts(p: OrderPreview): number[] {
+  const itemAmounts = (p.items ?? []).flatMap((i) => [i.agreedUnitMillimes, i.listUnitMillimes]);
   return [
     p.agreedUnitMillimes,
+    ...itemAmounts,
     p.totals.subtotalMillimes,
     p.totals.discountMillimes,
     p.totals.deliveryFeeMillimes,
@@ -231,7 +286,10 @@ export async function createOrderFromAkked(
 
   const preview = await loadPreview(supabase, conversationId);
   if (!preview) return { ok: false, reason: "missing_product_or_confirmed_address" };
-  if (preview.stock < preview.quantity) return { ok: false, reason: "out_of_stock" };
+  const cartItems = preview.items && preview.items.length > 0 ? preview.items : null;
+  if (cartItems ? cartItems.some((i) => i.stock < i.quantity) : preview.stock < preview.quantity) {
+    return { ok: false, reason: "out_of_stock" };
+  }
 
   const { data: order, error: orderError } = await supabase
     .from("orders")
@@ -253,14 +311,27 @@ export async function createOrderFromAkked(
     .single();
   if (orderError || !order) return { ok: false, reason: `order insert failed: ${orderError?.message}` };
 
-  const { error: itemError } = await supabase.from("order_items").insert({
+  const rows = (
+    preview.items && preview.items.length > 0
+      ? preview.items
+      : [
+          {
+            productId: preview.productId,
+            productName: preview.productName,
+            size: preview.size,
+            quantity: preview.quantity,
+            agreedUnitMillimes: preview.agreedUnitMillimes,
+          },
+        ]
+  ).map((item) => ({
     order_id: order.id as string,
-    product_id: preview.productId,
+    product_id: item.productId,
     variant_id: null,
-    name_snapshot: preview.size ? `${preview.productName} (${preview.size})` : preview.productName,
-    unit_price_millimes: preview.agreedUnitMillimes,
-    quantity: preview.quantity,
-  });
+    name_snapshot: item.size ? `${item.productName} (${item.size})` : item.productName,
+    unit_price_millimes: item.agreedUnitMillimes,
+    quantity: item.quantity,
+  }));
+  const { error: itemError } = await supabase.from("order_items").insert(rows);
   if (itemError) return { ok: false, reason: `order item insert failed: ${itemError.message}` };
 
   if (preview.pinDistanceKm !== null && preview.pinDistanceKm > PIN_FAR_KM) {
@@ -312,7 +383,7 @@ export async function handleBeddel(supabase: SupabaseClient, conversationId: str
     .eq("id", conversationId);
   await channelAdapter.sendText(
     conversationId,
-    "Ma femma hatta mochkel, 3adi. Chnowa nbedlou? El taille, el quantité, walla el adresse?",
+    "Ma femma hatta mochkel, 3adi. Chnowa nbedlou? El taille, el quantité, el produit, walla el adresse? 9olli direct (ex: beddel el taille l XL) w nbeddelha taw.",
   );
   await logEvent(conversationId, "order.beddel", {});
 }

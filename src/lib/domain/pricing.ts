@@ -24,6 +24,38 @@ export function firewallChecked(reply: string, allowedMillimes: number[]): strin
   return passesPriceFirewall(reply, new Set(allowedMillimes)) ? reply : null;
 }
 
+export interface CartTotals extends Totals {
+  items: Array<{ subtotalMillimes: number; discountMillimes: number }>;
+}
+
+/** Multi-item totals: every amount still comes only from this module. */
+export function computeCartTotals(input: {
+  items: Array<{ listUnitMillimes: number; agreedUnitMillimes: number; quantity: number }>;
+  feeMillimes: number;
+  freeDeliveryThresholdMillimes?: number | null;
+}): CartTotals {
+  const perItem = input.items.map((i) => {
+    const t = computeTotals({ ...i, feeMillimes: 0, freeDeliveryThresholdMillimes: null });
+    return { subtotalMillimes: t.subtotalMillimes, discountMillimes: t.discountMillimes };
+  });
+  const subtotalMillimes = perItem.reduce((s, i) => s + i.subtotalMillimes, 0);
+  const discountMillimes = perItem.reduce((s, i) => s + i.discountMillimes, 0);
+  const net = subtotalMillimes - discountMillimes;
+  const freeDelivery =
+    input.freeDeliveryThresholdMillimes != null &&
+    input.freeDeliveryThresholdMillimes > 0 &&
+    net >= input.freeDeliveryThresholdMillimes;
+  const deliveryFeeMillimes = freeDelivery ? 0 : input.feeMillimes;
+  return {
+    subtotalMillimes,
+    discountMillimes,
+    deliveryFeeMillimes,
+    totalMillimes: net + deliveryFeeMillimes,
+    freeDelivery,
+    items: perItem,
+  };
+}
+
 export interface Totals {
   subtotalMillimes: number;
   discountMillimes: number;

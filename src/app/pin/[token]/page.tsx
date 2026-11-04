@@ -10,7 +10,11 @@ async function PinContent({ params }: { params: Promise<{ token: string }> }) {
   const session = await getPinSession(supabase, token);
 
   if (session.status === "ok") {
-    return <PinClient token={token} pending={session.pending} />;
+    // Public browser key (domain-restricted, see .env.example). Read on the
+    // server so it can be rotated without a rebuild; null keeps the
+    // Leaflet/OpenStreetMap fallback on the pin page.
+    const mapsKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? null;
+    return <PinClient token={token} pending={session.pending} mapsKey={mapsKey} />;
   }
   return (
     <main className="grid h-dvh place-items-center bg-dot-grid px-6">

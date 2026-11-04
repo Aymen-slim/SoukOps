@@ -140,6 +140,19 @@ export async function phraseNegotiationReply(
   return { text: fallback, source: "template" };
 }
 
+/** Deterministic side-question answers. No amounts are invented here. */
+export function assistanceReply(intent: "ask_delivery" | "ask_policy" | "track_order", hasOrder: boolean): string {
+  if (intent === "ask_delivery") {
+    return "El livraison tethseb 3la el wilaya mte3ek w tet2akked fel récap 9bal ma takked. Généralement el commande tet7adhar ba3d ma el vendeur yakkedha, w nwassloulek el wa9t el mou2akked m3a el vendeur.";
+  }
+  if (intent === "ask_policy") {
+    return "Ken el taille ma jech mrigel, tnajem tbeddelha m3a el vendeur ba3d el livraison 3la 7seb el disponibilité. 9olli el taille el jdida w nbeddelha lek fel commande taw ken ma tb3attech.";
+  }
+  return hasOrder
+    ? "El commande mte3ek mtakkda w 3and el vendeur taw. Yab3atlek el mise à jour mta3 el envoi ki tetb3at."
+    : "Mazelt ma l9it commande mtakkda b esmek fel conversation hethi. Ken akkadt deja, el vendeur taw ykabarek b el envoi.";
+}
+
 export interface SellerReplyFacts {
   situation: "matched" | "collect_slot" | "price_answer" | "stock_answer";
   buyerText: string;

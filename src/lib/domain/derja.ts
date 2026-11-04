@@ -202,6 +202,141 @@ export function extractQuantity(text: string): number | null {
   return null;
 }
 
+const COLOR_WORDS: Array<{ canonical: string; words: string[] }> = [
+  { canonical: "noir", words: ["noir", "black", "akhal", "aswad", "اكحل", "اسود"] },
+  { canonical: "blanc", words: ["blanc", "white", "abyad", "abyadh", "ابيض"] },
+  { canonical: "bleu", words: ["bleu", "blue", "azra9", "azrak", "ازرق"] },
+  { canonical: "rouge", words: ["rouge", "red", "a7mar", "ahmar", "احمر"] },
+  { canonical: "jaune", words: ["jaune", "yellow", "asfar", "اصفر"] },
+  { canonical: "rose", words: ["rose", "pink", "wardi", "وردي"] },
+  { canonical: "vert", words: ["vert", "green", "a5dar", "akhdar", "اخضر"] },
+  { canonical: "beige", words: ["beige", "بيج"] },
+  { canonical: "gris", words: ["gris", "grey", "gray", "ramadi"] },
+];
+
+/** First canonical colour mentioned in the text, or null. */
+export function extractColor(text: string): string | null {
+  const lower = ` ${text.toLowerCase()} `;
+  for (const entry of COLOR_WORDS) {
+    for (const w of entry.words) {
+      if (/^[a-z0-9]+$/.test(w) ? new RegExp(`\\b${w}\\b`).test(lower) : lower.includes(w)) return entry.canonical;
+    }
+  }
+  return null;
+}
+
+function allColors(text: string): string[] {
+  const lower = text.toLowerCase();
+  const found: Array<{ at: number; canonical: string }> = [];
+  for (const entry of COLOR_WORDS) {
+    for (const w of entry.words) {
+      const at = /^[a-z0-9]+$/.test(w)
+        ? lower.search(new RegExp(`\\b${w}\\b`))
+        : lower.indexOf(w);
+      if (at >= 0) found.push({ at, canonical: entry.canonical });
+    }
+  }
+  return found.sort((a, b) => a.at - b.at).map((f) => f.canonical).filter((v, i, a) => a.indexOf(v) === i);
+}
+
+export interface ParsedChange {
+  target: "size" | "color" | "quantity" | "product" | "item" | "customerName" | "phone" | "governorate" | "landmark" | "order";
+  operation: "replace" | "add" | "remove" | "cancel" | "increment" | "decrement";
+  value?: string | number | null;
+  productName?: string | null;
+  quantityDelta?: number;
+}
+
+const CHANGE_VERB = /(beddel|baddel|badal|ghayyer|ghayer|changer|change|بدل|غيّر|غير)/i;
+
+/**
+ * Deterministic mid-conversation edit parser. Returns null when the text is
+ * not clearly an edit, so ordinary slot fills keep their existing path.
+ */
+export function parseOrderChange(text: string): ParsedChange | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const lower = trimmed.toLowerCase();
+
+  if (/(annuli|annuler|cancel|ma3adch n7eb|ma3adech n7eb|battel el commande|الغي|إلغاء|لغيت)/i.test(lower)) {
+    return { target: "order", operation: "cancel" };
+  }
+  if (/(na7i|nahi|enl[eè]ve|supprime|remove).*(produit|hedha|item)|(?:produit|hedha).*(na7ih|nahih)/i.test(lower)) {
+    return { target: "item", operation: "remove" };
+  }
+  // "mouch X, n7eb Y" correction: the wanted colour/size is the second one.
+  if (/(mouch|mich|pas|not|لا|مش)\b/i.test(lower)) {
+    const colors = allColors(trimmed);
+    if (colors.length >= 2) return { target: "color", operation: "replace", value: colors[colors.length - 1] };
+    const size = extractSize(trimmed, true);
+    if (size && /(taille|size)/i.test(lower)) return { target: "size", operation: "replace", value: size };
+  }
+  const isChange = CHANGE_VERB.test(lower);
+  if (/(zid|zed|ajoute|add|زيد|زود)/i.test(lower)) {
+    if (/(wa7da|wahed|ka3ba|ka3bet|pi[eè]ce|قطعة|كعبة)/i.test(lower) && !/(produit|sweat|hoodie|robe|pantalon)/i.test(lower)) {
+      return { target: "quantity", operation: "increment", quantityDelta: 1 };
+    }
+    if (/(produit|sweat|hoodie|robe|pantalon|veste|t-?shirt|o5or|o5ra|autre|another)/i.test(lower)) {
+      return { target: "item", operation: "add", productName: null };
+    }
+    if (isChange) return { target: "quantity", operation: "increment", quantityDelta: 1 };
+    // Bare "zid wa7da o5ra" is still an increment even without a noun above.
+    if (/(wa7da|ka3ba)/i.test(lower)) return { target: "quantity", operation: "increment", quantityDelta: 1 };
+  }
+  if (/(na9es|naqes|n9es|enl[eè]ve wa7da|قلل)/i.test(lower) && /(wa7da|ka3ba|quantit|الكمية)/i.test(lower)) {
+    return { target: "quantity", operation: "decrement", quantityDelta: 1 };
+  }
+  if (!isChange && !/(mouch|ghlot|غلطت)/i.test(lower)) {
+    // Address/product edits need an explicit change verb or correction marker.
+    return null;
+  }
+  if (/(adresse|address|win noskon|win naskon|livraison)/i.test(lower)) {
+    const lm = extractLandmarks(trimmed)[0]?.name;
+    const gov = extractGovernorate(trimmed);
+    return { target: "landmark", operation: "replace", value: lm ?? gov?.delegation ?? gov?.governorate ?? null };
+  }
+  if (/(num[eé]ro|t[eé]l[eé]phone|telefoni|numeri|هاتف|رقم)/i.test(lower)) {
+    return { target: "phone", operation: "replace", value: extractPhone(trimmed) };
+  }
+  if (/(quantit|quantité|الكمية|ka3bet|عدد)/i.test(lower)) {
+    const qty = extractQuantity(trimmed);
+    if (qty) return { target: "quantity", operation: "replace", value: qty };
+  }
+  if (/(taille|size|pointure|قياس|مقاس)/i.test(lower)) {
+    const size = extractSize(trimmed, true);
+    if (size) return { target: "size", operation: "replace", value: size };
+  }
+  if (/(loun|couleur|color|لون|اللون)/i.test(lower)) {
+    const color = extractColor(trimmed);
+    if (color) return { target: "color", operation: "replace", value: color };
+  }
+  if (/(produit|product|mod[eè]le|article)/i.test(lower)) {
+    const color = extractColor(trimmed);
+    return { target: "product", operation: "replace", value: color ? `product ${color}` : null, productName: null };
+  }
+  // "beddel el taille l L" without the word produit etc. still lands here.
+  const size = extractSize(trimmed, true);
+  if (size && /(taille|size)/i.test(lower)) return { target: "size", operation: "replace", value: size };
+  const color = extractColor(trimmed);
+  if (color) return { target: "color", operation: "replace", value: color };
+  return null;
+}
+
+export type AssistanceIntent = "ask_delivery" | "ask_policy" | "track_order" | null;
+
+/** Side questions that should be answered without derailing slot collection. */
+export function detectAssistanceIntent(text: string): AssistanceIntent {
+  const lower = text.toLowerCase();
+  if (/(win wsol|win woslet|suivi|tracking|track|وين وصل|تتبع)/i.test(lower) && /(commande|colis|طلب)/i.test(lower)) {
+    return "track_order";
+  }
+  if (/(retour|[eé]change|rembours|garantie|تبديل|استرجاع|إرجاع|نبدل el taille ba3d)/i.test(lower)) return "ask_policy";
+  if (/(wa9tech|combien de temps|d[eé]lai|livraison.*(?:wa9tech|combien|frais)|frais.*livraison|توصيل.*(?:وقتاش|قداش)|قداش.*توصيل)/i.test(lower)) {
+    return "ask_delivery";
+  }
+  return null;
+}
+
 /** Extracts Tunisian governorate (and delegation when implied by neighborhood). */
 export function extractGovernorate(text: string): { governorate: string; delegation?: string } | null {
   const hit = lookupLocality(text);

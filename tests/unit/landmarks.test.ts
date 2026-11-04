@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  dedupeLandmarkCandidates,
   haversineKm,
+  isAmbiguousPair,
   landmarkMatchesAny,
   landmarkNamesMatch,
   landmarkQueryVariants,
@@ -121,5 +123,70 @@ describe("landmarks domain core", () => {
     expect(parsed[0].score).toBeGreaterThan(parsed[1].score);
     expect(parseGooglePlacesResponse(null)).toEqual([]);
     expect(parseGooglePlacesResponse({})).toEqual([]);
+  });
+
+  it("re-ranks Google hits nearest to the buyer's city anchor first", () => {
+    const parsed = parseGooglePlacesResponse(
+      {
+        places: [
+          {
+            id: "sfax",
+            displayName: { text: "Café Cosmitto" },
+            formattedAddress: "Sfax, Tunisie",
+            location: { latitude: 34.7406, longitude: 10.7603 },
+          },
+          {
+            id: "ennasr",
+            displayName: { text: "Café Cosmitto" },
+            formattedAddress: "Ennasr, Ariana, Tunisie",
+            location: { latitude: 36.862, longitude: 10.161 },
+          },
+        ],
+      },
+      { governorate: "Ariana", delegation: "Ennasr" },
+      { anchor: { lat: 36.8617, lng: 10.1604 }, query: "Café Cosmitto" },
+    );
+    expect(parsed.map((c) => c.id)).toEqual(["google-ennasr", "google-sfax"]);
+    expect(parsed[0].score).toBeGreaterThan(parsed[1].score);
+  });
+
+  it("drops Google hits that share no distinctive name token with the query", () => {
+    const parsed = parseGooglePlacesResponse(
+      {
+        places: [
+          {
+            id: "generic",
+            displayName: { text: "Café Central" },
+            formattedAddress: "Sahloul, Sousse, Tunisie",
+            location: { latitude: 35.8354, longitude: 10.5906 },
+          },
+        ],
+      },
+      { governorate: "Sousse", delegation: "Sahloul" },
+      { anchor: { lat: 35.8354, lng: 10.5906 }, query: "Café Zzqxwv Invented" },
+    );
+    expect(parsed).toEqual([]);
+  });
+
+  it("dedupes merged candidate lists keeping the best score, nearest first", () => {
+    const merged = dedupeLandmarkCandidates([
+      landmark({ id: "google-a", lat: 36.862, lng: 10.161, score: 0.7, source: "google" }),
+      landmark({ id: "google-a", lat: 36.862, lng: 10.161, score: 0.95, source: "google" }),
+      landmark({ id: "google-b", lat: 36.9, lng: 10.2, score: 0.8, source: "google" }),
+      landmark({ id: "osm-same", lat: 36.862, lng: 10.161, score: 0.6, source: "nominatim" }),
+    ]);
+    expect(merged.map((c) => c.id)).toEqual(["google-a", "google-b"]);
+    expect(merged[0].score).toBe(0.95);
+  });
+
+  it("flags only close named candidates as ambiguous", () => {
+    const top = landmark({ id: "g1", score: 0.9, source: "google" });
+    expect(isAmbiguousPair(top, landmark({ id: "g2", lat: 36.81, lng: 10.19, score: 0.88, source: "google" }))).toBe(true);
+    expect(isAmbiguousPair(top, landmark({ id: "g2", lat: 36.81, lng: 10.19, score: 0.8, source: "google" }))).toBe(false);
+    // A same-named Google branch kilometres away is not an alternative.
+    expect(isAmbiguousPair(top, landmark({ id: "g3", lat: 36.9, lng: 10.3, score: 0.89, source: "google" }))).toBe(false);
+    expect(isAmbiguousPair(top, landmark({ id: "n1", lat: 36.9, lng: 10.3, score: 0.89, source: "neighborhood" }))).toBe(false);
+    expect(isAmbiguousPair(top, undefined)).toBe(false);
+    expect(isAmbiguousPair(top, top)).toBe(false);
   });
 });

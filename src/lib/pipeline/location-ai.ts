@@ -195,8 +195,10 @@ export async function interpretLocationDescription(req: {
     return {
       aiUsed: true,
       interpretation: {
-        governorate: parsed.governorate ?? fallback.governorate,
-        delegation: parsed.delegation ?? fallback.delegation,
+        // Trust order: explicit slot / deterministic gazetteer (fallback)
+        // beats Spark's inferred governorate and delegation.
+        governorate: fallback.governorate ?? parsed.governorate,
+        delegation: fallback.delegation ?? parsed.delegation,
         places: parsed.places.length > 0 ? parsed.places : fallback.places,
         streetOrZone: parsed.streetOrZone ?? fallback.streetOrZone,
         floor: parsed.floor ?? fallback.floor,

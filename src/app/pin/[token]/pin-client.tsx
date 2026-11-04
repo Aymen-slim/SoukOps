@@ -21,6 +21,16 @@ function inTunisia(lat: number, lng: number): boolean {
   return lat >= 30 && lat <= 38 && lng >= 7 && lng <= 12;
 }
 
+/** Distance label between the current pin and a candidate ("450 m" / "1.2 km"). */
+function distanceLabel(from: { lat: number; lng: number }, to: { lat: number; lng: number }): string {
+  const rad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = rad(to.lat - from.lat);
+  const dLng = rad(to.lng - from.lng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(from.lat)) * Math.cos(rad(to.lat)) * Math.sin(dLng / 2) ** 2;
+  const km = 2 * 6371 * Math.asin(Math.min(1, Math.sqrt(h)));
+  return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`;
+}
+
 /** Pin sits above the sheet, so it is not the geometric center of the map. */
 const PIN_LIFT = 108;
 
@@ -33,6 +43,38 @@ type MapHandle = {
   invalidateSize: () => void;
   on: (event: string, handler: () => void) => void;
 };
+
+/** Minimal Google Maps JS surface used by the pin page (no @types/google.maps). */
+interface GoogleLatLng {
+  lat: () => number;
+  lng: () => number;
+}
+interface GoogleProjection {
+  fromContainerPixelToLatLng: (point: { x: number; y: number }) => GoogleLatLng | null;
+}
+interface GoogleOverlayView {
+  setMap: (map: GoogleMap | null) => void;
+  getProjection: () => GoogleProjection | undefined;
+  onAdd?: () => void;
+  onRemove?: () => void;
+  draw?: () => void;
+}
+interface GoogleMap {
+  setCenter: (center: { lat: number; lng: number }) => void;
+  setZoom: (zoom: number) => void;
+  addListener: (event: string, handler: () => void) => { remove: () => void };
+}
+interface GoogleMapsNamespace {
+  maps: {
+    Map: new (el: HTMLElement, opts: Record<string, unknown>) => GoogleMap;
+    OverlayView: new () => GoogleOverlayView;
+  };
+}
+
+/** Dashboard map declares `Window.google`; read through a cast to avoid redeclaring it. */
+function googleNamespace(): GoogleMapsNamespace | undefined {
+  return (window as unknown as { google?: GoogleMapsNamespace }).google;
+}
 
 interface SearchCandidate {
   id: string;
@@ -62,15 +104,32 @@ function sourceBadgeMeta(source: string): { label: string; color: "success" | "b
   if (source === "google") {
     return { label: "Google Maps", color: "blue" };
   }
+  if (source === "buyer_manual") {
+    return { label: "Place your pin", color: "gray" };
+  }
   if (source === "ai_description" || source === "nominatim") {
     return { label: "AI + OpenStreetMap", color: "blue" };
   }
   return { label: "Neighborhood", color: "gray" };
 }
 
-export default function PinClient({ token, pending }: { token: string; pending: PendingAddress }) {
+export default function PinClient({
+  token,
+  pending,
+  mapsKey,
+}: {
+  token: string;
+  pending: PendingAddress;
+  mapsKey?: string | null;
+}) {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstance = useRef<MapHandle | null>(null);
+  const googleMap = useRef<GoogleMap | null>(null);
+  const googleOverlay = useRef<GoogleOverlayView | null>(null);
+  const googleListeners = useRef<Array<{ remove: () => void }>>([]);
+  /** Target the Google map must place under the lifted pin on next idle. */
+  const googleAlign = useRef<{ lat: number; lng: number } | null>(null);
+  const [mapProvider, setMapProvider] = useState<"google" | "leaflet" | null>(null);
   const [coords, setCoords] = useState({ lat: pending.lat, lng: pending.lng });
   const [activeLandmark, setActiveLandmark] = useState(pending.landmarkName);
   const [activeGovernorate, setActiveGovernorate] = useState<string | null>(pending.governorate);
@@ -99,11 +158,13 @@ export default function PinClient({ token, pending }: { token: string; pending: 
     const container = mapRef.current;
     if (!container) return;
     let cancelled = false;
+    let fallbackTimer: number | undefined;
 
-    void (async () => {
+    const initLeaflet = async () => {
+      if (cancelled || googleMap.current || mapInstance.current) return;
       try {
         const L = await import("leaflet");
-        if (cancelled || !container.isConnected) return;
+        if (cancelled || !container.isConnected || googleMap.current || mapInstance.current) return;
         const node = container as HTMLElement & { _leaflet_id?: number };
         if (node._leaflet_id != null) return;
 
@@ -114,6 +175,7 @@ export default function PinClient({ token, pending }: { token: string; pending: 
         }
         const map = leafletMap as unknown as MapHandle;
         mapInstance.current = map;
+        setMapProvider("leaflet");
         L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
           attribution: "&copy; OpenStreetMap",
           maxZoom: 19,
@@ -137,17 +199,127 @@ export default function PinClient({ token, pending }: { token: string; pending: 
       } catch {
         if (!cancelled) setMapFailed(true);
       }
-    })();
+    };
+
+    /** Google Maps is the pin map when a browser key is configured. */
+    const initGoogle = (): boolean => {
+      const google = googleNamespace();
+      if (!google?.maps || cancelled || !container.isConnected) return false;
+      try {
+        const map = new google.maps.Map(container, {
+          center: { lat: pending.lat, lng: pending.lng },
+          zoom: 17,
+          zoomControl: false,
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: false,
+          gestureHandling: "greedy",
+        });
+        googleMap.current = map;
+        setMapProvider("google");
+        const overlay = new google.maps.OverlayView();
+        overlay.onAdd = () => undefined;
+        overlay.draw = () => undefined;
+        overlay.onRemove = () => undefined;
+        overlay.setMap(map);
+        googleOverlay.current = overlay;
+
+        const read = () => {
+          if (googleAlign.current) return; // programmatic focus owns coords until aligned
+          const projection = overlay.getProjection();
+          if (!projection || container.clientWidth < 10 || container.clientHeight < 10) return;
+          const under = projection.fromContainerPixelToLatLng({
+            x: container.clientWidth / 2,
+            y: container.clientHeight / 2 - PIN_LIFT,
+          });
+          if (!under) return;
+          const lat = under.lat();
+          const lng = under.lng();
+          if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+          setCoords({ lat, lng });
+        };
+        const align = () => {
+          const target = googleAlign.current;
+          if (!target) {
+            read();
+            return;
+          }
+          googleAlign.current = null;
+          const projection = overlay.getProjection();
+          if (projection && container.clientWidth >= 10 && container.clientHeight >= 10) {
+            // Centre sits PIN_LIFT below the pin, so the target lands under it.
+            const centre = projection.fromContainerPixelToLatLng({
+              x: container.clientWidth / 2,
+              y: container.clientHeight / 2 + PIN_LIFT,
+            });
+            if (centre) map.setCenter({ lat: centre.lat(), lng: centre.lng() });
+          }
+          setCoords({ lat: target.lat, lng: target.lng });
+        };
+        googleAlign.current = { lat: pending.lat, lng: pending.lng };
+        googleListeners.current = [
+          map.addListener("center_changed", read),
+          map.addListener("idle", align),
+        ];
+        return true;
+      } catch {
+        googleMap.current = null;
+        return false;
+      }
+    };
+
+    if (mapsKey) {
+      // No key, a blocked script, or a Google error must never leave the
+      // buyer without a map: Leaflet/OpenStreetMap takes over.
+      fallbackTimer = window.setTimeout(() => {
+        if (!cancelled && !googleMap.current && !mapInstance.current) void initLeaflet();
+      }, 6_000);
+      if (googleNamespace()?.maps) {
+        if (!initGoogle()) void initLeaflet();
+      } else {
+        const startGoogle = () => {
+          if (cancelled) return;
+          if (!initGoogle()) void initLeaflet();
+        };
+        const existing = document.getElementById("google-maps-js") as HTMLScriptElement | null;
+        if (existing) {
+          existing.addEventListener("load", startGoogle);
+          existing.addEventListener("error", () => void initLeaflet());
+        } else {
+          const script = document.createElement("script");
+          script.id = "google-maps-js";
+          script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(mapsKey)}`;
+          script.async = true;
+          script.onload = startGoogle;
+          script.onerror = () => void initLeaflet();
+          document.head.appendChild(script);
+        }
+      }
+    } else {
+      void initLeaflet();
+    }
 
     return () => {
       cancelled = true;
+      if (fallbackTimer !== undefined) window.clearTimeout(fallbackTimer);
+      for (const listener of googleListeners.current) listener.remove();
+      googleListeners.current = [];
+      googleOverlay.current?.setMap(null);
+      googleOverlay.current = null;
+      googleMap.current = null;
       mapInstance.current?.remove();
       mapInstance.current = null;
     };
-  }, [pending.lat, pending.lng]);
+  }, [pending.lat, pending.lng, mapsKey]);
 
   function focus(lat: number, lng: number, zoom = 17) {
     setCoords({ lat, lng });
+    if (mapProvider === "google" && googleMap.current) {
+      googleAlign.current = { lat, lng };
+      googleMap.current.setZoom(zoom);
+      googleMap.current.setCenter({ lat, lng });
+      return;
+    }
     const map = mapInstance.current;
     if (!map) return;
     map.setView([lat, lng], zoom);
@@ -199,7 +371,7 @@ export default function PinClient({ token, pending }: { token: string; pending: 
         setActiveLandmark(top.name);
         setLandmarkOverride(top.name);
         if (top.governorate) setActiveGovernorate(top.governorate);
-        setActiveSource(data.aiUsed ? "ai_description" : top.source);
+        setActiveSource(top.source === "google" ? "google" : data.aiUsed ? "ai_description" : top.source);
         setSelectedCandidateId(top.id);
         focus(top.lat, top.lng, 17);
       } else {
@@ -343,6 +515,9 @@ export default function PinClient({ token, pending }: { token: string; pending: 
             W
           </span>
           <span className="text-xs font-semibold text-primary">Wassalha Pin</span>
+          {mapProvider === "google" ? (
+            <span className="text-[11px] font-medium text-tertiary">Google Maps</span>
+          ) : null}
           <span className="font-mono text-xs tabular-nums text-tertiary">
             {coords.lat.toFixed(4)}, {coords.lng.toFixed(4)}
           </span>
@@ -413,6 +588,9 @@ export default function PinClient({ token, pending }: { token: string; pending: 
                       · {c.delegation ?? c.governorate}
                     </span>
                   ) : null}
+                  <span className={active ? "text-white/80" : "text-tertiary"}>
+                    · {distanceLabel(coords, c)}
+                  </span>
                 </button>
               );
             })}

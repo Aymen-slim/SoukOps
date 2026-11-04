@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { sparkJson } from "@/lib/ai/spark";
 import {
+  detectAssistanceIntent,
   extractBuildingDetails,
+  extractColor,
   extractGovernorate,
   extractLandmarks,
   extractPhone,
@@ -10,8 +12,18 @@ import {
   extractCustomerName,
   normalizeTunisianPhone,
   parseMoneyMillimes,
+  parseOrderChange,
   refinePrimaryIntent,
 } from "@/lib/domain/derja";
+
+export const changeSchema = z
+  .object({
+    target: z.enum(["size", "color", "quantity", "product", "item", "customerName", "phone", "governorate", "landmark", "order"]),
+    operation: z.enum(["replace", "add", "remove", "cancel", "increment", "decrement"]),
+    value: z.union([z.string(), z.number()]).nullable(),
+    itemIndex: z.number().int().min(0).max(4).nullable(),
+  })
+  .nullable();
 
 export const understandSchema = z.object({
   primaryIntent: z.enum([
@@ -23,8 +35,17 @@ export const understandSchema = z.object({
     "complaint",
     "human_request",
     "off_topic",
+    "change_order",
+    "add_item",
+    "remove_item",
+    "cancel_order",
+    "correction",
+    "ask_delivery",
+    "ask_policy",
+    "track_order",
     "other",
   ]),
+  change: changeSchema.optional().default(null),
   samNounPhrase: z.string().nullable(), // short English category for SAM, e.g. "hoodie"
   productDescriptionEn: z.string().nullable(), // short English desc for PE text search
   spatialHint: z.string().nullable(), // e.g. "the one on the left"
@@ -54,14 +75,25 @@ const understandJsonSchema: Record<string, unknown> = {
   type: "object",
   additionalProperties: false,
   required: [
-    "primaryIntent", "samNounPhrase", "productDescriptionEn", "spatialHint", "size", "color",
+    "primaryIntent", "change", "samNounPhrase", "productDescriptionEn", "spatialHint", "size", "color",
     "quantity", "customerName", "phone", "governorate", "delegation", "landmarks", "floor",
     "driverNote", "discountAskPercent", "counterOfferMillimes", "flags",
   ],
   properties: {
     primaryIntent: {
       type: "string",
-      enum: ["order", "bargain", "ask_price", "ask_stock", "greeting", "complaint", "human_request", "off_topic", "other"],
+      enum: ["order", "bargain", "ask_price", "ask_stock", "greeting", "complaint", "human_request", "off_topic", "change_order", "add_item", "remove_item", "cancel_order", "correction", "ask_delivery", "ask_policy", "track_order", "other"],
+    },
+    change: {
+      type: ["object", "null"],
+      additionalProperties: false,
+      required: ["target", "operation", "value", "itemIndex"],
+      properties: {
+        target: { type: "string", enum: ["size", "color", "quantity", "product", "item", "customerName", "phone", "governorate", "landmark", "order"] },
+        operation: { type: "string", enum: ["replace", "add", "remove", "cancel", "increment", "decrement"] },
+        value: { type: ["string", "number", "null"] },
+        itemIndex: { type: ["integer", "null"] },
+      },
     },
     samNounPhrase: nullableString,
     productDescriptionEn: nullableString,
@@ -150,13 +182,33 @@ export function applyDeterministicFallbacks(
   const floor = base.floor ?? building.floor;
   const driverNote = base.driverNote ?? building.driverNote;
   const counterOfferMillimes = base.counterOfferMillimes ?? parseMoneyMillimes(cleanText);
+  const parsedChange = parseOrderChange(cleanText);
+  const assistance = detectAssistanceIntent(cleanText);
+  const deterministicChange = parsedChange
+    ? {
+        target: parsedChange.target,
+        operation: parsedChange.operation,
+        value: parsedChange.value ?? null,
+        itemIndex: null,
+      }
+    : null;
+  const change = base.change ?? deterministicChange;
+  let intent = refinedIntent;
+  if (parsedChange?.operation === "cancel") intent = "cancel_order";
+  else if (parsedChange?.target === "item" && parsedChange.operation === "add") intent = "add_item";
+  else if (parsedChange?.target === "item" && parsedChange.operation === "remove") intent = "remove_item";
+  else if (parsedChange) intent = /(mouch|ghlot)/i.test(cleanText) ? "correction" : "change_order";
+  else if (assistance) intent = assistance;
+  const extractedColor = base.color ?? extractColor(cleanText);
 
   return {
     ...base,
+    change,
+    color: extractedColor,
     primaryIntent:
-      refinedIntent === "other" && (extractedSize || governorate || landmarks.length > 0 || extractedPhone || extractedName)
+      intent === "other" && (extractedSize || governorate || landmarks.length > 0 || extractedPhone || extractedName)
         ? "order"
-        : refinedIntent,
+        : intent,
     size: extractedSize,
     customerName: extractedName,
     phone: extractedPhone,
@@ -180,6 +232,9 @@ const GREETING_ONLY =
 export function fastPathUnderstanding(text: string, expectingSize = false): Understanding | null {
   const trimmed = text.trim();
   if (!trimmed || trimmed.length > 80) return null;
+  if (parseOrderChange(trimmed) || detectAssistanceIntent(trimmed)) {
+    return applyDeterministicFallbacks(trimmed, EMPTY_UNDERSTANDING, expectingSize);
+  }
   if (
     /(b9addech|b9adech|soum|prix|mawjoud|na9es|n9es|ghali|hoodie|sweat|robe|jacket|pantalon|dress|produit|taswira|photo|wilaya|landmark|pharmacie|café|cafe)/i.test(
       trimmed,
@@ -201,6 +256,7 @@ export function fastPathUnderstanding(text: string, expectingSize = false): Unde
 
 const EMPTY_UNDERSTANDING: Understanding = {
   primaryIntent: "other",
+  change: null,
   samNounPhrase: null,
   productDescriptionEn: null,
   spatialHint: null,
@@ -226,13 +282,16 @@ export async function understand(req: {
   images?: string[];
   expectingSize?: boolean;
   conversationId?: string;
+  /** Compact current-draft snapshot (no ids/timestamps) for coreference like "el tani" / "mouch hedha". */
+  context?: string;
 }): Promise<Understanding> {
   const user = [
     `Buyer message (transcribed/typed): ${req.text}`,
+    req.context ? `Current order draft: ${req.context}` : null,
     req.imageCount > 0
       ? `The buyer attached ${req.imageCount} image(s), included in this request. Identify the main clothing item worn/shown in the image (ignore phone UI, captions and other people if several) and fill samNounPhrase, productDescriptionEn, color and spatialHint from what you SEE, AND also fill size, quantity, governorate, landmarks, phone, customerName or counterOfferMillimes from the buyer message text if stated.`
       : "No image attached.",
-  ].join("\n");
+  ].filter(Boolean).join("\n");
   try {
     const result = await sparkJson({
       schema: understandSchema,

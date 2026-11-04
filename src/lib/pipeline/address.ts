@@ -2,13 +2,17 @@ import { createHash, randomBytes } from "node:crypto";
 import { channelAdapter } from "@/lib/channels";
 import { getServerEnv } from "@/lib/env";
 import {
+  dedupeLandmarkCandidates,
   haversineKm,
+  isAmbiguousPair,
+  MAX_TRIANGULATION_KM,
   nominatimSearch,
   resolveLandmark,
   resolveLandmarkPair,
   searchGooglePlaces,
   searchLandmarkSnapshot,
   searchNominatimCandidates,
+  triangulate,
   type LandmarkCandidate,
 } from "@/lib/domain/landmarks";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -125,10 +129,14 @@ export interface DescriptionSearchResult {
 /**
  * Resolves a free-form Tunisian location description (Derja, Arabizi, Arabic,
  * or French) into ranked map candidates using:
- * 1) DB `landmarks` snapshot
- * 2) Muse Spark AI Location Interpreter (`spark.json.location_interpret`)
- * 3) Google Maps Places text search (when a server key is configured)
+ * 1) Muse Spark AI Location Interpreter (`spark.json.location_interpret`)
+ * 2) Google Maps Places text search (when a server key is configured)
+ * 3) DB `landmarks` snapshot
  * 4) Cross-source 2-landmark triangulation + geo-ranked OpenStreetMap search
+ * Google runs before the snapshot so the pin page's AI search finds the
+ * place on Google Maps first; the snapshot and OpenStreetMap stay as
+ * fallbacks (and are the only sources in replay mode, keeping cassettes
+ * deterministic).
  */
 export async function searchLocationByDescription(
   supabase: SupabaseClient,
@@ -146,20 +154,35 @@ export async function searchLocationByDescription(
     conversationId: input.conversationId,
   });
 
-  const gov = interpretation.governorate ?? input.governorate ?? null;
-  const del = interpretation.delegation ?? input.delegation ?? null;
+  // Trust order: the buyer's explicit slot wins, then the AI interpretation
+  // (which itself prefers the deterministic gazetteer over Spark's guess).
+  const gov = input.governorate ?? interpretation.governorate ?? null;
+  const del = input.delegation ?? interpretation.delegation ?? null;
 
   // Multi-landmark triangulation across snapshot + OpenStreetMap
   if (interpretation.places.length >= 2) {
     const q1 = interpretation.places[0].osmQueryFr || interpretation.places[0].rawName;
     const q2 = interpretation.places[1].osmQueryFr || interpretation.places[1].rawName;
-    const pair = await resolveLandmarkPair(supabase, {
+    let pair = await resolveLandmarkPair(supabase, {
       queries: [q1, q2],
       governorate: gov,
       delegation: del,
       conversationId: input.conversationId,
       allowOsmFallback: true,
     }).catch(() => null);
+    if (!pair) {
+      // Google-inclusive pair: merge Google + OSM candidates per place and
+      // triangulate the closest cross pair (snapshot already missed above).
+      const [googleA, googleB, osmA, osmB] = await Promise.all([
+        searchGooglePlaces({ queries: [q1], governorate: gov, delegation: del }).catch(() => [] as LandmarkCandidate[]),
+        searchGooglePlaces({ queries: [q2], governorate: gov, delegation: del }).catch(() => [] as LandmarkCandidate[]),
+        searchNominatimCandidates({ queries: [q1], governorate: gov, delegation: del }).catch(() => [] as LandmarkCandidate[]),
+        searchNominatimCandidates({ queries: [q2], governorate: gov, delegation: del }).catch(() => [] as LandmarkCandidate[]),
+      ]);
+      const first = dedupeLandmarkCandidates([...googleA, ...osmA.filter((c) => c.source !== "neighborhood")]);
+      const second = dedupeLandmarkCandidates([...googleB, ...osmB.filter((c) => c.source !== "neighborhood")]);
+      pair = triangulate(first, second, MAX_TRIANGULATION_KM);
+    }
     if (pair) {
       const midpointCandidate: LandmarkCandidate = {
         id: "triangulated",
@@ -195,17 +218,10 @@ export async function searchLocationByDescription(
   if (queries.length === 0 && input.description.trim()) queries.push(input.description.trim());
   const uniqueQueries = [...new Set(queries)];
 
-  // Check curated DB snapshot on AI-cleaned queries first
-  for (const q of uniqueQueries.slice(0, 3)) {
-    const snap = await searchLandmarkSnapshot(supabase, q, gov).catch(() => []);
-    if (snap.length > 0) {
-      return { candidates: snap, triangulated: null, interpretation, aiUsed };
-    }
-  }
-
-  // Google Maps finds the place the buyer described when the snapshot misses
-  // (best real-world coverage of Tunisian shops/cafés/streets). No key, replay
-  // mode, or a Google failure returns [] and OpenStreetMap takes over below.
+  // Google Maps finds the place the buyer described (best real-world
+  // coverage of Tunisian shops/cafés/streets), so it runs first. No key,
+  // replay mode, or a Google failure returns [] and the curated snapshot
+  // plus OpenStreetMap take over below.
   const googleCandidates = await searchGooglePlaces({
     queries: uniqueQueries,
     governorate: gov,
@@ -213,6 +229,14 @@ export async function searchLocationByDescription(
   }).catch(() => []);
   if (googleCandidates.length > 0) {
     return { candidates: googleCandidates, triangulated: null, interpretation, aiUsed };
+  }
+
+  // Curated DB snapshot on AI-cleaned queries (fallback when Google misses)
+  for (const q of uniqueQueries.slice(0, 3)) {
+    const snap = await searchLandmarkSnapshot(supabase, q, gov).catch(() => []);
+    if (snap.length > 0) {
+      return { candidates: snap, triangulated: null, interpretation, aiUsed };
+    }
   }
 
   const osmCandidates = await searchNominatimCandidates({
@@ -387,12 +411,7 @@ export async function resolveAndSendPin(input: {
 
   const top = candidates[0];
   const second = candidates[1];
-  if (
-    second &&
-    top.score - second.score < 0.04 &&
-    top.source === "snapshot" &&
-    second.source === "snapshot"
-  ) {
+  if ((top.source === "google" || top.source === "snapshot" || !top.source) && isAmbiguousPair(top, second)) {
     const topCandidates = candidates.slice(0, 3);
     await saveSlots(supabase, conversationId, { ...slots, pendingLandmarkChoice: topCandidates });
     await logEvent(conversationId, "address.ambiguous", {

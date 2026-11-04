@@ -1,17 +1,19 @@
 import { embedImages } from "@/lib/ai/embeddings";
 import type { SamBox } from "@/lib/ai/sam";
 import { channelAdapter } from "@/lib/channels";
-import { normalizeTunisianPhone, parseMoneyMillimes } from "@/lib/domain/derja";
+import { detectAssistanceIntent, normalizeTunisianPhone, parseMoneyMillimes, parseOrderChange } from "@/lib/domain/derja";
+import { applyDraftChange, buildChangeConfirmation, type ChangeRequest } from "@/lib/domain/draft";
 import { landmarkMatchesAny } from "@/lib/domain/landmarks";
-import { nextNegotiationStep, parseNegotiationState } from "@/lib/domain/negotiation";
+import { EMPTY_NEGOTIATION, nextNegotiationStep, parseNegotiationState } from "@/lib/domain/negotiation";
 import { firewallChecked, formatMillimesForChat } from "@/lib/domain/pricing";
-import { nextAction } from "@/lib/domain/slots";
+import { nextAction, nextDraftAction } from "@/lib/domain/slots";
+import { localityPoint } from "@/lib/geo/tunisia";
 import { transcribe } from "@/lib/ai/asr";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { findConfirmedAddress, resolveAndSendPin, sendPinForCandidate } from "./address";
 import { logEvent } from "./events";
 import { createOrderFromAkked, handleBeddel, sendSummary } from "./order";
-import { phraseNegotiationReply, phraseSellerReply } from "./phrasing";
+import { assistanceReply, phraseNegotiationReply, phraseSellerReply } from "./phrasing";
 import { asrBias, bindSellerVoice, clearSellerVoice, loadSellerVoice, sellerVoiceFor } from "./seller-voice";
 import { parseDispatchReconfirm, parseDispatchReconfirmReply } from "@/lib/domain/reconfirm";
 import { applyDispatchReconfirmReply } from "./reconfirm";
@@ -214,9 +216,23 @@ export function matchedText(name: string, slots: Record<string, unknown>, priceM
   return `${base} ${nextQuestion({ ...slots, matchedProductId: slots.matchedProductId ?? "matched" })}`;
 }
 
+/** Compact draft snapshot for the model prompt: no ids or timestamps, so cassette keys stay stable. */
+export function draftContext(slots: Record<string, unknown>): string | undefined {
+  const parts: string[] = [];
+  if (typeof slots.matchedProductName === "string") parts.push(`product=${slots.matchedProductName}`);
+  if (typeof slots.size === "string") parts.push(`size=${slots.size}`);
+  if (typeof slots.color === "string") parts.push(`color=${slots.color}`);
+  if (typeof slots.quantity === "number") parts.push(`qty=${slots.quantity}`);
+  if (typeof slots.governorate === "string") parts.push(`governorate=${slots.governorate}`);
+  if (slots.summaryPending === true) parts.push("summaryPending=1");
+  const items = slots.items;
+  if (Array.isArray(items) && items.length > 1) parts.push(`items=${items.length}`);
+  return parts.length > 0 ? parts.join(", ") : undefined;
+}
+
 /** The one question the seller asks next. Amounts never appear here. */
 export function nextQuestion(slots: Record<string, unknown>): string {
-  const action = nextAction(slots);
+  const action = nextDraftAction(slots);
   if (action === "need_size") return "Behi! Chnowa el taille mte3ek? (S, M, L, XL)";
   if (action === "need_name") return "Chnowa esmek, 3aychek?";
   if (action === "need_phone") return "Aatini numero el téléphone mte3ek, w nkammlou el commande bel 3ayni.";
@@ -431,6 +447,7 @@ export async function runTurn(conversationId: string): Promise<void> {
           combinedText,
           {
             primaryIntent: "order",
+            change: null,
             samNounPhrase: null,
             productDescriptionEn: null,
             spatialHint: null,
@@ -457,6 +474,7 @@ export async function runTurn(conversationId: string): Promise<void> {
             images: imageDataUrls,
             expectingSize,
             conversationId,
+            context: draftContext(currentSlots),
           })));
     await logEvent(conversationId, "understand", { understanding: result });
 
@@ -614,7 +632,7 @@ export async function runTurn(conversationId: string): Promise<void> {
         return true;
       }
 
-      const action = nextAction(slots);
+      const action = nextDraftAction(slots);
       if (action === "need_pin") {
         // Returning buyers reuse a confirmed pin and skip the map step —
         // but only when the landmark they just stated is that same place.
@@ -646,10 +664,34 @@ export async function runTurn(conversationId: string): Promise<void> {
         }
         const outcome = await resolveAndSendPin({ supabase, conversationId, slots });
         if (outcome.status === "miss") {
-          await channelAdapter.sendText(
-            conversationId,
-            "Ma l9itch el repère hedha. Tnajem t9olli esm pharmacie, café, mosquée walla école 9riba lel dar, m3a el wilaya?",
-          );
+          // Smarter fallback: instead of only asking for another landmark,
+          // hand the buyer the map centred on their city so they can place
+          // the pin at their door themselves (once per conversation).
+          const govSlot = typeof slots.governorate === "string" ? slots.governorate : null;
+          const delSlot = typeof slots.delegation === "string" ? slots.delegation : null;
+          const centre = slots.manualPinOffered === true ? null : localityPoint(delSlot, govSlot);
+          if (centre && govSlot) {
+            slots.manualPinOffered = true;
+            await logEvent(conversationId, "address.manual_pin_offered", {
+              governorate: govSlot,
+              delegation: delSlot,
+            });
+            await sendPinForCandidate({
+              supabase,
+              conversationId,
+              slots,
+              centre,
+              landmarkName: delSlot ?? govSlot,
+              governorate: govSlot,
+              delegation: delSlot,
+              source: "buyer_manual",
+            });
+          } else {
+            await channelAdapter.sendText(
+              conversationId,
+              "Ma l9itch el repère hedha. Tnajem t9olli esm pharmacie, café, mosquée walla école 9riba lel dar, m3a el wilaya?",
+            );
+          }
         } else if (outcome.status === "ambiguous") {
           await channelAdapter.sendButtons(
             conversationId,
@@ -691,6 +733,87 @@ export async function runTurn(conversationId: string): Promise<void> {
       }
       return false;
     };
+
+    // ------------------------- mid-conversation edits & side questions
+    // The model (or the deterministic Derja parser) proposes a change; the
+    // draft reducer decides its effect. Product swaps fall through to the
+    // matcher below with the old product cleared.
+    const parsedChange = imageCount === 0 ? parseOrderChange(combinedText) : null;
+    const modelChange = result.change ?? null;
+    const changeReq: ChangeRequest | null =
+      parsedChange || modelChange
+        ? {
+            target: (parsedChange?.target ?? modelChange?.target ?? "size") as ChangeRequest["target"],
+            operation: (parsedChange?.operation ?? modelChange?.operation ?? "replace") as ChangeRequest["operation"],
+            value: parsedChange?.value ?? modelChange?.value ?? null,
+            productName: parsedChange?.productName ?? null,
+            itemIndex: modelChange?.itemIndex ?? undefined,
+            quantityDelta: parsedChange?.quantityDelta,
+          }
+        : null;
+    const isEditIntent = ["change_order", "add_item", "remove_item", "cancel_order", "correction"].includes(
+      result.primaryIntent,
+    );
+    const hadDraft = Boolean(currentSlots.matchedProductId || currentSlots.summaryPending || currentSlots.items);
+    if (changeReq && isEditIntent && hadDraft && imageCount === 0) {
+      const applied = applyDraftChange(currentSlots, changeReq);
+      // Keep other slots extracted this turn (new governorate, landmarks...).
+      slots = mergeSlots(applied.slots, result, false);
+      // The reducer is authoritative for the changed field: re-apply so a
+      // quantity increment is not overwritten by a stale extracted value.
+      const reapplied = applyDraftChange(currentSlots, changeReq);
+      for (const key of ["size", "color", "quantity", "matchedProductId", "matchedProductName", "landmarks", "confirmedAddressId", "pinPending", "summaryPending", "draftVersion", "draftCancelled", "items"] as const) {
+        if (key in reapplied.slots) slots[key] = reapplied.slots[key];
+        else delete slots[key];
+      }
+      if (reapplied.resetNegotiation) {
+        negotiationState = { ...EMPTY_NEGOTIATION };
+        await supabase.from("conversations").update({ negotiation: negotiationState }).eq("id", conversationId);
+      }
+      await logEvent(conversationId, "draft.change", {
+        target: changeReq.target,
+        operation: changeReq.operation,
+        diffs: reapplied.diffs,
+        draftVersion: slots.draftVersion,
+        invalidatedSummary: reapplied.invalidatedSummary,
+        needsNewPin: reapplied.needsNewPin,
+      });
+      if (changeReq.target === "product") {
+        // Fall through: vision/text matching below runs with no matched product.
+        if (typeof result.productDescriptionEn === "string" && result.productDescriptionEn) {
+          slots.productDescriptionEn = result.productDescriptionEn;
+        }
+        await channelAdapter.sendText(conversationId, "Behi, nbedlou el produit. Nchouflek el produit el jdid taw.");
+      } else {
+        const actionAfter = nextDraftAction(slots);
+        const needsCheckout = actionAfter === "need_pin" || actionAfter === "need_summary";
+        await supabase.from("conversations").update({ slots, updated_at: burstCursor }).eq("id", conversationId);
+        await channelAdapter.sendText(
+          conversationId,
+          buildChangeConfirmation(reapplied, needsCheckout ? "Nkammlou taw." : nextQuestion(slots)),
+        );
+        if (needsCheckout) {
+          await progressCheckout().catch(() => false);
+        }
+        await supabase.from("conversations").update({ updated_at: burstCursor }).eq("id", conversationId);
+        await logEvent(conversationId, "reply.sent", { reply: "draft-change", template: "draft-change" });
+        return;
+      }
+    } else if (
+      (result.primaryIntent === "ask_delivery" || result.primaryIntent === "ask_policy" || result.primaryIntent === "track_order") ||
+      detectAssistanceIntent(combinedText)
+    ) {
+      const intent = (["ask_delivery", "ask_policy", "track_order"].includes(result.primaryIntent)
+        ? result.primaryIntent
+        : detectAssistanceIntent(combinedText)) as "ask_delivery" | "ask_policy" | "track_order";
+      await supabase.from("conversations").update({ slots, updated_at: burstCursor }).eq("id", conversationId);
+      const hasOrder = Boolean(slots.orderId);
+      const tail = hasOrder || intent === "track_order" ? "" : ` ${nextQuestion(slots)}`;
+      await channelAdapter.sendText(conversationId, `${assistanceReply(intent, hasOrder)}${tail}`);
+      await logEvent(conversationId, "assistance.answer", { intent });
+      await logEvent(conversationId, "reply.sent", { reply: "assistance", template: "assistance" });
+      return;
+    }
 
     // ------------------------------------------------------ vision (Day 3)
     let visionHandled = false;
