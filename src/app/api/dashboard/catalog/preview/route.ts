@@ -3,7 +3,7 @@ import { z } from "zod";
 import sharp from "sharp";
 import { segmentImage } from "@/lib/ai/sam";
 import { isBlurry } from "@/lib/media/blur";
-import { cropWithMask } from "@/lib/media/crop";
+import { cropToBox, expandBox, imageSize } from "@/lib/media/crop";
 
 const bodySchema = z.object({
   imageBase64: z.string().min(32).max(12_000_000),
@@ -48,9 +48,13 @@ export async function POST(request: Request) {
   const dataUrl = `data:image/${ext};base64,${bytes.toString("base64")}`;
   try {
     const sam = await segmentImage({ imageDataUrl: dataUrl, nounPhrase: parsed.data.categoryPhrase });
-    const crop = sam.objects[0]
-      ? await cropWithMask(bytes, sam.objects[0])
-      : await sharp(bytes).png({ compressionLevel: 8 }).toBuffer();
+    // SAM only locates the product: keep the model/person in frame (padded
+    // box crop), never a mask cut-out — same framing the buyer matcher uses.
+    const size = sam.objects[0] ? await imageSize(bytes) : null;
+    const crop =
+      sam.objects[0] && size
+        ? await cropToBox(bytes, expandBox(sam.objects[0].box, size.width, size.height))
+        : await sharp(bytes).png({ compressionLevel: 8 }).toBuffer();
     return NextResponse.json({
       cropBase64: crop.toString("base64"),
       usedOriginal: sam.objects.length === 0,

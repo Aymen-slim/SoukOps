@@ -4,6 +4,7 @@ import {
   landmarkMatchesAny,
   landmarkNamesMatch,
   landmarkQueryVariants,
+  parseGooglePlacesResponse,
   rankLandmarks,
   triangulate,
   type LandmarkCandidate,
@@ -86,5 +87,39 @@ describe("landmarks domain core", () => {
     expect(pair?.b.id).toBe("b1");
     expect(pair?.distanceKm).toBeLessThan(0.5);
     expect(pair?.midpoint.lat).toBeCloseTo(36.8005, 3);
+  });
+
+  it("parses Google Places hits in relevance order and drops non-Tunisia results", () => {
+    const parsed = parseGooglePlacesResponse(
+      {
+        places: [
+          {
+            id: "p1",
+            displayName: { text: "Café El Ali" },
+            formattedAddress: "El Manar, Tunis, Tunisie",
+            location: { latitude: 36.84, longitude: 10.16 },
+          },
+          {
+            id: "p2",
+            displayName: { text: "Far Away" },
+            formattedAddress: "Paris, France",
+            location: { latitude: 48.85, longitude: 2.35 },
+          },
+          {
+            id: "p3",
+            displayName: { text: "Pharmacie de Nuit" },
+            formattedAddress: "Ariana, Tunisie",
+            location: { latitude: 36.86, longitude: 10.19 },
+          },
+        ],
+      },
+      { governorate: "Tunis", delegation: null },
+    );
+    expect(parsed.map((c) => c.name)).toEqual(["Café El Ali", "Pharmacie de Nuit"]);
+    expect(parsed[0].source).toBe("google");
+    expect(parsed[0].id).toBe("google-p1");
+    expect(parsed[0].score).toBeGreaterThan(parsed[1].score);
+    expect(parseGooglePlacesResponse(null)).toEqual([]);
+    expect(parseGooglePlacesResponse({})).toEqual([]);
   });
 });

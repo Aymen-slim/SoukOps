@@ -6,6 +6,7 @@ import {
   nominatimSearch,
   resolveLandmark,
   resolveLandmarkPair,
+  searchGooglePlaces,
   searchLandmarkSnapshot,
   searchNominatimCandidates,
   type LandmarkCandidate,
@@ -126,7 +127,8 @@ export interface DescriptionSearchResult {
  * or French) into ranked map candidates using:
  * 1) DB `landmarks` snapshot
  * 2) Muse Spark AI Location Interpreter (`spark.json.location_interpret`)
- * 3) Cross-source 2-landmark triangulation + geo-ranked OpenStreetMap search
+ * 3) Google Maps Places text search (when a server key is configured)
+ * 4) Cross-source 2-landmark triangulation + geo-ranked OpenStreetMap search
  */
 export async function searchLocationByDescription(
   supabase: SupabaseClient,
@@ -199,6 +201,18 @@ export async function searchLocationByDescription(
     if (snap.length > 0) {
       return { candidates: snap, triangulated: null, interpretation, aiUsed };
     }
+  }
+
+  // Google Maps finds the place the buyer described when the snapshot misses
+  // (best real-world coverage of Tunisian shops/cafés/streets). No key, replay
+  // mode, or a Google failure returns [] and OpenStreetMap takes over below.
+  const googleCandidates = await searchGooglePlaces({
+    queries: uniqueQueries,
+    governorate: gov,
+    delegation: del,
+  }).catch(() => []);
+  if (googleCandidates.length > 0) {
+    return { candidates: googleCandidates, triangulated: null, interpretation, aiUsed };
   }
 
   const osmCandidates = await searchNominatimCandidates({

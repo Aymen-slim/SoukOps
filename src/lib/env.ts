@@ -50,6 +50,11 @@ const schema = z.object({
   MESSENGER_PAGE_ACCESS_TOKEN: z.string().optional(),
   INSTAGRAM_BUSINESS_ID: z.string().optional(),
   INSTAGRAM_ACCESS_TOKEN: z.string().optional(),
+  // Google Places (New) text search, server-only. Finds the place a buyer
+  // describes when the curated snapshot misses; Nominatim stays the fallback.
+  // Either var works; GOOGLE_PLACES_API_KEY wins when both are set.
+  GOOGLE_PLACES_API_KEY: z.string().optional(),
+  GOOGLE_MAPS_API_KEY: z.string().optional(),
   COURIER_CLONE_USER: z.string().default("agent"),
   COURIER_CLONE_PASSWORD: z.string().default("wassalha"),
 });
@@ -102,6 +107,7 @@ export function providerStatus() {
     supabase: Boolean(env.supabaseUrl && env.supabasePublishableKey),
     supabaseAdmin: Boolean(env.supabaseUrl && env.supabaseSecretKey),
     whatsappEnv: Boolean(env.WHATSAPP_PHONE_NUMBER_ID && env.WHATSAPP_ACCESS_TOKEN),
+    googlePlaces: Boolean(env.GOOGLE_PLACES_API_KEY ?? env.GOOGLE_MAPS_API_KEY),
     llmProvider: env.LLM_PROVIDER,
     asrProvider: env.ASR_PROVIDER,
     matcher: env.MATCHER,

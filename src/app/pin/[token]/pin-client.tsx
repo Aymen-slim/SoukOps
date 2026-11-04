@@ -59,6 +59,9 @@ function sourceBadgeMeta(source: string): { label: string; color: "success" | "b
   if (source === "snapshot" || source === "choice") {
     return { label: "Matched landmark", color: "success" };
   }
+  if (source === "google") {
+    return { label: "Google Maps", color: "blue" };
+  }
   if (source === "ai_description" || source === "nominatim") {
     return { label: "AI + OpenStreetMap", color: "blue" };
   }
@@ -245,32 +248,48 @@ export default function PinClient({ token, pending }: { token: string; pending: 
   }
 
   async function confirm() {
-    if (!pinOk) return;
-    setState("sending");
-    setErrorDetail(null);
-    const res = await fetch(`/api/pin/${token}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        lat: coords.lat,
-        lng: coords.lng,
-        floor: floor || null,
-        driverNote: driverNote || null,
-        ...(landmarkOverride ? { landmarkOverride } : {}),
-      }),
-    });
-    if (res.ok) {
-      mapInstance.current?.remove();
-      mapInstance.current = null;
-      setState("done");
+    if (!pinOk) {
+      setErrorDetail("Keep the pin inside Tunisia, then confirm.");
       return;
     }
-    setState("error");
-    setErrorDetail(
-      res.status === 400
-        ? "Keep the pin inside Tunisia, then confirm."
-        : "This link expired or was already used. Go back to the chat and ask for a new one.",
-    );
+    if (state === "sending") return;
+    setState("sending");
+    setErrorDetail(null);
+    try {
+      const res = await fetch(`/api/pin/${token}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lat: coords.lat,
+          lng: coords.lng,
+          floor: floor || null,
+          driverNote: driverNote || null,
+          ...(landmarkOverride ? { landmarkOverride } : {}),
+        }),
+      });
+      if (res.ok) {
+        mapInstance.current?.remove();
+        mapInstance.current = null;
+        setState("done");
+        return;
+      }
+      setState("error");
+      setErrorDetail(
+        res.status === 400
+          ? "Keep the pin inside Tunisia, then confirm."
+          : "This link expired or was already used. Go back to the chat and ask for a new one.",
+      );
+    } catch {
+      // Never leave the button stuck on "Saving…": the pin is still on the
+      // map and the buyer can simply tap Confirm again.
+      setState("error");
+      setErrorDetail("Connection hiccup — your pin is still here. Tap Confirm again.");
+    }
+  }
+
+  function backToChat() {
+    if (window.history.length > 1) window.history.back();
+    else window.close();
   }
 
   if (state === "done") {
@@ -293,6 +312,13 @@ export default function PinClient({ token, pending }: { token: string; pending: 
             <MapPin className="size-3.5 text-brand-secondary" />
             {coords.lat.toFixed(4)}, {coords.lng.toFixed(4)}
           </div>
+          <button
+            type="button"
+            onClick={backToChat}
+            className="mt-5 h-11 w-full cursor-pointer rounded-full bg-brand-solid text-sm font-semibold text-white transition-[transform,filter] duration-150 ease-linear hover:brightness-95 active:scale-[0.98]"
+          >
+            Return to the chat
+          </button>
         </div>
       </div>
     );

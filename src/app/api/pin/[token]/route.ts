@@ -44,7 +44,16 @@ export async function POST(request: Request, ctx: RouteContext<"/api/pin/[token]
     );
   }
 
-  // Advance the conversation deterministically: risk + fixed summary.
-  await sendSummary(supabase, result.conversationId);
-  return NextResponse.json({ ok: true, conversationId: result.conversationId });
+  // The pin is already saved at this point: a summary failure must never
+  // make a successful confirmation look like a dead Confirm button.
+  let summarySent = false;
+  try {
+    summarySent = await sendSummary(supabase, result.conversationId);
+  } catch (err) {
+    console.error(
+      `[pin] summary failed for ${result.conversationId}:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
+  return NextResponse.json({ ok: true, conversationId: result.conversationId, summarySent });
 }

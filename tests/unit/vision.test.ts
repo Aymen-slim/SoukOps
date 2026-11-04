@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { expandBox } from "@/lib/media/crop";
 import {
   catalogPhotoPath,
   distanceToSimilarity,
   findInStockAlternative,
+  findRecommendation,
   gateForScore,
   parseChoice,
   pickByHint,
@@ -90,6 +92,31 @@ describe("disambiguation ladder helpers", () => {
   it("stays ambiguous without a usable hint", () => {
     expect(pickByHint([left, right], "n7eb hedha")).toBeNull();
     expect(pickByHint([], "left")).toBeNull();
+  });
+
+  it("pads the SAM box so the wearer stays in frame, clamped to the image", () => {
+    expect(expandBox({ left: 100, top: 100, right: 200, bottom: 300 }, 1000, 1000, 0.1)).toEqual({
+      left: 90,
+      top: 80,
+      right: 210,
+      bottom: 320,
+    });
+    const edge = expandBox({ left: 0, top: 0, right: 100, bottom: 100 }, 200, 200, 0.5);
+    expect(edge.left).toBe(0);
+    expect(edge.top).toBe(0);
+  });
+
+  it("recommends the nearest in-stock item when the product does not exist or is out of stock", () => {
+    const missing = candidate({ productId: "gone", stock: 2, similarity: 0.4 });
+    const near = candidate({ productId: "near", stock: 1, similarity: 0.5 });
+    // Unmatched: the nearest in-stock hit itself is the recommendation.
+    expect(findRecommendation([near, missing], "gone")?.productId).toBe("near");
+    expect(findRecommendation([missing], null)?.productId).toBe("gone");
+    // Out of stock: a different in-stock product is recommended.
+    const oos = candidate({ productId: "oos", stock: 0, similarity: 0.95 });
+    expect(findRecommendation([oos, near], "oos")?.productId).toBe("near");
+    expect(findRecommendation([oos], "oos")).toBeNull();
+    expect(findRecommendation([], null)).toBeNull();
   });
 
   it("parses buyer choices in digits, words and button titles", () => {

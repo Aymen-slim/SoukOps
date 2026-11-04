@@ -1,3 +1,4 @@
+import { getServerEnv } from "@/lib/env";
 import { governoratePoint, inTunisiaBounds, localityPoint, lookupLocality } from "@/lib/geo/tunisia";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -25,7 +26,7 @@ export interface LandmarkCandidate {
   lat: number;
   lng: number;
   score: number;
-  source?: "snapshot" | "nominatim" | "ai_osm" | "neighborhood";
+  source?: "snapshot" | "nominatim" | "ai_osm" | "neighborhood" | "google";
 }
 
 export interface LatLng {
@@ -527,6 +528,125 @@ export const nominatimSearch: NominatimFn = async (query, governorate) => {
   });
   return candidates[0] ? { lat: candidates[0].lat, lng: candidates[0].lng } : null;
 };
+
+// ---------------------------------------------------------------- Google Places
+
+interface GooglePlaceRaw {
+  id?: string;
+  displayName?: { text?: string };
+  formattedAddress?: string;
+  location?: { latitude?: number; longitude?: number };
+}
+
+/**
+ * Parses a Google Places API (New) `places:searchText` response into ranked
+ * candidates. Pure and deterministic: Google's relevance order is kept, hits
+ * outside Tunisia are dropped. Exported for unit tests.
+ */
+export function parseGooglePlacesResponse(
+  body: unknown,
+  fallback: { governorate?: string | null; delegation?: string | null } = {},
+): LandmarkCandidate[] {
+  const places = (body as { places?: GooglePlaceRaw[] } | null)?.places;
+  if (!Array.isArray(places)) return [];
+  const out: LandmarkCandidate[] = [];
+  const seen = new Set<string>();
+  for (const place of places) {
+    const lat = place.location?.latitude;
+    const lng = place.location?.longitude;
+    if (typeof lat !== "number" || typeof lng !== "number" || !inTunisiaBounds(lat, lng)) continue;
+    const key = `${lat.toFixed(4)}:${lng.toFixed(4)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const address = place.formattedAddress?.trim() ?? "";
+    const detected = lookupLocality(address);
+    out.push({
+      id: place.id ? `google-${place.id}` : `google-${key}`,
+      name: place.displayName?.text?.trim() || address.split(",")[0]?.trim() || "Google Maps place",
+      governorate: detected?.governorate ?? fallback.governorate ?? null,
+      delegation: detected?.delegation ?? fallback.delegation ?? null,
+      lat,
+      lng,
+      score: Math.max(0.6, 0.93 - out.length * 0.04),
+      source: "google",
+    });
+    if (out.length >= 5) break;
+  }
+  return out;
+}
+
+const googleCache = new Map<string, { expiresAt: number; candidates: LandmarkCandidate[] }>();
+const GOOGLE_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Google Maps place search for the place a buyer describes (Places API (New)
+ * text search, Tunisia-biased). Server-only key; returns [] when no key is
+ * configured, in replay mode (cassettes must stay deterministic), or on any
+ * Google failure — callers then fall back to OpenStreetMap, so a Google
+ * outage can never break an address turn.
+ */
+export async function searchGooglePlaces(req: {
+  queries: string[];
+  governorate?: string | null;
+  delegation?: string | null;
+}): Promise<LandmarkCandidate[]> {
+  const env = getServerEnv();
+  const apiKey = env.GOOGLE_PLACES_API_KEY ?? env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey || env.AI_MODE === "replay") return [];
+
+  const anchor = localityPoint(req.delegation, req.governorate) ?? governoratePoint(req.governorate);
+  const area = req.delegation ?? req.governorate ?? "Tunisie";
+
+  for (const rawQuery of req.queries.slice(0, 2)) {
+    const query = rawQuery.trim();
+    if (!query) continue;
+    const textQuery = query.toLowerCase().includes(area.toLowerCase()) ? query : `${query}, ${area}, Tunisie`;
+    const cacheKey = textQuery.toLowerCase();
+    const cached = googleCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      if (cached.candidates.length > 0) return cached.candidates;
+      continue;
+    }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4_000);
+    try {
+      const response = await fetch("https://places.googleapis.com/v1/places:searchText", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": apiKey,
+          "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.location",
+        },
+        body: JSON.stringify({
+          textQuery,
+          regionCode: "TN",
+          languageCode: "fr",
+          maxResultCount: 5,
+          ...(anchor
+            ? {
+                locationBias: {
+                  circle: {
+                    center: { latitude: anchor.lat, longitude: anchor.lng },
+                    radius: 20_000,
+                  },
+                },
+              }
+            : {}),
+        }),
+        signal: controller.signal,
+      });
+      if (!response.ok) return [];
+      const candidates = parseGooglePlacesResponse(await response.json().catch(() => null), req);
+      googleCache.set(cacheKey, { expiresAt: Date.now() + GOOGLE_TTL_MS, candidates });
+      if (candidates.length > 0) return candidates;
+    } catch {
+      return [];
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  return [];
+}
 
 /**
  * Resolves one landmark mention. Returns ranked candidates (possibly empty);

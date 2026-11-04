@@ -4,7 +4,7 @@ import { embedImages, embedTexts } from "@/lib/ai/embeddings";
 import { segmentImage, segmentImageAtPoint, type SamBox } from "@/lib/ai/sam";
 import { sparkJson } from "@/lib/ai/spark";
 import { getServerEnv } from "@/lib/env";
-import { clampBox, cropWithMask, drawNumberedBoxes, imageSize } from "@/lib/media/crop";
+import { clampBox, cropToBox, drawNumberedBoxes, expandBox, imageSize } from "@/lib/media/crop";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
@@ -12,7 +12,8 @@ type AdminClient = ReturnType<typeof createAdminClient>;
 /**
  * Day 3 — vision & matching (SPEC steps 3–4).
  *
- * Pipeline: SAM concept prompt -> mask crops on white -> PE embedding ->
+ * Pipeline: SAM only locates the garment (box, person kept in frame — the
+ * mask is never used to cut the model out) -> box crop -> PE embedding ->
  * `match_products` pgvector top-k -> Spark re-rank -> confidence gate.
  * Voice-only turns embed Spark's short English description (PE text tower)
  * into the same index. The model proposes; the gate here decides.
@@ -74,6 +75,24 @@ export function findInStockAlternative(
 ): MatchCandidate | null {
   return candidates.find((c) => c.productId !== chosenProductId && c.stock > 0) ?? null;
 }
+
+/**
+ * Recommendation when the exact product does not exist or is out of stock:
+ * the nearest in-stock catalog product. Prefers a different product, but for
+ * an unmatched search the nearest in-stock hit itself is the recommendation.
+ */
+export function findRecommendation(
+  candidates: MatchCandidate[],
+  chosenProductId: string | null,
+): MatchCandidate | null {
+  return (
+    candidates.find((c) => c.stock > 0 && c.productId !== chosenProductId) ??
+    candidates.find((c) => c.stock > 0) ??
+    null
+  );
+}
+
+
 
 function topForButtons(candidates: MatchCandidate[], chosen: MatchCandidate): MatchCandidate[] {
   const seen = new Set<string>();
@@ -226,7 +245,7 @@ async function rerankWithSpark(req: {
       jsonSchema: rerankJsonSchema,
       schemaName: "match_rerank",
       system:
-        "You re-rank catalog matches for a clothing seller. The first attached image (if any) is the buyer's garment crop on a white background; following images (if any) are catalog crops in candidate order. Pick the product that is visually the same garment (type, color, print). Return its productId exactly as listed, a confidence from 0 to 1, and a one-line reason. If none matches, return bestProductId null with low confidence. Never invent a productId.",
+        "You re-rank catalog matches for a clothing seller. The first attached image (if any) is the buyer's product photo — the person wearing it may still be in frame; following images (if any) are catalog photos in candidate order. Pick the product that is visually the same garment (type, color, print). Return its productId exactly as listed, a confidence from 0 to 1, and a one-line reason. If none matches, return bestProductId null with low confidence. Never invent a productId.",
       user: [
         req.descriptionEn ? `Buyer description: ${req.descriptionEn}` : "Buyer sent a garment photo (first image).",
         "Candidates:",
@@ -325,7 +344,7 @@ async function matchAllCatalog(req: {
     jsonSchema: rankAllJsonSchema,
     schemaName: "match_rank_all",
     system:
-      "You match a buyer's garment to a clothing catalog. The attached image (if any) is the buyer's garment crop. Return up to 3 productIds from the list, best first, a confidence from 0 to 1 for the best one, and a one-line reason. Never invent a productId.",
+      "You match a buyer's garment to a clothing catalog. The attached image (if any) is the buyer's product photo — the person wearing it may still be in frame. Return up to 3 productIds from the list, best first, a confidence from 0 to 1 for the best one, and a one-line reason. Never invent a productId.",
     user: [
       req.descriptionEn ? `Buyer description: ${req.descriptionEn}` : "Buyer sent a garment photo (attached).",
       "Catalog:",
@@ -348,7 +367,10 @@ async function matchAllCatalog(req: {
     candidates: catalog,
     score,
     scoreSource: "spark",
-    alternative: chosen ? findInStockAlternative(ranked.length ? ranked : catalog, chosen.productId) : null,
+    alternative:
+      decision === "unmatched" || (chosen && chosen.stock <= 0)
+        ? findRecommendation(ranked.length ? ranked : catalog, chosen?.productId ?? null)
+        : null,
   };
 }
 
@@ -388,7 +410,12 @@ export async function matchProduct(req: {
     candidates,
     score,
     scoreSource: rerank ? "spark" : "vector",
-    alternative: chosen && chosen.stock <= 0 ? findInStockAlternative(candidates, chosen.productId) : null,
+    // Recommend another item both when the match is out of stock AND when
+    // the exact product does not exist (unmatched): nearest in-stock hit.
+    alternative:
+      decision === "unmatched" || chosen.stock <= 0
+        ? findRecommendation(candidates, chosen.productId)
+        : null,
   };
 }
 
@@ -586,7 +613,9 @@ export async function resolveScreenshot(req: {
   const options: CropOption[] = [];
   for (const { object, box } of clamped) {
     try {
-      const cropPng = await cropWithMask(req.image, { ...object, box });
+      // SAM only finds the product: crop the box (padded) and keep the
+      // person/model in frame. Never cut the garment out with the mask.
+      const cropPng = await cropToBox(req.image, expandBox(box, size.width, size.height));
       options.push({
         index: options.length,
         objectId: object.objectId,
@@ -720,7 +749,8 @@ export async function resolvePointSelection(req: {
   });
   const object = sam.objects[0];
   if (!object) return null;
-  const cropPng = await cropWithMask(req.image, object);
+  // Box crop only — keep the person in frame, same as the concept path.
+  const cropPng = await cropToBox(req.image, expandBox(object.box, size.width, size.height));
   const [embedding] = await embedImages([cropPng.toString("base64")], req.conversationId);
   const match = await matchProduct({
     supabase: req.supabase,

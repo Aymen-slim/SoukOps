@@ -3,24 +3,33 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Activity,
+  Attachment01 as Paperclip,
+  Camera01 as Camera,
   Check,
+  ChevronLeft,
+  DotsVertical as MoreVertical,
+  FaceSmile as Smile,
+  Heart,
   ImagePlus,
+  Lock01 as Lock,
   MarkerPin01 as MapPin,
   Microphone01 as Mic,
+  Phone01 as Phone,
   Send01 as Send,
   ShieldTick as ShieldCheck,
   Stars01 as Sparkles,
   Square,
   Trash01 as Trash2,
   UserCheck01 as UserCheck,
+  VideoRecorder as Video,
   X,
 } from "@untitledui/icons";
 import { InstagramIcon, MessengerIcon, WhatsAppIcon } from "@/components/brand-icons";
 import { Badge } from "@/components/base/badges/badges";
 import { Button } from "@/components/base/buttons/button";
-import { Input } from "@/components/base/input/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/foundations/card/card";
 import { blobToBase64, fileToBase64, WavRecorder } from "@/lib/media/wav-recorder";
+import { formatClock, isNearBottom, mediaExtFromMime, repairMojibake, sameMessages, stabilizeMediaUrls } from "@/lib/sim/chat-ui";
 import { getPersona, PERSONAS, type PersonaId } from "@/lib/sim/personas";
 
 export type DemoPlatform = "whatsapp" | "instagram" | "messenger";
@@ -145,6 +154,74 @@ async function postJson(url: string, body: unknown): Promise<Response> {
   return fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 }
 
+const WAVE_BARS = [10, 16, 22, 14, 24, 18, 12, 20, 26, 15, 21, 11, 17, 23, 13, 19, 25, 14, 10, 18];
+
+/** WhatsApp-style voice note: stable <audio> (src set once per mount), play/pause + seekable waveform. */
+function VoiceNotePlayer({ src, light }: { src: string; light?: boolean }) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [current, setCurrent] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const progress = duration > 0 ? current / duration : 0;
+
+  return (
+    <div className="flex w-[218px] items-center gap-2 py-0.5">
+      <button
+        type="button"
+        aria-label={playing ? "Pause voice note" : "Play voice note"}
+        onClick={() => {
+          const audio = audioRef.current;
+          if (!audio) return;
+          if (playing) audio.pause();
+          else void audio.play().catch(() => setPlaying(false));
+        }}
+        className={`flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[13px] ${
+          light ? "bg-white/25 text-white" : "bg-[#00A884] text-white"
+        }`}
+      >
+        {playing ? "❚❚" : "▶"}
+      </button>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <button
+          type="button"
+          aria-label="Seek voice note"
+          className="flex h-6 cursor-pointer items-center gap-[2px]"
+          onClick={(e) => {
+            const audio = audioRef.current;
+            if (!audio || !duration) return;
+            const rect = e.currentTarget.getBoundingClientRect();
+            audio.currentTime = ((e.clientX - rect.left) / rect.width) * duration;
+          }}
+        >
+          {WAVE_BARS.map((h, i) => (
+            <span
+              key={i}
+              style={{ height: `${h}px` }}
+              className={`w-[3px] shrink-0 rounded-full ${i / WAVE_BARS.length <= progress ? (light ? "bg-white" : "bg-[#00A884]") : light ? "bg-white/45" : "bg-neutral-400/70"}`}
+            />
+          ))}
+        </button>
+        <span className={`text-[10px] tabular-nums ${light ? "text-white/85" : "text-neutral-500"}`}>
+          {formatClock(playing || current > 0 ? current : duration)}
+        </span>
+      </div>
+      <audio
+        ref={audioRef}
+        src={src}
+        preload="metadata"
+        onLoadedMetadata={() => setDuration(audioRef.current?.duration ?? 0)}
+        onTimeUpdate={() => setCurrent(audioRef.current?.currentTime ?? 0)}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => {
+          setPlaying(false);
+          setCurrent(0);
+        }}
+      />
+    </div>
+  );
+}
+
 function formatElapsed(seconds: number): string {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
@@ -209,6 +286,8 @@ export default function SimulatorClient({
   const meta = PLATFORM_META[platform];
 
   const refreshBusy = useRef(false);
+  const mediaUrlCache = useRef(new Map<string, string>());
+  const nearBottomRef = useRef(true);
   const refresh = useCallback(async () => {
     if (!conversationId) return;
     refreshBusy.current = true;
@@ -219,7 +298,8 @@ export default function SimulatorClient({
       ]);
       if (msgRes.ok) {
         const data = await msgRes.json();
-        setMessages(data.messages);
+        const stable = stabilizeMediaUrls(mediaUrlCache.current, data.messages as SimMessage[]);
+        setMessages((curr) => (sameMessages(curr, stable) ? curr : stable));
         setSlots(data.conversation.slots ?? {});
         setAiPaused(Boolean(data.conversation.ai_paused));
         const outCount = (data.messages as SimMessage[]).filter((m) => m.direction === "out").length;
@@ -258,7 +338,10 @@ export default function SimulatorClient({
     };
   }, [conversationId, refresh, awaiting]);
 
+  // Follow new messages only when already near the bottom; never yank a
+  // reader who scrolled up back down on the next poll.
   useEffect(() => {
+    if (!nearBottomRef.current) return;
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, awaiting, pendingImage, pendingVoice, recording]);
 
@@ -295,6 +378,8 @@ export default function SimulatorClient({
     setStopping(false);
     setMicError(null);
     setPersona(nextPersona);
+    mediaUrlCache.current.clear();
+    nearBottomRef.current = true;
     setMessages([]);
     setEvents([]);
     setSlots({});
@@ -319,6 +404,7 @@ export default function SimulatorClient({
 
   async function send(payload: Record<string, unknown>) {
     if (!conversationId) return;
+    nearBottomRef.current = true;
     if (payload.kind === "text" && typeof payload.body === "string") {
       setMessages((curr) => [
         ...curr,
@@ -336,12 +422,30 @@ export default function SimulatorClient({
     void refresh();
   }
 
-  function askAboutProduct(product: DemoProductCard) {
+  /** Tapping a product sends its real photo + caption, like forwarding the shop photo in chat. */
+  async function askAboutProduct(product: DemoProductCard) {
     if (!conversationId || recording || stopping) return;
     const text =
       platform === "instagram"
         ? `Merhba! 3jebni hedha fel story: ${product.name}, b9addech w mawjoud?`
         : `Merhba, b9addech ${product.name}?`;
+    if (product.imageUrl) {
+      try {
+        const res = await fetch(product.imageUrl);
+        if (res.ok) {
+          const blob = await res.blob();
+          await send({
+            kind: "image",
+            body: text,
+            mediaBase64: await blobToBase64(blob),
+            mediaExt: mediaExtFromMime(blob.type),
+          });
+          return;
+        }
+      } catch {
+        // Photo unreachable (offline/CORS): fall through to text-only.
+      }
+    }
     void send({ kind: "text", body: text });
   }
 
@@ -458,17 +562,17 @@ export default function SimulatorClient({
   // Platform-specific styling tokens inside the phone mockup
   const incomingBubbleClass =
     platform === "whatsapp"
-      ? "self-end rounded-2xl rounded-tr-xs bg-[#D9FDD3] text-[#111B21] ring-1 ring-black/5"
+      ? "self-end rounded-lg rounded-tr-none bg-[#D9FDD3] text-[#111B21] shadow-[0_1px_1px_rgb(11_20_26/0.13)]"
       : platform === "instagram"
-        ? "self-end rounded-[22px] rounded-br-md bg-gradient-to-br from-[#7638FA] via-[#B81D8E] to-[#F74768] text-white"
-        : "self-end rounded-[20px] rounded-br-xs bg-[#0084FF] text-white";
+        ? "self-end rounded-[22px] rounded-br-[4px] bg-gradient-to-b from-[#A033FF] via-[#C135B4] to-[#F74D6B] text-white"
+        : "self-end rounded-[18px] rounded-br-[4px] bg-[#0084FF] text-white";
 
   const outgoingBubbleClass =
     platform === "whatsapp"
-      ? "self-start rounded-2xl rounded-tl-xs bg-white text-[#111B21] ring-1 ring-black/5 shadow-2xs"
+      ? "self-start rounded-lg rounded-tl-none bg-white text-[#111B21] shadow-[0_1px_1px_rgb(11_20_26/0.13)]"
       : platform === "instagram"
-        ? "self-start rounded-[22px] rounded-bl-md bg-[#EFEFEF] text-neutral-900"
-        : "self-start rounded-[20px] rounded-bl-xs bg-[#F0F2F5] text-neutral-900";
+        ? "self-start rounded-[22px] rounded-bl-[4px] bg-[#EFEFEF] text-neutral-900"
+        : "self-start rounded-[18px] rounded-bl-[4px] bg-[#F0F0F0] text-neutral-900";
 
   const pinButtonClass =
     platform === "whatsapp"
@@ -479,10 +583,10 @@ export default function SimulatorClient({
 
   const sendButtonClass =
     platform === "whatsapp"
-      ? "bg-[#00A884] text-white hover:bg-[#008F6F]"
+      ? "bg-[#00A884] text-white shadow-[0_2px_6px_rgb(0_168_132/0.4)] hover:bg-[#008F6F]"
       : platform === "instagram"
-        ? "bg-gradient-to-tr from-[#FEDA75] via-[#D62976] to-[#4F5BD5] text-white hover:opacity-95"
-        : "bg-[#0084FF] text-white hover:bg-[#0073E6]";
+        ? "bg-neutral-900 text-white hover:bg-neutral-800"
+        : "bg-[#0084FF] text-white shadow-[0_2px_6px_rgb(0_132_255/0.35)] hover:bg-[#0073E6]";
 
   function renderMessage(message: SimMessage) {
     if (message.kind === "pin_link" && message.body) {
@@ -491,7 +595,7 @@ export default function SimulatorClient({
         return (
           <div className="flex flex-col gap-2.5">
             <span dir="auto" className="leading-relaxed">
-              {parsed.text}
+              {repairMojibake(parsed.text)}
             </span>
             <a
               href={parsed.url}
@@ -505,7 +609,7 @@ export default function SimulatorClient({
           </div>
         );
       } catch {
-        return <span dir="auto">{message.body}</span>;
+        return <span dir="auto">{repairMojibake(message.body)}</span>;
       }
     }
     if (message.kind === "buttons" && message.body) {
@@ -514,7 +618,7 @@ export default function SimulatorClient({
         return (
           <div className="flex flex-col gap-2.5">
             <span dir="auto" className="whitespace-pre-wrap leading-relaxed">
-              {parsed.text}
+              {repairMojibake(parsed.text)}
             </span>
             <div className="flex flex-col gap-1.5 pt-0.5">
               {parsed.buttons.map((b) => (
@@ -525,14 +629,14 @@ export default function SimulatorClient({
                   onClick={() => void send({ kind: "button", body: b.title })}
                   className="w-full rounded-full"
                 >
-                  {b.title}
+                  {repairMojibake(b.title)}
                 </Button>
               ))}
             </div>
           </div>
         );
       } catch {
-        return <span dir="auto">{message.body}</span>;
+        return <span dir="auto">{repairMojibake(message.body)}</span>;
       }
     }
 
@@ -554,11 +658,15 @@ export default function SimulatorClient({
           />
         ) : null}
         {message.mediaUrl && message.kind === "audio" ? (
-          <audio controls src={message.mediaUrl} className="w-[235px]" />
+          <VoiceNotePlayer
+            key={message.id}
+            src={message.mediaUrl}
+            light={message.direction === "in" && platform !== "whatsapp"}
+          />
         ) : null}
         {message.body ? (
           <span dir="auto" className="whitespace-pre-wrap leading-relaxed">
-            {message.body}
+            {repairMojibake(message.body)}
           </span>
         ) : null}
         <span className={`inline-flex items-center gap-1 self-end font-mono text-[10px] leading-none tabular-nums ${timeColor}`}>
@@ -608,7 +716,7 @@ export default function SimulatorClient({
             onClick={() => setPlatform("whatsapp")}
             className={`inline-flex cursor-pointer items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold transition-all sm:text-sm ${
               platform === "whatsapp"
-                ? "bg-primary text-primary shadow-xs ring-1 ring-secondary"
+                ? "bg-[#00A884] text-white shadow-xs"
                 : "text-tertiary hover:text-primary"
             }`}
           >
@@ -625,7 +733,7 @@ export default function SimulatorClient({
             onClick={() => setPlatform("instagram")}
             className={`inline-flex cursor-pointer items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold transition-all sm:text-sm ${
               platform === "instagram"
-                ? "bg-primary text-primary shadow-xs ring-1 ring-secondary"
+                ? "bg-gradient-to-r from-[#833AB4] via-[#D62976] to-[#F77737] text-white shadow-xs"
                 : "text-tertiary hover:text-primary"
             }`}
           >
@@ -642,7 +750,7 @@ export default function SimulatorClient({
             onClick={() => setPlatform("messenger")}
             className={`inline-flex cursor-pointer items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold transition-all sm:text-sm ${
               platform === "messenger"
-                ? "bg-primary text-primary shadow-xs ring-1 ring-secondary"
+                ? "bg-[#0084FF] text-white shadow-xs"
                 : "text-tertiary hover:text-primary"
             }`}
           >
@@ -696,8 +804,9 @@ export default function SimulatorClient({
                         <span className="font-mono text-xs font-semibold tabular-nums text-primary">
                           {formatPrice(product.priceMillimes)}
                         </span>
-                        <span className="font-mono text-[10px] tabular-nums text-tertiary">
-                          {product.stock > 0 ? `${product.stock} left` : "Out"}
+                        <span className={`inline-flex items-center gap-1 text-[10px] font-medium ${product.stock > 0 ? "text-[#067647]" : "text-[#B42318]"}`}>
+                          <span className={`size-1.5 rounded-full ${product.stock > 0 ? "bg-[#12B76A]" : "bg-[#F04438]"}`} />
+                          {product.stock > 0 ? `${product.stock} left` : "Out of stock"}
                         </span>
                       </div>
                     </div>
@@ -705,8 +814,14 @@ export default function SimulatorClient({
                   <button
                     type="button"
                     disabled={!conversationId || awaiting}
-                    onClick={() => askAboutProduct(product)}
-                    className="w-full cursor-pointer rounded-lg border border-secondary bg-secondary/60 px-2.5 py-1.5 text-xs font-medium text-secondary transition-colors hover:bg-brand-primary hover:text-brand-secondary disabled:opacity-50"
+                    onClick={() => void askAboutProduct(product)}
+                    className={`w-full cursor-pointer rounded-full px-2.5 py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50 ${
+                      platform === "whatsapp"
+                        ? "bg-[#00A884]"
+                        : platform === "instagram"
+                          ? "bg-gradient-to-r from-[#833AB4] via-[#D62976] to-[#F77737]"
+                          : "bg-[#0084FF]"
+                    }`}
                   >
                     {meta.askCta}
                   </button>
@@ -742,151 +857,165 @@ export default function SimulatorClient({
           </div>
 
           {/* Mobile Device Mockup */}
-          <div className="w-full max-w-[398px] overflow-hidden rounded-[36px] border-[6px] border-neutral-900 bg-primary shadow-xl">
-            {/* iOS/Android Status Bar */}
+          <div className="relative w-full max-w-[398px] overflow-hidden rounded-[44px] bg-neutral-900 p-[10px] shadow-[0_24px_60px_-18px_rgb(16_24_40/0.45)] ring-1 ring-neutral-900">
+            {/* Side buttons */}
+            <span aria-hidden="true" className="absolute top-28 -left-[2px] h-14 w-[3px] rounded-full bg-neutral-700" />
+            <span aria-hidden="true" className="absolute top-48 -left-[2px] h-10 w-[3px] rounded-full bg-neutral-700" />
+            <span aria-hidden="true" className="absolute top-36 -right-[2px] h-16 w-[3px] rounded-full bg-neutral-700" />
+            <div className="relative overflow-hidden rounded-[36px] bg-white">
+            {/* Status Bar + Dynamic Island */}
             <div
-              className={`flex items-center justify-between px-6 pt-2 pb-1 font-mono text-[10px] font-semibold tabular-nums ${
-                platform === "whatsapp" ? "bg-[#075E54] text-white/90" : "bg-white text-neutral-900"
+              className={`relative flex items-center justify-between px-7 pt-2.5 pb-1 text-[11px] font-semibold ${
+                platform === "whatsapp" ? "bg-[#008069] text-white" : "bg-white text-neutral-900"
               }`}
             >
-              <span>9:41</span>
-              <div className="h-1.5 w-14 rounded-full bg-current/20" />
-              <span>5G · 100%</span>
+              <span className="w-12 tabular-nums">9:41</span>
+              <span aria-hidden="true" className="absolute left-1/2 h-[22px] w-[92px] -translate-x-1/2 rounded-full bg-black" />
+              <span className="flex w-16 items-center justify-end gap-1.5" aria-hidden="true">
+                <span className="flex items-end gap-[2px]">
+                  <span className="w-[3px] rounded-sm bg-current h-[5px]" /><span className="w-[3px] rounded-sm bg-current h-[7px]" /><span className="w-[3px] rounded-sm bg-current h-[9px]" /><span className="w-[3px] rounded-sm bg-current/40 h-[11px]" />
+                </span>
+                <span className="text-[10px] font-bold">5G</span>
+                <span className="flex h-[11px] w-[24px] items-center rounded-[3px] border border-current/60 p-[1.5px]"><span className="h-full w-[82%] rounded-[1.5px] bg-current" /></span>
+              </span>
             </div>
 
             {/* Platform-Specific App Header */}
             {platform === "whatsapp" ? (
-              <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-[#075E54] px-4 py-2.5 text-white">
-                <div className="flex min-w-0 items-center gap-2.5">
-                  <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#25D366] text-sm font-bold text-white shadow-xs">
-                    W
+              <div className="flex items-center gap-1 bg-[#008069] px-2 py-2 text-white">
+                <ChevronLeft className="size-6 shrink-0" aria-hidden="true" />
+                <span className="-ml-1 font-medium">3</span>
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#DFE5E7] text-sm font-bold text-[#008069]">W</div>
+                <div className="flex min-w-0 flex-1 flex-col pl-1">
+                  <div className="flex items-center gap-1">
+                    <span className="truncate text-[15px] font-semibold leading-tight">{displayShopName}</span>
+                    <ShieldCheck className="size-3.5 shrink-0 text-[#25D366]" />
                   </div>
-                  <div className="flex min-w-0 flex-col">
-                    <div className="flex items-center gap-1.5">
-                      <span className="truncate text-sm font-semibold">{displayShopName}</span>
-                      <ShieldCheck className="size-3.5 shrink-0 text-[#25D366]" />
-                    </div>
-                    <span className="flex items-center gap-1.5 text-[11px] text-white/80">
-                      <span
-                        className={`size-1.5 rounded-full ${
-                          aiPaused ? "bg-utility-yellow-400" : "bg-[#25D366]"
-                        }`}
-                      />
-                      {aiPaused ? t.sellerOnline : awaiting ? meta.typingLabel : meta.onlineLabel}
-                    </span>
-                  </div>
-                </div>
-                <span className="inline-flex items-center gap-1 rounded-full bg-white/12 px-2 py-0.5 font-mono text-[10px] text-white/90">
-                  <WhatsAppIcon className="size-3" />
-                  Derja AI
-                </span>
-              </div>
-            ) : platform === "instagram" ? (
-              <div className="border-b border-neutral-200 bg-white">
-                <div className="flex items-center justify-between gap-2.5 px-4 py-2.5 text-neutral-900">
-                  <div className="flex min-w-0 items-center gap-2.5">
-                    <div className="rounded-full bg-gradient-to-tr from-[#FEDA75] via-[#D62976] to-[#4F5BD5] p-[2px]">
-                      <div className="flex size-8 items-center justify-center rounded-full bg-white text-xs font-bold text-neutral-900 ring-1 ring-white">
-                        W
-                      </div>
-                    </div>
-                    <div className="flex min-w-0 flex-col">
-                      <div className="flex items-center gap-1">
-                        <span className="truncate text-sm font-semibold text-neutral-900">{displayShopName}</span>
-                        <ShieldCheck className="size-3.5 shrink-0 text-[#0095F6]" />
-                      </div>
-                      <span className="truncate text-[11px] text-neutral-500">
-                        {aiPaused ? t.sellerOnline : awaiting ? meta.typingLabel : `${igHandle} · Active now`}
-                      </span>
-                    </div>
-                  </div>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-[#FEDA75]/25 via-[#D62976]/15 to-[#4F5BD5]/20 px-2.5 py-0.5 text-[10px] font-semibold text-[#D62976]">
-                    <InstagramIcon className="size-3" />
-                    IG Direct
+                  <span className="truncate text-[11px] leading-tight text-white/85">
+                    {aiPaused ? t.sellerOnline : awaiting ? meta.typingLabel : "online"}
                   </span>
                 </div>
-
-                {/* Interactive Instagram Stories Strip */}
-                {products.length > 0 ? (
-                  <div className="flex items-center gap-2.5 overflow-x-auto border-t border-neutral-100 bg-neutral-50/70 px-3.5 py-2">
-                    <span className="shrink-0 text-[10px] font-semibold tracking-wider text-neutral-400 uppercase">
-                      Stories
+                <Video className="size-6 shrink-0" aria-hidden="true" />
+                <Phone className="ml-3 size-5 shrink-0" aria-hidden="true" />
+                <MoreVertical className="ml-3 size-5 shrink-0" aria-hidden="true" />
+              </div>
+            ) : platform === "instagram" ? (
+              <div className="bg-white">
+                <div className="flex items-center gap-2 px-3 py-2 text-neutral-900">
+                  <ChevronLeft className="size-7 shrink-0" aria-hidden="true" />
+                  <div className="relative shrink-0 rounded-full bg-gradient-to-tr from-[#FEDA75] via-[#D62976] to-[#4F5BD5] p-[2px]">
+                    <div className="flex size-8 items-center justify-center rounded-full bg-white text-xs font-bold ring-2 ring-white">W</div>
+                    <span className="absolute right-0 bottom-0 size-2.5 rounded-full bg-[#31A24C] ring-2 ring-white" />
+                  </div>
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <div className="flex items-center gap-1">
+                      <span className="truncate text-[14px] font-semibold leading-tight">{displayShopName}</span>
+                      <ShieldCheck className="size-3.5 shrink-0 text-[#0095F6]" />
+                    </div>
+                    <span className="truncate text-[11px] leading-tight text-neutral-500">
+                      {aiPaused ? t.sellerOnline : awaiting ? meta.typingLabel : `${igHandle} · Active now`}
                     </span>
+                  </div>
+                  <Phone className="size-6 shrink-0" aria-hidden="true" />
+                  <Video className="ml-3 size-7 shrink-0" aria-hidden="true" />
+                </div>
+                {products.length > 0 ? (
+                  <div className="flex gap-4 overflow-x-auto px-4 pt-1 pb-2.5 [scrollbar-width:none]">
                     {products.slice(0, 6).map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        disabled={!conversationId || awaiting}
-                        onClick={() => askAboutProduct(item)}
-                        title={`Reply to ${item.name} story`}
-                        className="group flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full bg-white py-0.5 pr-2.5 pl-0.5 text-[11px] font-medium text-neutral-800 shadow-2xs ring-1 ring-neutral-200/80 transition-transform hover:scale-[1.02] disabled:opacity-50"
-                      >
-                        <span className="rounded-full bg-gradient-to-tr from-[#FEDA75] via-[#D62976] to-[#4F5BD5] p-[1.5px]">
+                      <button key={item.id} type="button" disabled={!conversationId || awaiting} onClick={() => void askAboutProduct(item)} title={`Reply to ${item.name} story`} className="flex w-14 shrink-0 cursor-pointer flex-col items-center gap-1 disabled:opacity-50">
+                        <span className="rounded-full bg-gradient-to-tr from-[#FEDA75] via-[#D62976] to-[#4F5BD5] p-[2.5px]">
                           {item.imageUrl ? (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img src={item.imageUrl} alt="" className="size-5 rounded-full object-cover" />
+                            <img src={item.imageUrl} alt="" className="size-12 rounded-full object-cover ring-2 ring-white" />
                           ) : (
-                            <span className="block size-5 rounded-full bg-neutral-200" />
+                            <span className="block size-12 rounded-full bg-neutral-200 ring-2 ring-white" />
                           )}
                         </span>
-                        <span className="max-w-[88px] truncate">{item.name}</span>
+                        <span className="w-full truncate text-center text-[10px] text-neutral-700">{item.name}</span>
                       </button>
                     ))}
                   </div>
                 ) : null}
               </div>
             ) : (
-              <div className="flex items-center justify-between gap-3 border-b border-neutral-200 bg-white px-4 py-2.5 text-neutral-900">
-                <div className="flex min-w-0 items-center gap-2.5">
-                  <div className="relative flex size-9 shrink-0 items-center justify-center rounded-full bg-[#0084FF] text-sm font-bold text-white">
-                    W
-                    <span className="absolute right-0 bottom-0 size-2.5 rounded-full bg-[#31A24C] ring-2 ring-white" />
-                  </div>
-                  <div className="flex min-w-0 flex-col">
-                    <div className="flex items-center gap-1">
-                      <span className="truncate text-sm font-semibold text-neutral-900">{displayShopName}</span>
-                      <ShieldCheck className="size-3.5 shrink-0 text-[#0084FF]" />
-                    </div>
-                    <span className="text-[11px] text-neutral-500">
-                      {aiPaused ? t.sellerOnline : awaiting ? meta.typingLabel : meta.onlineLabel}
-                    </span>
-                  </div>
+              <div className="flex items-center gap-2 bg-white px-3 py-2 text-neutral-900 shadow-[0_1px_4px_rgb(0_0_0/0.08)]">
+                <ChevronLeft className="size-7 shrink-0 text-[#0084FF]" aria-hidden="true" />
+                <div className="relative shrink-0">
+                  <div className="flex size-9 items-center justify-center rounded-full bg-gradient-to-b from-[#00C6FF] to-[#0084FF] text-sm font-bold text-white">W</div>
+                  <span className="absolute right-0 bottom-0 size-3 rounded-full bg-[#31A24C] ring-2 ring-white" />
                 </div>
-                <span className="inline-flex items-center gap-1 rounded-full bg-[#0084FF]/10 px-2.5 py-0.5 text-[10px] font-semibold text-[#0084FF]">
-                  <MessengerIcon className="size-3" />
-                  Messenger
-                </span>
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <div className="flex items-center gap-1">
+                    <span className="truncate text-[15px] font-semibold leading-tight">{displayShopName}</span>
+                    <ShieldCheck className="size-3.5 shrink-0 text-[#0084FF]" />
+                  </div>
+                  <span className="truncate text-[11px] leading-tight text-neutral-500">
+                    {aiPaused ? t.sellerOnline : awaiting ? meta.typingLabel : "Active now"}
+                  </span>
+                </div>
+                <Phone className="size-5 shrink-0 text-[#0084FF]" aria-hidden="true" />
+                <Video className="ml-3 size-6 shrink-0 text-[#0084FF]" aria-hidden="true" />
+                <MoreVertical className="ml-2 size-5 shrink-0 text-[#0084FF]" aria-hidden="true" />
               </div>
             )}
 
             {/* Messages Stream */}
             <div
               ref={scrollRef}
-              className={`flex h-[min(27rem,calc(100dvh-20rem))] flex-col gap-2.5 overflow-y-auto scroll-smooth px-3.5 py-3.5 ${
-                platform === "whatsapp" ? "bg-[#EFEAE2]" : "bg-white"
+              onScroll={(e) => {
+                const el = e.currentTarget;
+                nearBottomRef.current = isNearBottom(el.scrollTop, el.clientHeight, el.scrollHeight);
+              }}
+              className={`flex h-[min(28rem,calc(100dvh-19rem))] touch-pan-y flex-col gap-[3px] overflow-y-auto overscroll-contain scroll-smooth px-3 py-3 ${
+                platform === "whatsapp" ? "wa-chat-bg" : "bg-white"
               }`}
             >
-              {/* Centered Platform Trust / Profile Pill (never uses self-start so E2E bubble selectors stay pure) */}
-              <div
-                className={`mx-auto mb-1 max-w-[92%] rounded-xl px-3 py-1.5 text-center text-[11px] leading-snug ${
-                  platform === "whatsapp"
-                    ? "bg-[#FFF5C4]/90 text-[#54656F] shadow-2xs"
-                    : "bg-neutral-100 text-neutral-500"
-                }`}
-              >
-                {meta.introNotice}
-              </div>
+              {platform === "whatsapp" ? (
+                <>
+                  <div className="mx-auto mb-1.5 rounded-lg bg-white px-3 py-1 text-[11px] font-medium text-[#54656F] shadow-[0_1px_1px_rgb(11_20_26/0.13)]">TODAY</div>
+                  <div className="mx-auto mb-2 flex max-w-[92%] items-start gap-1.5 rounded-lg bg-[#FEEECD] px-2.5 py-2 text-center text-[11px] leading-snug text-[#54656F] shadow-[0_1px_1px_rgb(11_20_26/0.08)]">
+                    <Lock className="mt-px size-3 shrink-0" aria-hidden="true" />
+                    <span>{meta.introNotice} Messages are end-to-end encrypted.</span>
+                  </div>
+                </>
+              ) : platform === "instagram" ? (
+                <div className="mx-auto flex flex-col items-center px-4 pt-2 pb-3 text-center">
+                  <div className="rounded-full bg-gradient-to-tr from-[#FEDA75] via-[#D62976] to-[#4F5BD5] p-[3px]">
+                    <div className="flex size-16 items-center justify-center rounded-full bg-white text-xl font-bold ring-4 ring-white">W</div>
+                  </div>
+                  <p className="mt-2 text-[15px] font-semibold text-neutral-900">{displayShopName}</p>
+                  <p className="text-xs text-neutral-500">{igHandle} · Instagram</p>
+                  <p className="mt-1 text-xs text-neutral-500">{meta.introNotice}</p>
+                  <span className="mt-2 rounded-lg bg-[#EFEFEF] px-3 py-1.5 text-xs font-semibold text-neutral-900">View profile</span>
+                </div>
+              ) : (
+                <div className="mx-auto flex flex-col items-center px-4 pt-2 pb-3 text-center">
+                  <div className="relative">
+                    <div className="flex size-16 items-center justify-center rounded-full bg-gradient-to-b from-[#00C6FF] to-[#0084FF] text-xl font-bold text-white">W</div>
+                    <span className="absolute right-0 bottom-0 size-4 rounded-full bg-[#31A24C] ring-[3px] ring-white" />
+                  </div>
+                  <p className="mt-2 text-[15px] font-semibold text-neutral-900">{displayShopName}</p>
+                  <p className="text-xs text-neutral-500">{meta.introNotice}</p>
+                  <span className="mt-2 rounded-full bg-[#F0F2F5] px-3 py-1.5 text-xs font-semibold text-neutral-900">View page</span>
+                </div>
+              )}
 
               {messages.map((m) => (
                 <div
                   key={m.id}
-                  className={`max-w-[85%] px-3.5 py-2.5 text-sm ${
+                  className={`max-w-[78%] px-3 py-[7px] text-[14.5px] leading-snug ${
                     m.direction === "in" ? incomingBubbleClass : outgoingBubbleClass
-                  }`}
+                  } ${platform !== "whatsapp" ? "mb-[2px]" : "mb-1"}`}
                 >
                   {renderMessage(m)}
                 </div>
               ))}
+              {platform === "instagram" && messages.length > 0 ? (
+                <span className="self-end pr-1 pt-0.5 text-[11px] text-neutral-500">Seen</span>
+              ) : null}
+              {platform === "messenger" && messages.length > 0 ? (
+                <span className="self-end flex size-3.5 items-center justify-center rounded-full bg-gradient-to-b from-[#00C6FF] to-[#0084FF] text-[8px] font-bold text-white">W</span>
+              ) : null}
 
               {awaiting && !aiPaused ? (
                 <div className={`px-3.5 py-2.5 ${outgoingBubbleClass}`}>
@@ -928,7 +1057,7 @@ export default function SimulatorClient({
             {pendingVoice ? (
               <div className="mx-2.5 mb-1.5 flex items-center gap-2 rounded-2xl bg-primary p-2 ring-1 ring-secondary shadow-xs">
                 <div className="flex min-w-0 flex-1 flex-col">
-                  <audio controls src={pendingVoice.url} className="h-8 w-full" />
+                  <VoiceNotePlayer src={pendingVoice.url} />
                   <span className="truncate font-mono text-[11px] tabular-nums text-tertiary">
                     {formatElapsed(pendingVoice.seconds)} · {t.voiceAttached}
                   </span>
@@ -951,20 +1080,31 @@ export default function SimulatorClient({
 
             {/* Composer Bar */}
             <div
-              className={`flex items-end gap-1.5 border-t px-2.5 py-2.5 ${
-                platform === "whatsapp"
-                  ? "border-black/10 bg-[#F0F2F5]"
-                  : "border-neutral-200 bg-white"
+              className={`flex items-end gap-2 px-2 py-2 ${
+                platform === "whatsapp" ? "wa-chat-bg" : "bg-white"
               }`}
             >
-              <div className="flex flex-1 items-center rounded-full bg-white px-2 ring-1 ring-neutral-200 shadow-2xs">
+              <div
+                className={`flex flex-1 items-center px-1.5 ${
+                  platform === "whatsapp"
+                    ? "rounded-full bg-white shadow-[0_1px_2px_rgb(11_20_26/0.15)]"
+                    : platform === "instagram"
+                      ? "rounded-full border border-neutral-300 bg-white"
+                      : "rounded-full bg-[#F0F2F5]"
+                }`}
+              >
+                {platform === "instagram" ? null : <Smile className={`ml-1 size-6 shrink-0 ${platform === "messenger" ? "text-[#0084FF]" : "text-[#54656F]"}`} aria-hidden="true" />}
                 <label
-                  className={`rounded-full p-2 text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 ${
-                    stopping ? "pointer-events-none opacity-40" : "cursor-pointer"
-                  }`}
+                  className={`shrink-0 rounded-full p-1.5 transition-colors ${
+                    platform === "instagram"
+                      ? "order-first mr-0.5 flex size-8 items-center justify-center bg-neutral-900 text-white"
+                      : platform === "messenger"
+                        ? "text-[#0084FF]"
+                        : "rotate-45 text-[#54656F]"
+                  } ${stopping ? "pointer-events-none opacity-40" : "cursor-pointer"}`}
                   title="Image"
                 >
-                  <ImagePlus className="size-5" />
+                  {platform === "whatsapp" ? <Paperclip className="size-5" /> : platform === "instagram" ? <Camera className="size-4.5" /> : <Camera className="size-5" />}
                   <input
                     type="file"
                     accept="image/*"
@@ -997,21 +1137,32 @@ export default function SimulatorClient({
                     />
                   </div>
                 ) : (
-                  <Input
+                  <input
                     value={draft}
-                    isDisabled={!conversationId || stopping}
-                    onChange={(value) => {
+                    disabled={!conversationId || stopping}
+                    onChange={(e) => {
                       setMicError(null);
-                      setDraft(value);
+                      setDraft(e.target.value);
                     }}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") void sendCurrent();
                     }}
                     placeholder={pendingImage ? t.captionPlaceholder : t.placeholder}
-                    inputClassName="h-10 border-0 bg-transparent text-neutral-900 shadow-none focus-visible:ring-0"
                     dir="auto"
+                    aria-label={t.placeholder}
+                    className="h-10 min-w-0 flex-1 bg-transparent px-1 text-[15px] text-neutral-900 outline-none placeholder:text-[#667781] disabled:opacity-50"
                   />
                 )}
+                {!hasComposerPayload && !recording && platform === "whatsapp" ? (
+                  <Camera className="mr-1 size-5 shrink-0 text-[#54656F]" aria-hidden="true" />
+                ) : null}
+                {!hasComposerPayload && !recording && platform === "instagram" ? (
+                  <>
+                    <Mic className="mx-1 size-5 shrink-0 text-neutral-800" aria-hidden="true" />
+                    <ImagePlus className="mx-1 size-5 shrink-0 text-neutral-800" aria-hidden="true" />
+                    <Heart className="mx-1 size-5 shrink-0 text-neutral-800" aria-hidden="true" />
+                  </>
+                ) : null}
                 {hasComposerPayload && !recording ? (
                   <Button
                     color="tertiary"
@@ -1042,6 +1193,11 @@ export default function SimulatorClient({
                   <Mic className="size-5" />
                 )}
               </Button>
+            </div>
+            {/* Home indicator */}
+            <div className={`flex justify-center pb-1.5 ${platform === "whatsapp" ? "wa-chat-bg" : "bg-white"}`}>
+              <span aria-hidden="true" className="h-[5px] w-32 rounded-full bg-neutral-900/85" />
+            </div>
             </div>
           </div>
 
@@ -1112,10 +1268,8 @@ export default function SimulatorClient({
               {events.map((event) => (
                 <div
                   key={event.id}
-                  className={`rounded-xl border border-secondary/80 border-l-4 px-3.5 py-2.5 text-xs shadow-2xs ${
-                    event.ok
-                      ? "border-l-utility-green-600 bg-primary"
-                      : "border-l-utility-red-600 bg-error-primary/50"
+                  className={`rounded-xl border px-3.5 py-2.5 text-xs shadow-2xs ${
+                    event.ok ? "border-secondary/80 bg-primary" : "border-[#FECDCA] bg-[#FFFBEB]"
                   }`}
                 >
                   <div className="flex flex-wrap items-center gap-2">

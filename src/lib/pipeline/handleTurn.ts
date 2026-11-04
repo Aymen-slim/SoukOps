@@ -24,6 +24,7 @@ import {
   resolvePointSelection,
   resolveScreenshot,
   uploadPng,
+  type MatchCandidate,
   type MatchResult,
 } from "./vision";
 
@@ -165,12 +166,12 @@ function readPendingChoice(slots: Record<string, unknown>): PendingChoice | null
 }
 
 function buttonTitle(index: number, name?: string): string {
-  return `${index + 1} Â· ${name ?? "Produit"}`.slice(0, 20);
+  return `${index + 1} · ${name ?? "Produit"}`.slice(0, 20);
 }
 
 /**
  * Direct answers to buyer questions. The conversation must respond to what
- * was just asked (price, stock) before asking for the next slot â€” a buyer
+ * was just asked (price, stock) before asking for the next slot — a buyer
  * asking "b9addech?" must never get "win toskon?" back.
  */
 export function buildPriceReply(
@@ -218,12 +219,12 @@ export function nextQuestion(slots: Record<string, unknown>): string {
   const action = nextAction(slots);
   if (action === "need_size") return "Behi! Chnowa el taille mte3ek? (S, M, L, XL)";
   if (action === "need_name") return "Chnowa esmek, 3aychek?";
-  if (action === "need_phone") return "Aatini numero el tÃ©lÃ©phone mte3ek, w nkammlou el commande bel 3ayni.";
+  if (action === "need_phone") return "Aatini numero el téléphone mte3ek, w nkammlou el commande bel 3ayni.";
   if (action === "need_governorate") {
-    return "Win toskon? Aatini el wilaya w a9reb repÃ¨re (pharmacie, cafÃ©, mosquÃ©e...) lel dar.";
+    return "Win toskon? Aatini el wilaya w a9reb repère (pharmacie, café, mosquée...) lel dar.";
   }
   if (action === "need_landmark") {
-    return `Aatini bark a9reb repÃ¨re (pharmacie, cafÃ©, mosquÃ©e, Ã©cole...) ba7dha darek fi ${slots.governorate as string} bch nab3athlek el pin.`;
+    return `Aatini bark a9reb repère (pharmacie, café, mosquée, école...) ba7dha darek fi ${slots.governorate as string} bch nab3athlek el pin.`;
   }
   if (action === "need_product") return "Chnowa el produit elli t7eb alih? Ab3atli taswirt el produit walla ousifhouli.";
   return "T7eb nkammlou el commande? Ana mrigel.";
@@ -315,14 +316,14 @@ export async function runTurn(conversationId: string): Promise<void> {
         .join(" ")
         .trim()
         .toLowerCase()
-        .replace(/[.!ØŒ]+$/g, "");
+        .replace(/[.!،]+$/g, "");
       if (currentSlots.summaryPending === true && (rawText === "akked" || rawText === "beddel")) {
         if (rawText === "akked") {
           const result = await createOrderFromAkked(supabase, conversationId);
           if (!result.ok) {
             await channelAdapter.sendText(
               conversationId,
-              "Mazzel na9es ma3loumet bch nakked el commande. Rja3 chouf el rÃ©cap w akked marra o5ra.",
+              "Mazzel na9es ma3loumet bch nakked el commande. Rja3 chouf el récap w akked marra o5ra.",
             );
             await logEvent(conversationId, "order.akked_rejected", { reason: result.reason });
           }
@@ -413,7 +414,7 @@ export async function runTurn(conversationId: string): Promise<void> {
       : null;
     const isButtonChoiceTap =
       imageCount === 0 &&
-      /^\s*\d{1,2}(?:\s*Â·\s*.+)?\s*$/.test(combinedText) &&
+      /^\s*\d{1,2}(?:\s*·\s*.+)?\s*$/.test(combinedText) &&
       Boolean(pendingBeforeUnderstand || (pendingLmBeforeUnderstand && pendingLmBeforeUnderstand.length > 0));
 
     const expectingSize =
@@ -570,7 +571,7 @@ export async function runTurn(conversationId: string): Promise<void> {
 
       // Negotiation ladder (deterministic; amounts only from negotiation.ts).
       // Counter-offer: model proposal first, deterministic Derja money
-      // parsing as fallback â€” code decides the amount either way.
+      // parsing as fallback — code decides the amount either way.
       const counterOfferMillimes = result.counterOfferMillimes ?? parseMoneyMillimes(combinedText);
       if (result.primaryIntent === "bargain" || counterOfferMillimes !== null) {
         const { data: product } = await supabase
@@ -615,7 +616,7 @@ export async function runTurn(conversationId: string): Promise<void> {
 
       const action = nextAction(slots);
       if (action === "need_pin") {
-        // Returning buyers reuse a confirmed pin and skip the map step â€”
+        // Returning buyers reuse a confirmed pin and skip the map step —
         // but only when the landmark they just stated is that same place.
         // A newly stated, different address always gets a fresh pin for
         // that address; the stored pin must never override it silently.
@@ -647,7 +648,7 @@ export async function runTurn(conversationId: string): Promise<void> {
         if (outcome.status === "miss") {
           await channelAdapter.sendText(
             conversationId,
-            "Ma l9itch el repÃ¨re hedha. Tnajem t9olli esm pharmacie, cafÃ©, mosquÃ©e walla Ã©cole 9riba lel dar, m3a el wilaya?",
+            "Ma l9itch el repère hedha. Tnajem t9olli esm pharmacie, café, mosquée walla école 9riba lel dar, m3a el wilaya?",
           );
         } else if (outcome.status === "ambiguous") {
           await channelAdapter.sendButtons(
@@ -677,7 +678,7 @@ export async function runTurn(conversationId: string): Promise<void> {
       if (action === "awaiting_confirmation") {
         await channelAdapter.sendText(
           conversationId,
-          "Chouf el rÃ©cap l fou9, 3aychek. E8et [Akked] ken kol chay s7a7, w [Beddel] ken t7eb tbaddel haja.",
+          "Chouf el récap l fou9, 3aychek. E8et [Akked] ken kol chay s7a7, w [Beddel] ken t7eb tbaddel haja.",
         );
         return true;
       }
@@ -719,6 +720,37 @@ export async function runTurn(conversationId: string): Promise<void> {
       });
       delete slots.pendingChoice;
 
+      // Recommend another item (nearest in stock) with a tappable button:
+      // accepting it reuses the product-choice path, which sets it as the
+      // matched product and continues the order. Price passes the firewall.
+      const offerAlternative = async (alternative: MatchCandidate, head: string): Promise<void> => {
+        slots.alternativeProductId = alternative.productId;
+        slots.alternativeProductName = alternative.name;
+        slots.pendingChoice = {
+          kind: "product",
+          options: [
+            {
+              label: buttonTitle(0, alternative.name),
+              productId: alternative.productId,
+              name: alternative.name,
+              cropPath: alternative.cropPath,
+              sourcePath: alternative.sourcePath,
+            },
+          ],
+        } satisfies PendingChoice;
+        const text =
+          firewallChecked(
+            `${head} ${alternative.name} (${formatMillimesForChat(alternative.priceMillimes)}). T7eb tkammel bih?`,
+            [alternative.priceMillimes],
+          ) ?? `${head} ${alternative.name}. T7eb tkammel bih?`;
+        const photo = catalogPhotoPath(alternative);
+        if (photo) await channelAdapter.sendImage(conversationId, photo, text);
+        else await channelAdapter.sendText(conversationId, text);
+        await channelAdapter.sendButtons(conversationId, "Ken ysa3dek, a5tarou w nkammlou bih:", [
+          { id: "product-0", title: buttonTitle(0, alternative.name) },
+        ]);
+      };
+
       if (match.decision === "unmatched" || !match.chosen) {
         slots.visionStatus = "unmatched";
         let cropPath: string | null = null;
@@ -736,10 +768,18 @@ export async function runTurn(conversationId: string): Promise<void> {
           crop_path: cropPath,
           embedding: source.embedding ?? null,
         });
-        await channelAdapter.sendText(
-          conversationId,
-          "Samahni, ma l9itch el produit hedha 3andna fel catalogue. Tnajem tab3atli taswira awda7, walla ousifli el produit b kelmet o5rin?",
-        );
+        if (match.alternative) {
+          // Product does not exist here: recommend the nearest in-stock one.
+          await offerAlternative(
+            match.alternative,
+            "Samahni, ma l9itch el produit hedha bel dabt 3andna. Amma a9reb haja mawjouda w techbeh lou:",
+          );
+        } else {
+          await channelAdapter.sendText(
+            conversationId,
+            "Samahni, ma l9itch el produit hedha 3andna fel catalogue. Tnajem tab3atli taswira awda7, walla ousifli el produit b kelmet o5rin?",
+          );
+        }
         return;
       }
 
@@ -758,11 +798,11 @@ export async function runTurn(conversationId: string): Promise<void> {
         } satisfies PendingChoice;
         if (source.cropPng) {
           const cropMediaPath = await uploadPng(supabase, "buyer-media", `vision/${conversationId}`, source.cropPng);
-          await channelAdapter.sendImage(conversationId, cropMediaPath, "Hedhi el taswira elli b3athetha ðŸ‘‡");
+          await channelAdapter.sendImage(conversationId, cropMediaPath, "Hedhi el taswira elli b3athetha 👇");
         } else {
           for (const [i, candidate] of match.top.entries()) {
             const photo = catalogPhotoPath(candidate);
-            if (photo) await channelAdapter.sendImage(conversationId, photo, `${i + 1} Â· ${candidate.name}`);
+            if (photo) await channelAdapter.sendImage(conversationId, photo, `${i + 1} · ${candidate.name}`);
           }
         }
         const sizeNote = typeof slots.size === "string" ? ` (sajaltlek taille ${slots.size}!)` : "";
@@ -784,17 +824,10 @@ export async function runTurn(conversationId: string): Promise<void> {
       if (chosen.stock <= 0) {
         slots.visionStatus = "out_of_stock";
         if (match.alternative) {
-          slots.alternativeProductId = match.alternative.productId;
-          slots.alternativeProductName = match.alternative.name;
-          const text =
-            `Samahni, ${chosen.name} kemmel (ma3adch mawjoud fel stock). ` +
-            `Amma l9it hedha el qarib lou barcha: ${match.alternative.name}. T7eb tkammel bih?`;
-          const alternativePhoto = catalogPhotoPath(match.alternative);
-          if (alternativePhoto) {
-            await channelAdapter.sendImage(conversationId, alternativePhoto, text);
-          } else {
-            await channelAdapter.sendText(conversationId, text);
-          }
+          await offerAlternative(
+            match.alternative,
+            `Samahni, ${chosen.name} kemmel (ma3adch mawjoud fel stock). Amma l9it hedha el qarib lou barcha:`,
+          );
         } else {
           await channelAdapter.sendText(
             conversationId,
@@ -849,7 +882,17 @@ export async function runTurn(conversationId: string): Promise<void> {
               .select("id, name, stock, price_millimes")
               .eq("id", option.productId)
               .maybeSingle();
-            if (product) {
+            if (product && (product.stock as number) <= 0) {
+              // Never start an order on a sold-out choice (stock may have
+              // changed since the buttons were sent).
+              delete slots.matchedProductId;
+              delete slots.matchedProductName;
+              slots.visionStatus = "out_of_stock";
+              await channelAdapter.sendText(
+                conversationId,
+                `Samahni, ${product.name as string} kemmel fel stock taw. Ab3atli taswirt produit a5ar walla ousifhouli, w nchouflek a9reb haja mawjouda.`,
+              );
+            } else if (product) {
               slots.matchedProductId = product.id;
               slots.matchedProductName = product.name;
               slots.visionStatus = "matched";
@@ -867,7 +910,7 @@ export async function runTurn(conversationId: string): Promise<void> {
           }
           visionHandled = true;
         } else {
-          // kind === "crop": ladder step (d) â€” SAM point prompt on the chosen box.
+          // kind === "crop": ladder step (d) — SAM point prompt on the chosen box.
           const option = pending.options[index];
           await logEvent(conversationId, "vision.choice", { kind: "crop", index });
           delete slots.pendingChoice;
@@ -952,7 +995,7 @@ export async function runTurn(conversationId: string): Promise<void> {
           } satisfies PendingChoice;
           const overlayPath = await uploadPng(supabase, "buyer-media", `vision/${conversationId}`, outcome.overlayPng);
           const sizeNote = typeof slots.size === "string" ? ` (sajaltlek taille ${slots.size}!)` : "";
-          await channelAdapter.sendImage(conversationId, overlayPath, `L9it barcha produits fel taswira ðŸ‘‡${sizeNote}`);
+          await channelAdapter.sendImage(conversationId, overlayPath, `L9it barcha produits fel taswira 👇${sizeNote}`);
           await channelAdapter.sendButtons(
             conversationId,
             "Chnowa el produit elli t7eb alih? A5tar el ra9m:",
@@ -1000,7 +1043,7 @@ export async function runTurn(conversationId: string): Promise<void> {
       const action = nextAction(slots);
       if (action === "need_pin" || action === "need_summary") {
         // progressCheckout persists slots itself (pin/summary writes carry
-        // their own slot updates) â€” do not overwrite with the stale copy.
+        // their own slot updates) — do not overwrite with the stale copy.
         await progressCheckout().catch(() => false);
       }
       return;
@@ -1050,7 +1093,7 @@ export async function runTurn(conversationId: string): Promise<void> {
       if (matchedProduct && result.primaryIntent === "bargain") {
         const reply =
           firewallChecked(
-            `Fhemt elli t7eb soum a9al. El ${matchedProduct.name as string} soumou ${formatMillimesForChat(matchedProduct.price_millimes as number)} â€” ken ysa3dek nkammlou bih hakka, walla nchoufou el soum el akher ma3a el vendeur.`,
+            `Fhemt elli t7eb soum a9al. El ${matchedProduct.name as string} soumou ${formatMillimesForChat(matchedProduct.price_millimes as number)} — ken ysa3dek nkammlou bih hakka, walla nchoufou el soum el akher ma3a el vendeur.`,
             [matchedProduct.price_millimes as number],
           ) ?? "Fhemt elli t7eb soum a9al. Nkammlou w nchoufou el soum m3a el vendeur?";
         await channelAdapter.sendText(conversationId, reply);
@@ -1110,7 +1153,7 @@ export async function runTurn(conversationId: string): Promise<void> {
         const reply =
           result.primaryIntent === "ask_stock"
             ? "Marhba bik! Ab3atli taswirt el produit walla ousifhouli, w n9ollek fisa3 ken mawjoud fel stock."
-            : "Marhba bik! Bch na3tik el soum el sahih, ab3atli taswirt el produit walla ousifhouli (el loun w el modÃ¨le).";
+            : "Marhba bik! Bch na3tik el soum el sahih, ab3atli taswirt el produit walla ousifhouli (el loun w el modèle).";
         await channelAdapter.sendText(conversationId, reply);
         await logEvent(conversationId, "reply.sent", { reply, template: "question-clarify" });
       }

@@ -36,6 +36,15 @@
   background-size: 24px 24px;
 }
 
+/* WhatsApp chat wallpaper: warm beige + faint doodle dots */
+.wa-chat-bg {
+  background-color: #ece5dd;
+  background-image:
+    radial-gradient(circle at 3px 3px, rgb(11 20 26 / 0.055) 1.2px, transparent 0),
+    radial-gradient(circle at 15px 15px, rgb(11 20 26 / 0.04) 1px, transparent 0);
+  background-size: 24px 24px;
+}
+
 .bg-checkerboard {
   background-color: #fafafa;
   background-image:

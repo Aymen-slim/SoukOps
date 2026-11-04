@@ -64,6 +64,19 @@ export async function cropWithMask(image: Buffer, object: SamObject): Promise<Bu
     .toBuffer();
 }
 
+/** Grows a SAM box by `ratio` on each side (clamped to the image) so the box crop keeps the wearer/context instead of a tight cut-out. */
+export function expandBox(box: SamBox, imageWidth: number, imageHeight: number, ratio = 0.08): SamBox {
+  const padX = (box.right - box.left) * ratio;
+  const padY = (box.bottom - box.top) * ratio;
+  return (
+    clampBox(
+      { left: box.left - padX, top: box.top - padY, right: box.right + padX, bottom: box.bottom + padY },
+      imageWidth,
+      imageHeight,
+    ) ?? box
+  );
+}
+
 /** Simple box crop without a mask (smoke-test PNG, debugging). */
 export async function cropToBox(image: Buffer, box: SamObject["box"]): Promise<Buffer> {
   const { width: imgW, height: imgH } = await imageSize(image);

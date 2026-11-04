@@ -13,7 +13,7 @@ import path from "node:path";
 import { z } from "zod";
 import { embedImages } from "../src/lib/ai/embeddings";
 import { segmentImage } from "../src/lib/ai/sam";
-import { cropWithMask } from "../src/lib/media/crop";
+import { cropToBox, expandBox, imageSize } from "../src/lib/media/crop";
 import { createAdminClient, hasAdminConfig } from "../src/lib/supabase/admin";
 import { getServerEnv } from "../src/lib/env";
 
@@ -86,7 +86,12 @@ async function main(): Promise<void> {
 
     // SAM receives the short category phrase, never the brand-like product name.
     const sam = await segmentImage({ imageDataUrl: dataUrl, nounPhrase: item.categoryPhrase });
-    const crop = sam.objects[0] ? await cropWithMask(bytes, sam.objects[0]) : bytes;
+    // Box crop keeps the model in frame (no mask cut-out), matching the buyer side.
+    let crop: Buffer = bytes;
+    if (sam.objects[0]) {
+      const size = await imageSize(bytes);
+      crop = await cropToBox(bytes, expandBox(sam.objects[0].box, size.width, size.height));
+    }
     const [embedding] = await embedImages([crop.toString("base64")]);
 
     const cropName = `${item.file.replace(/\.[^.]+$/, "")}-crop.png`;
