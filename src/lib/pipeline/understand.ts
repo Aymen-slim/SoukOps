@@ -131,12 +131,12 @@ const understandJsonSchema: Record<string, unknown> = {
   },
 };
 
-const SYSTEM = `You extract structured order information from Tunisian Derja (Arabic script, Arabizi, or French) buyer messages for a clothing seller.
+const SYSTEM = `You extract structured order information from Tunisian Derja (Arabic script, Arabizi, or French) buyer messages for a shop that sells any kind of product.
 Return only the JSON schema. Rules:
 - Always extract ALL order details stated in the buyer text/caption (size, color, quantity, governorate, delegation, landmarks, floor, driverNote, phone, customerName, counterOfferMillimes), EVEN WHEN an image is attached.
-- size: clothing or shoe size if mentioned (e.g. "XS", "S", "M", "L", "XL", "XXL", "38", "42"), normalized to uppercase. If the buyer replies with just a size like "L" or "taille M", always set size.
-- samNounPhrase: short English clothing category only (e.g. "hoodie", "sweatshirt", "dress", "jacket", "pants"), never a brand or product name.
-- productDescriptionEn: very short English description with color if known (e.g. "black hoodie", "yellow sweatshirt"), for embedding search. Keep it under 8 words.
+- size: a size if mentioned (e.g. "XS", "S", "M", "L", "XL", "XXL", "38", "42"), normalized to uppercase. If the buyer replies with just a size like "L" or "taille M", always set size.
+- samNounPhrase: short English product noun only (e.g. "hoodie", "phone", "honey", "candle", "shoes"), never a brand or the full product name.
+- productDescriptionEn: very short English description of the product, with color if known (e.g. "black hoodie", "glass honey jar"), for embedding search. Keep it under 8 words.
 - counterOfferMillimes: convert Derja money to integer millimes (1 DT = 1000). "170 alf" = 170000. "malyoun" = 1000000.
 - landmarks: ANY place the buyer mentions as a location/address reference — including coffee shops, cafés, 9ahwa, salons de thé, restaurants, pâtisseries, gyms, supermarkets (Monoprix, Carrefour, MG, Aziza), malls, pharmacies, mosques, schools, universities, post offices, banks, clinics, metro/bus/fuel stations, hotels, streets, or neighborhoods — with relation like "near", "behind", "in front of" when stated.
 - primaryIntent: ask_price only when the buyer asks the price or cost (b9addech, soum, prix, شحال). ask_stock when they ask availability (mawjoud, mazel mawjoud, famma menou, متوفر, disponible). bargain when they propose a lower price or ask for a discount without naming the price question.

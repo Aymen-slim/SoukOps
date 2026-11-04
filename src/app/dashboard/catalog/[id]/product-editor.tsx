@@ -9,7 +9,9 @@ import { Label } from "@/components/base/input/label";
 import { Toggle } from "@/components/base/toggle/toggle";
 import { Alert } from "@/components/foundations/alert/alert";
 import { prepareImageForUpload } from "@/lib/media/client-image";
+import { samPhrase } from "@/lib/domain/catalog-options";
 import { invalidateDashboardUrl } from "../../use-poll";
+import { OptionsEditor, type SellerOption, type SellerVariant } from "../options-editor";
 
 interface ProductImage {
   id: string;
@@ -21,10 +23,15 @@ interface Product {
   id: string;
   name: string;
   category: string;
+  productType?: string;
+  description?: string;
+  sizePolicy?: "required" | "none" | "options";
   priceMillimes: number;
   floorMillimes: number;
   stock: number;
   aiEnabled: boolean;
+  options?: SellerOption[];
+  variants?: SellerVariant[];
   images: ProductImage[];
 }
 
@@ -35,11 +42,16 @@ export function ProductEditor({ id }: { id: string }) {
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState("");
-  const [category, setCategory] = useState("");
+  const [productType, setProductType] = useState("");
+  const [description, setDescription] = useState("");
   const [priceDt, setPriceDt] = useState("");
   const [floorDt, setFloorDt] = useState("");
   const [stock, setStock] = useState("");
   const [aiEnabled, setAiEnabled] = useState(true);
+  const [askSize, setAskSize] = useState(false);
+  const [options, setOptions] = useState<SellerOption[]>([]);
+  const [variants, setVariants] = useState<SellerVariant[]>([]);
+  const [editorKey, setEditorKey] = useState(0);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/dashboard/catalog/${id}`);
@@ -50,11 +62,16 @@ export function ProductEditor({ id }: { id: string }) {
     }
     setProduct(body.product);
     setName(body.product.name);
-    setCategory(body.product.category);
+    setProductType(body.product.productType || body.product.category);
+    setDescription(body.product.description ?? "");
     setPriceDt(String(body.product.priceMillimes / 1000));
     setFloorDt(String(body.product.floorMillimes / 1000));
     setStock(String(body.product.stock));
     setAiEnabled(body.product.aiEnabled);
+    setAskSize(body.product.sizePolicy === "required");
+    setOptions(body.product.options ?? []);
+    setVariants(body.product.variants ?? []);
+    setEditorKey((key) => key + 1);
   }, [id]);
 
   useEffect(() => {
@@ -79,11 +96,16 @@ export function ProductEditor({ id }: { id: string }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: name.trim(),
-        category: category.trim(),
+        productType: productType.trim(),
+        category: productType.trim() || "General",
+        description: description.trim(),
         priceMillimes,
         floorMillimes,
-        stock: Math.max(0, Math.floor(Number(stock) || 0)),
+        stock: options.length > 0 ? variants.reduce((sum, variant) => sum + variant.stock, 0) : Math.max(0, Math.floor(Number(stock) || 0)),
         aiEnabled,
+        askSize: options.length > 0 ? false : askSize,
+        options,
+        variants,
       }),
     });
     const body = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -98,7 +120,10 @@ export function ProductEditor({ id }: { id: string }) {
   }
 
   async function addPhoto(file: File | undefined) {
-    if (!file || !category.trim()) return;
+    if (!file || !productType.trim()) {
+      if (!productType.trim()) setError("Add a product type before another photo.");
+      return;
+    }
     setBusy(true);
     setError(null);
     const prep = await prepareImageForUpload(file);
@@ -106,7 +131,7 @@ export function ProductEditor({ id }: { id: string }) {
     const preview = await fetch("/api/dashboard/catalog/preview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ imageBase64: prep.base64, mediaExt: prep.mediaExt, categoryPhrase: category }),
+      body: JSON.stringify({ imageBase64: prep.base64, mediaExt: prep.mediaExt, categoryPhrase: samPhrase(productType) }),
     });
     const previewBody = (await preview.json().catch(() => null)) as { error?: string; cropBase64?: string } | null;
     if (!preview.ok || !previewBody?.cropBase64) {
@@ -185,8 +210,24 @@ export function ProductEditor({ id }: { id: string }) {
           <Input id="edit-name" value={name} onChange={setName} aria-label="Name" />
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="edit-category">Category</Label>
-          <Input id="edit-category" value={category} onChange={setCategory} aria-label="Category" />
+          <Label htmlFor="edit-category">Product type</Label>
+          <Input
+            id="edit-category"
+            value={productType}
+            onChange={setProductType}
+            placeholder="Hoodie, phone, honey…"
+            aria-label="Product type"
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="edit-description">Description</Label>
+          <textarea
+            id="edit-description"
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            rows={3}
+            className="rounded-lg bg-primary px-3 py-2 text-sm text-primary ring-1 ring-secondary outline-none focus:ring-2 focus:ring-brand"
+          />
         </div>
         <div className="grid grid-cols-3 gap-3">
           <div className="flex flex-col gap-1.5">
@@ -213,13 +254,26 @@ export function ProductEditor({ id }: { id: string }) {
             <Label htmlFor="edit-stock">Stock</Label>
             <Input
               id="edit-stock"
-              value={stock}
+              value={options.length > 0 ? String(variants.reduce((sum, variant) => sum + variant.stock, 0)) : stock}
               onChange={setStock}
+              isDisabled={options.length > 0}
               inputClassName="font-mono tabular-nums"
               aria-label="Stock"
             />
           </div>
         </div>
+        <OptionsEditor
+          key={editorKey}
+          initialOptions={options}
+          initialVariants={variants}
+          onChange={(next) => {
+            setOptions(next.options);
+            setVariants(next.variants);
+          }}
+        />
+        {options.length === 0 ? (
+          <Toggle size="sm" label="Ask the buyer for a size" isSelected={askSize} onChange={setAskSize} />
+        ) : null}
         <Toggle size="sm" label="AI on this product" isSelected={aiEnabled} onChange={setAiEnabled} />
         <div className="flex gap-2">
           <Button type="submit" isDisabled={busy}>

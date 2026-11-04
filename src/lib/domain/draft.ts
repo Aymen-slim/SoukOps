@@ -1,3 +1,11 @@
+import {
+  optionChoicesOf,
+  optionNamesOf,
+  selectedOptionsOf,
+  variantsOf,
+  type SizePolicy,
+} from "@/lib/domain/catalog-options";
+
 /**
  * Mutable order draft: the buyer may change any part of the order mid-
  * conversation. Slots stay the storage (jsonb, no migration); this module is
@@ -12,6 +20,12 @@ export interface DraftItem {
   size: string | null;
   color: string | null;
   quantity: number;
+  sizePolicy?: "required" | "none" | "options" | null;
+  optionNames?: string[];
+  optionChoices?: Record<string, string[]>;
+  variants?: unknown[];
+  selectedOptions?: Record<string, string>;
+  variantId?: string | null;
 }
 
 export interface Draft {
@@ -65,6 +79,23 @@ function str(slots: Record<string, unknown>, key: string): string | null {
   return typeof v === "string" && v.trim() ? v : null;
 }
 
+function policyFields(source: Record<string, unknown>): Pick<
+  DraftItem,
+  "sizePolicy" | "optionNames" | "optionChoices" | "variants" | "selectedOptions" | "variantId"
+> {
+  const explicit = source.sizePolicy;
+  const sizePolicy: SizePolicy | null =
+    explicit === "none" || explicit === "options" || explicit === "required" ? explicit : null;
+  return {
+    sizePolicy,
+    optionNames: optionNamesOf(source),
+    optionChoices: optionChoicesOf(source),
+    variants: variantsOf(source),
+    selectedOptions: selectedOptionsOf(source),
+    variantId: typeof source.variantId === "string" ? source.variantId : null,
+  };
+}
+
 function itemsFromSlots(slots: Record<string, unknown>): DraftItem[] {
   const raw = slots.items;
   if (Array.isArray(raw) && raw.length > 0) {
@@ -77,6 +108,7 @@ function itemsFromSlots(slots: Record<string, unknown>): DraftItem[] {
         size: typeof i.size === "string" ? i.size : null,
         color: typeof i.color === "string" ? i.color : null,
         quantity: typeof i.quantity === "number" && i.quantity > 0 ? Math.floor(i.quantity) : 1,
+        ...policyFields(i),
       }));
   }
   if (str(slots, "matchedProductId") || str(slots, "matchedProductName")) {
@@ -87,6 +119,7 @@ function itemsFromSlots(slots: Record<string, unknown>): DraftItem[] {
         size: str(slots, "size"),
         color: str(slots, "color"),
         quantity: typeof slots.quantity === "number" && slots.quantity > 0 ? Math.floor(slots.quantity as number) : 1,
+        ...policyFields(slots),
       },
     ];
   }
@@ -138,6 +171,17 @@ function syncPrimary(slots: Record<string, unknown>, items: DraftItem[]): void {
   if (primary?.color) slots.color = primary.color;
   else delete slots.color;
   slots.quantity = primary?.quantity ?? 1;
+  if (primary?.sizePolicy === "none" || primary?.sizePolicy === "options" || primary?.sizePolicy === "required") {
+    slots.sizePolicy = primary.sizePolicy;
+  }
+  if (primary?.optionNames && primary.optionNames.length > 0) slots.optionNames = primary.optionNames;
+  if (primary?.optionChoices && Object.keys(primary.optionChoices).length > 0) slots.optionChoices = primary.optionChoices;
+  if (primary?.variants && primary.variants.length > 0) slots.variants = primary.variants;
+  if (primary?.selectedOptions && Object.keys(primary.selectedOptions).length > 0) {
+    slots.selectedOptions = primary.selectedOptions;
+  }
+  if (primary?.variantId) slots.variantId = primary.variantId;
+  else if (primary?.sizePolicy === "options" || primary?.sizePolicy === "none") delete slots.variantId;
 }
 
 const LABEL: Record<string, string> = {

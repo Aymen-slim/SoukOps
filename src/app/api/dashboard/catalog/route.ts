@@ -6,11 +6,19 @@ export async function GET() {
   const gate = await requireMerchant();
   if ("error" in gate) return gate.error;
   const { supabase, merchant } = gate;
-  const { data: products, error } = await supabase
+  const rich =
+    "id, name, category, category_phrase, product_type, description, size_policy, price_millimes, floor_millimes, stock, ai_enabled, active";
+  const plain = "id, name, category, category_phrase, price_millimes, floor_millimes, stock, ai_enabled, active";
+  let { data: products, error } = await supabase
     .from("products")
-    .select("id, name, category, category_phrase, price_millimes, floor_millimes, stock, ai_enabled, active")
+    .select(rich)
     .eq("merchant_id", merchant.id)
     .order("name", { ascending: true });
+  if (error && /product_type|size_policy|description/i.test(error.message)) {
+    const retry = await supabase.from("products").select(plain).eq("merchant_id", merchant.id).order("name", { ascending: true });
+    products = retry.data as typeof products;
+    error = retry.error;
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   const ids = (products ?? []).map((product) => product.id as string);
   const { data: images } = ids.length
@@ -58,7 +66,10 @@ export async function GET() {
     return {
       id,
       name: product.name as string,
-      category: (product.category as string | null) || (product.category_phrase as string) || "General",
+      category: (product.product_type as string | null) || (product.category as string | null) || (product.category_phrase as string) || "General",
+      productType: (product.product_type as string | null) || (product.category as string | null) || (product.category_phrase as string) || "General",
+      description: (product.description as string | null) ?? "",
+      sizePolicy: product.size_policy === "none" || product.size_policy === "options" ? product.size_policy : "required",
       priceMillimes: product.price_millimes as number,
       floorMillimes: product.floor_millimes as number,
       stock: product.stock as number,

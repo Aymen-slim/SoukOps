@@ -57,7 +57,7 @@ export async function GET(request: Request) {
     aiMode: getServerEnv().AI_MODE,
     simulatorPublic: getServerEnv().SIMULATOR_PUBLIC !== "false",
     links: {
-      simulator: "/simulator",
+      simulator: merchant.slug ? `/demo/${merchant.slug}` : "/demo",
       courierClone: "/courier-clone/login",
       dashboard: "/dashboard",
     },

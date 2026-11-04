@@ -1,4 +1,8 @@
 import { channelAdapter } from "@/lib/channels";
+import {
+  formatOptionValues,
+  selectedOptionsOf,
+} from "@/lib/domain/catalog-options";
 import { draftFromSlots } from "@/lib/domain/draft";
 import { agreedUnitMillimes, parseNegotiationState } from "@/lib/domain/negotiation";
 import { computeCartTotals, computeTotals, firewallChecked, formatMillimesForChat, type Totals } from "@/lib/domain/pricing";
@@ -14,6 +18,8 @@ export interface OrderPreviewItem {
   productId: string;
   productName: string;
   size: string | null;
+  optionLabel?: string | null;
+  variantId?: string | null;
   quantity: number;
   listUnitMillimes: number;
   agreedUnitMillimes: number;
@@ -45,6 +51,40 @@ export interface OrderPreview {
 function slotStr(slots: Record<string, unknown>, key: string): string | null {
   const v = slots[key];
   return typeof v === "string" && v.trim() ? v : null;
+}
+
+function lineDetail(item: { optionLabel?: string | null; size?: string | null }): string {
+  if (item.optionLabel) return ` (${item.optionLabel})`;
+  if (item.size) return ` (taille ${item.size})`;
+  return "";
+}
+
+async function commerceForLine(
+  supabase: SupabaseClient,
+  product: { id: string; price_millimes: number; stock: number },
+  spec: { variantId: string | null; optionLabel: string | null },
+): Promise<{ list: number; stock: number; variantId: string | null; optionLabel: string | null }> {
+  if (!spec.variantId) {
+    return { list: product.price_millimes, stock: product.stock, variantId: null, optionLabel: spec.optionLabel };
+  }
+  const { data: variant } = await supabase
+    .from("product_variants")
+    .select("id, stock, price_millimes, option_values")
+    .eq("id", spec.variantId)
+    .maybeSingle();
+  if (!variant) {
+    return { list: product.price_millimes, stock: product.stock, variantId: null, optionLabel: spec.optionLabel };
+  }
+  const values =
+    variant.option_values && typeof variant.option_values === "object" && !Array.isArray(variant.option_values)
+      ? selectedOptionsOf({ selectedOptions: variant.option_values })
+      : {};
+  return {
+    list: typeof variant.price_millimes === "number" ? variant.price_millimes : product.price_millimes,
+    stock: typeof variant.stock === "number" ? variant.stock : product.stock,
+    variantId: variant.id as string,
+    optionLabel: spec.optionLabel ?? formatOptionValues(values),
+  };
 }
 
 async function loadPreview(supabase: SupabaseClient, conversationId: string): Promise<OrderPreview | null> {
@@ -92,12 +132,20 @@ async function loadPreview(supabase: SupabaseClient, conversationId: string): Pr
   const quantity = typeof slots.quantity === "number" && slots.quantity > 0 ? Math.floor(slots.quantity) : 1;
   // Cart: the draft (synced with the flat matched* slots) wins when present.
   const draftItems = draftFromSlots(slots).items;
+  const slotVariantId = slotStr(slots, "variantId");
+  const slotOptionLabel = formatOptionValues(selectedOptionsOf(slots));
   const itemSpecs =
     draftItems.length > 0
       ? draftItems
-          .map((i) => ({ productId: i.productId, size: i.size, quantity: i.quantity }))
-          .filter((i): i is { productId: string; size: string | null; quantity: number } => Boolean(i.productId))
-      : [{ productId: product.id as string, size: slotStr(slots, "size"), quantity }];
+          .map((i) => ({
+            productId: i.productId,
+            size: i.size,
+            quantity: i.quantity,
+            variantId: i.variantId ?? (i.productId === (product.id as string) ? slotVariantId : null),
+            optionLabel: formatOptionValues(i.selectedOptions) ?? (i.productId === (product.id as string) ? slotOptionLabel : null),
+          }))
+          .filter((i): i is { productId: string; size: string | null; quantity: number; variantId: string | null; optionLabel: string | null } => Boolean(i.productId))
+      : [{ productId: product.id as string, size: slotStr(slots, "size"), quantity, variantId: slotVariantId, optionLabel: slotOptionLabel }];
   const items: OrderPreviewItem[] = [];
   for (const spec of itemSpecs) {
     const { data: ip } =
@@ -105,16 +153,22 @@ async function loadPreview(supabase: SupabaseClient, conversationId: string): Pr
         ? { data: product }
         : await supabase.from("products").select("id, name, price_millimes, floor_millimes, stock").eq("id", spec.productId).maybeSingle();
     if (!ip) return null;
-    const list = ip.price_millimes as number;
+    const commerce = await commerceForLine(
+      supabase,
+      { id: ip.id as string, price_millimes: ip.price_millimes as number, stock: ip.stock as number },
+      spec,
+    );
+    const list = commerce.list;
     items.push({
       productId: ip.id as string,
       productName: ip.name as string,
       size: spec.size,
+      optionLabel: commerce.optionLabel,
+      variantId: commerce.variantId,
       quantity: spec.quantity,
       listUnitMillimes: list,
-      // Negotiation ladder applies to the primary item; added items stay at list.
-      agreedUnitMillimes: spec.productId === (product.id as string) ? agreed : list,
-      stock: ip.stock as number,
+      agreedUnitMillimes: spec.productId === (product.id as string) ? agreedUnitMillimes(negotiation, list) : list,
+      stock: commerce.stock,
     });
   }
   if (items.length === 0) return null;
@@ -153,9 +207,9 @@ async function loadPreview(supabase: SupabaseClient, conversationId: string): Pr
     size: slotStr(slots, "size"),
     quantity,
     items,
-    listUnitMillimes: product.price_millimes as number,
-    agreedUnitMillimes: agreed,
-    stock: product.stock as number,
+    listUnitMillimes: items[0]?.listUnitMillimes ?? (product.price_millimes as number),
+    agreedUnitMillimes: items[0]?.agreedUnitMillimes ?? agreed,
+    stock: items[0]?.stock ?? (product.stock as number),
     totals,
     risk,
     pinDistanceKm,
@@ -167,13 +221,32 @@ async function loadPreview(supabase: SupabaseClient, conversationId: string): Pr
   };
 }
 
+/** Writes the name and phone the buyer actually gave onto their customer row. */
+export async function persistEnteredBuyer(
+  supabase: SupabaseClient,
+  customerId: string | null,
+  slots: Record<string, unknown>,
+): Promise<void> {
+  if (!customerId) return;
+  const name = slotStr(slots, "customerName");
+  const phone = slotStr(slots, "phone");
+  if (!name && !phone) return;
+  const update: Record<string, string> = {};
+  if (name) update.name = name;
+  if (phone) update.phone = phone;
+  const { error } = await supabase.from("customers").update(update).eq("id", customerId);
+  if (error && name) {
+    await supabase.from("customers").update({ name }).eq("id", customerId);
+  }
+}
+
 /** Fixed summary template — never model text. Every amount comes from pricing.ts. */
 export function buildSummaryText(p: OrderPreview): string {
   const items = p.items && p.items.length > 0 ? p.items : null;
   const lines = ["Mrigel! Haka el commande mte3ek, choufha bel 3ayni w akked:", SUMMARY_HEADING];
   if (items) {
     for (const item of items) {
-      lines.push(`• Produit: ${item.productName}${item.size ? ` (taille ${item.size})` : ""} x${item.quantity}`);
+      lines.push(`• Produit: ${item.productName}${lineDetail(item)} x${item.quantity}`);
       lines.push(`• Soum: ${formatMillimesForChat(item.agreedUnitMillimes)}`);
     }
   } else {
@@ -286,6 +359,10 @@ export async function createOrderFromAkked(
 
   const preview = await loadPreview(supabase, conversationId);
   if (!preview) return { ok: false, reason: "missing_product_or_confirmed_address" };
+  await persistEnteredBuyer(supabase, preview.customerId, {
+    customerName: preview.customerName,
+    phone: preview.phone,
+  });
   const cartItems = preview.items && preview.items.length > 0 ? preview.items : null;
   if (cartItems ? cartItems.some((i) => i.stock < i.quantity) : preview.stock < preview.quantity) {
     return { ok: false, reason: "out_of_stock" };
@@ -319,6 +396,8 @@ export async function createOrderFromAkked(
             productId: preview.productId,
             productName: preview.productName,
             size: preview.size,
+            optionLabel: null,
+            variantId: null,
             quantity: preview.quantity,
             agreedUnitMillimes: preview.agreedUnitMillimes,
           },
@@ -326,8 +405,12 @@ export async function createOrderFromAkked(
   ).map((item) => ({
     order_id: order.id as string,
     product_id: item.productId,
-    variant_id: null,
-    name_snapshot: item.size ? `${item.productName} (${item.size})` : item.productName,
+    variant_id: item.variantId ?? null,
+    name_snapshot: item.optionLabel
+      ? `${item.productName} (${item.optionLabel})`
+      : item.size
+        ? `${item.productName} (${item.size})`
+        : item.productName,
     unit_price_millimes: item.agreedUnitMillimes,
     quantity: item.quantity,
   }));

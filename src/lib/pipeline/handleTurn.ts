@@ -6,13 +6,15 @@ import { applyDraftChange, buildChangeConfirmation, type ChangeRequest } from "@
 import { landmarkMatchesAny } from "@/lib/domain/landmarks";
 import { EMPTY_NEGOTIATION, nextNegotiationStep, parseNegotiationState } from "@/lib/domain/negotiation";
 import { firewallChecked, formatMillimesForChat } from "@/lib/domain/pricing";
+import { captureOptionAnswer, optionAskHint, optionAskText } from "@/lib/domain/catalog-options";
 import { nextAction, nextDraftAction } from "@/lib/domain/slots";
+import { ensureProductPolicy } from "@/lib/pipeline/product-policy";
 import { localityPoint } from "@/lib/geo/tunisia";
 import { transcribe } from "@/lib/ai/asr";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { findConfirmedAddress, resolveAndSendPin, sendPinForCandidate } from "./address";
 import { logEvent } from "./events";
-import { createOrderFromAkked, handleBeddel, sendSummary } from "./order";
+import { createOrderFromAkked, handleBeddel, persistEnteredBuyer, sendSummary } from "./order";
 import { assistanceReply, phraseNegotiationReply, phraseSellerReply } from "./phrasing";
 import { asrBias, bindSellerVoice, clearSellerVoice, loadSellerVoice, sellerVoiceFor } from "./seller-voice";
 import { parseDispatchReconfirm, parseDispatchReconfirmReply } from "@/lib/domain/reconfirm";
@@ -233,7 +235,10 @@ export function draftContext(slots: Record<string, unknown>): string | undefined
 /** The one question the seller asks next. Amounts never appear here. */
 export function nextQuestion(slots: Record<string, unknown>): string {
   const action = nextDraftAction(slots);
-  if (action === "need_size") return "Behi! Chnowa el taille mte3ek? (S, M, L, XL)";
+  if (action === "need_size") {
+    const stockout = slots.optionStockout === true ? "El combinaison hedhi ma3adhech fel stock. " : "";
+    return `${stockout}${optionAskText(slots) ?? "Behi! Chnowa el taille mte3ek? (S, M, L, XL)"}`;
+  }
   if (action === "need_name") return "Chnowa esmek, 3aychek?";
   if (action === "need_phone") return "Aatini numero el téléphone mte3ek, w nkammlou el commande bel 3ayni.";
   if (action === "need_governorate") {
@@ -270,6 +275,7 @@ async function phraseMatchCaption(
       hasPhone: typeof slots.phone === "string",
       hasName: typeof slots.customerName === "string",
       nextAction: nextAction(withMatch),
+      askHint: optionAskHint(withMatch),
       fallbackText: matchedText(name, withMatch, priceMillimes),
     },
     conversationId,
@@ -479,6 +485,14 @@ export async function runTurn(conversationId: string): Promise<void> {
     await logEvent(conversationId, "understand", { understanding: result });
 
     let slots = mergeSlots(currentSlots, result, imageCount > 0);
+    await ensureProductPolicy(supabase, slots);
+    captureOptionAnswer(
+      slots,
+      [combinedText, typeof slots.size === "string" ? slots.size : "", typeof slots.color === "string" ? slots.color : ""]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    await persistEnteredBuyer(supabase, (conversation.customer_id as string | null) ?? null, slots);
     if (combinedText && (result.landmarks.length > 0 || result.delegation || result.governorate)) {
       slots.locationMeta = { description: combinedText.slice(0, 280) };
     }
@@ -598,8 +612,12 @@ export async function runTurn(conversationId: string): Promise<void> {
           .eq("id", matchedId)
           .maybeSingle();
         if (!product) return false;
+        const variantList = typeof slots.variantPriceMillimes === "number" ? slots.variantPriceMillimes : null;
+        const listPrice = variantList != null && variantList >= (product.floor_millimes as number)
+          ? variantList
+          : (product.price_millimes as number);
         const step = nextNegotiationStep({
-          priceMillimes: product.price_millimes as number,
+          priceMillimes: listPrice,
           floorMillimes: product.floor_millimes as number,
           state: negotiationState,
           counterOfferMillimes,
@@ -615,7 +633,7 @@ export async function runTurn(conversationId: string): Promise<void> {
           {
             productName: product.name as string,
             offerMillimes: step.offerMillimes,
-            listPriceMillimes: product.price_millimes as number,
+            listPriceMillimes: listPrice,
             acceptedCounter: step.acceptedCounter,
             isFinal: step.isFinal,
           },
@@ -943,6 +961,9 @@ export async function runTurn(conversationId: string): Promise<void> {
       slots.matchedProductId = chosen.productId;
       slots.matchedProductName = chosen.name;
       slots.matchedSimilarity = Math.round(match.score * 1000) / 1000;
+      delete slots.policyProductId;
+      await ensureProductPolicy(supabase, slots);
+      captureOptionAnswer(slots, combinedText);
 
       if (chosen.stock <= 0) {
         slots.visionStatus = "out_of_stock";
@@ -1019,6 +1040,9 @@ export async function runTurn(conversationId: string): Promise<void> {
               slots.matchedProductId = product.id;
               slots.matchedProductName = product.name;
               slots.visionStatus = "matched";
+              delete slots.policyProductId;
+              await ensureProductPolicy(supabase, slots);
+              captureOptionAnswer(slots, combinedText);
               const text = await phraseMatchCaption(
                 slots,
                 product.name as string,
@@ -1075,7 +1099,7 @@ export async function runTurn(conversationId: string): Promise<void> {
           image: firstImage.buffer,
           mime: firstImage.mime,
           samNounPhrase:
-            (typeof slots.samNounPhrase === "string" ? slots.samNounPhrase : null) ?? "clothing",
+            (typeof slots.samNounPhrase === "string" ? slots.samNounPhrase : null) ?? "product",
           spatialHint: typeof slots.spatialHint === "string" ? slots.spatialHint : null,
           buyerText: combinedText,
           color: typeof slots.color === "string" ? slots.color : null,
@@ -1245,6 +1269,7 @@ export async function runTurn(conversationId: string): Promise<void> {
             hasPhone: typeof slots.phone === "string",
             hasName: typeof slots.customerName === "string",
             nextAction: nextAction(slots),
+            askHint: optionAskHint(slots),
             fallbackText: fallback,
           },
           conversationId,
@@ -1266,6 +1291,7 @@ export async function runTurn(conversationId: string): Promise<void> {
             hasPhone: typeof slots.phone === "string",
             hasName: typeof slots.customerName === "string",
             nextAction: nextAction(slots),
+            askHint: optionAskHint(slots),
             fallbackText: fallback,
           },
           conversationId,
@@ -1306,6 +1332,7 @@ export async function runTurn(conversationId: string): Promise<void> {
         hasPhone: typeof slots.phone === "string",
         hasName: typeof slots.customerName === "string",
         nextAction: nextAction(slots),
+        askHint: optionAskHint(slots),
         fallbackText: fallbackAck,
       },
       conversationId,

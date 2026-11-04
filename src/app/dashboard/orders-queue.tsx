@@ -72,6 +72,23 @@ export function OrdersQueue() {
       !o.shipment,
   );
 
+  async function printSelected() {
+    const printable = visible.filter((order) => selectedIds.includes(order.id) && order.lat != null && order.lng != null);
+    if (printable.length === 0) {
+      setActionError("Confirm the buyer pin before printing a courier slip.");
+      return;
+    }
+    window.open(`/api/dashboard/orders/slips?ids=${printable.map((order) => order.id).join(",")}`, "_blank", "noopener");
+  }
+
+  function printOne(order: QueueOrder) {
+    if (order.lat == null || order.lng == null) {
+      setActionError("Confirm the buyer pin before printing a courier slip.");
+      return;
+    }
+    window.open(`/api/dashboard/orders/${order.id}/slip`, "_blank", "noopener");
+  }
+
   async function approveSelected() {
     for (const order of approvableSelected) {
       await approve(order.id, false);
@@ -149,6 +166,14 @@ export function OrdersQueue() {
               <span className="flex gap-2">
                 <Button size="sm" color="tertiary" onClick={() => setSelected(new Set())}>
                   Clear
+                </Button>
+                <Button
+                  size="sm"
+                  color="secondary"
+                  isDisabled={selectedIds.length === 0}
+                  onClick={printSelected}
+                >
+                  Print slips
                 </Button>
                 <Button
                   size="sm"
@@ -246,12 +271,16 @@ export function OrdersQueue() {
                             Open
                           </Button>
                         )}
+                        <Button type="button" color="secondary" size="sm" onClick={() => printOne(order)}>
+                          Print
+                        </Button>
                         <Dropdown.Root>
                           <Dropdown.DotsButton />
                           <Dropdown.Popover className="w-min">
                             <Dropdown.Menu
                               onAction={(key) => {
                                 if (key === "approve" && canApprove) void approve(order.id);
+                                if (key === "print") printOne(order);
                                 if (key === "remove") {
                                   if (!window.confirm("Remove this order from the queue?")) return;
                                   void (async () => {
@@ -270,6 +299,9 @@ export function OrdersQueue() {
                             >
                               <Dropdown.Item id="open" href={`/dashboard/orders/${order.id}`}>
                                 <span className="pr-4">View order</span>
+                              </Dropdown.Item>
+                              <Dropdown.Item id="print">
+                                <span className="pr-4">Print slip</span>
                               </Dropdown.Item>
                               {canApprove ? (
                                 <Dropdown.Item id="approve">

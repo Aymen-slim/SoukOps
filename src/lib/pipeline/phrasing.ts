@@ -105,7 +105,7 @@ export async function phraseNegotiationReply(
   try {
     const raw = await withDeadline(sparkText({
       system: applyVoice(
-        "You are a warm, playful, easygoing Tunisian clothing boutique seller chatting on WhatsApp in natural Tunisian Derja (Arabizi). " +
+        "You are a warm, playful, easygoing Tunisian shop seller chatting on WhatsApp in natural Tunisian Derja (Arabizi). " +
         "Use ONLY the facts given. Never invent or change an amount: the only prices you may write are the offer " +
         "and the list price, exactly as formatted. Sound like a friend who runs the shop (light, kind, a little playful — '3la rasi', 'yesss', '3aychek', 'mrigel'), never a form. One or two short sentences. No markdown.",
         conversationId,
@@ -166,15 +166,16 @@ export interface SellerReplyFacts {
   hasPhone?: boolean;
   hasName?: boolean;
   nextAction: NextAction;
+  askHint?: string | null;
   fallbackText: string;
 }
 
-function nextStepInstruction(action: NextAction, hasSize: boolean): string {
+function nextStepInstruction(action: NextAction, hasSize: boolean, askHint?: string | null): string {
   switch (action) {
     case "need_product":
       return "Ask the buyer warmly which item they want (they can send a screenshot/photo or describe it).";
     case "need_size":
-      return "Ask for their clothing size (S, M, L, XL).";
+      return askHint ?? "Ask for their clothing size (S, M, L, XL).";
     case "need_name":
       return "Ask for their name, the way a Tunisian seller would (esmek).";
     case "need_phone":
@@ -185,8 +186,8 @@ function nextStepInstruction(action: NextAction, hasSize: boolean): string {
       return "They already gave the governorate; ask only for the nearest well-known landmark (pharmacie, café, mosquée, école) near their home so you can send the map pin.";
     default:
       return hasSize
-        ? "Ask if they want to proceed with the order."
-        : "Ask for their size (S, M, L, XL) if they want to order.";
+        ? "Ask if they want to proceed with the order. Do not ask for a size again."
+        : "Do not ask for a clothing size. Ask only for the next missing detail.";
   }
 }
 
@@ -226,12 +227,12 @@ export async function phraseSellerReply(
       : facts.situation === "stock_answer"
         ? "Answer their stock question first."
         : null;
-  const askInstruction = [askLead, nextStepInstruction(facts.nextAction, Boolean(facts.size))].filter(Boolean).join(" ");
+  const askInstruction = [askLead, nextStepInstruction(facts.nextAction, Boolean(facts.size), facts.askHint)].filter(Boolean).join(" ");
 
   try {
     const raw = await withDeadline(sparkText({
       system: applyVoice(
-        "You are a warm, playful, easygoing Tunisian clothing boutique seller chatting on WhatsApp in natural Tunisian Derja (Arabizi). " +
+        "You are a warm, playful, easygoing Tunisian shop seller chatting on WhatsApp in natural Tunisian Derja (Arabizi). " +
         "Sound like a friend who runs the shop (light, kind, a little playful — 'Ahla bik', 'yesss', '3aychek', 'mrigel', '3la rasi'), NEVER like a bot or a form. " +
         "CRITICAL RULES:\n" +
         "1. Acknowledge any new info the buyer just gave (for example if they gave their size or city, confirm you noted it!) and NEVER ask again for information marked as already recorded.\n" +

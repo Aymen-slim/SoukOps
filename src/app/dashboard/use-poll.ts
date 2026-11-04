@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 const dashboardCache = new Map<string, { data: unknown; updatedAt: number }>();
 const inflightPrefetch = new Map<string, Promise<unknown>>();
@@ -54,16 +54,18 @@ export function usePoll<T>(
   url: string | null,
   ms: number | ((current: T | null) => number) = 2000,
 ): { data: T | null; error: string | null; reload: () => Promise<void> } {
-  const [state, setState] = useState<{ url: string | null; data: T | null }>({
-    url,
-    data: getCachedDashboard<T>(url),
-  });
+  const [state, setState] = useState<{ url: string | null; data: T | null }>({ url, data: null });
   const [error, setError] = useState<string | null>(null);
   const busy = useRef(false);
   const queued = useRef(false);
 
-  const resolvedData = (state.url === url ? state.data : null) ?? getCachedDashboard<T>(url);
+  const resolvedData = state.url === url ? state.data : null;
   const intervalMs = typeof ms === "function" ? ms(resolvedData) : ms;
+
+  useLayoutEffect(() => {
+    const cached = getCachedDashboard<T>(url);
+    if (cached) setState({ url, data: cached });
+  }, [url]);
 
   const reload = useCallback(async () => {
     if (!url) return;
@@ -117,13 +119,15 @@ export function useDashboardResource<T>(url: string): {
   reload: () => Promise<T | null>;
   mutate: (updater: T | ((prev: T | null) => T)) => void;
 } {
-  const [state, setState] = useState<{ url: string; data: T | null }>({
-    url,
-    data: getCachedDashboard<T>(url),
-  });
+  const [state, setState] = useState<{ url: string; data: T | null }>({ url, data: null });
   const [error, setError] = useState<string | null>(null);
 
-  const resolvedData = (state.url === url ? state.data : null) ?? getCachedDashboard<T>(url);
+  const resolvedData = state.url === url ? state.data : null;
+
+  useLayoutEffect(() => {
+    const cached = getCachedDashboard<T>(url);
+    if (cached) setState({ url, data: cached });
+  }, [url]);
 
   const reload = useCallback(async (): Promise<T | null> => {
     try {

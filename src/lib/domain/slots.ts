@@ -1,8 +1,11 @@
+import { sizeSlotSatisfied } from "@/lib/domain/catalog-options";
+
 /**
  * Slot policy: code — never the model — decides the next action from the
  * collected slots. Fixed priority:
- * product -> size -> name -> phone -> governorate -> landmark -> pin ->
- * summary -> Akked. Name and phone are whatever the buyer just said.
+ * product -> size (or seller options) -> name -> phone -> governorate ->
+ * landmark -> pin -> summary -> Akked.
+ * A missing sizePolicy still asks for a size. "none" skips it.
  */
 
 export type NextAction =
@@ -35,7 +38,7 @@ export function nextDraftAction(slots: Record<string, unknown>): NextAction {
     if (str(slots, "orderId")) return "ordered";
     const list = items as Array<Record<string, unknown>>;
     if (list.some((i) => !i || typeof i.productId !== "string" || !i.productId)) return "need_product";
-    if (list.some((i) => typeof i.size !== "string" || !String(i.size).trim())) return "need_size";
+    if (list.some((i) => !sizeSlotSatisfied(i))) return "need_size";
     if (!str(slots, "customerName")) return "need_name";
     if (!str(slots, "phone")) return "need_phone";
     if (!str(slots, "governorate")) return "need_governorate";
@@ -52,7 +55,7 @@ export function nextAction(slots: Record<string, unknown>): NextAction {
   if (str(slots, "orderId")) return "ordered";
   if (slots.summaryPending === true) return "awaiting_confirmation";
   if (!str(slots, "matchedProductId")) return "need_product";
-  if (!str(slots, "size")) return "need_size";
+  if (!sizeSlotSatisfied(slots)) return "need_size";
   if (!str(slots, "customerName")) return "need_name";
   if (!str(slots, "phone")) return "need_phone";
   if (!str(slots, "governorate")) return "need_governorate";

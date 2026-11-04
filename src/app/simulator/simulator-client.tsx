@@ -281,6 +281,10 @@ export default function SimulatorClient({
   const lastOutCount = useRef(0);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const activePersona = getPersona(persona);
+  const enteredName = typeof slots.customerName === "string" && slots.customerName.trim() ? slots.customerName.trim() : null;
+  const enteredPhone = typeof slots.phone === "string" && slots.phone.trim() ? slots.phone.trim() : null;
+  const shownName = enteredName ?? (slug ? "Your buyer" : activePersona.customerName);
+  const shownPhone = enteredPhone ?? (slug ? "Saved from what you type" : activePersona.phone);
   const displayShopName = shopName ?? t.shop;
   const igHandle = `@${(slug ?? displayShopName).toLowerCase().replace(/[^a-z0-9]+/g, "")}.tn`;
   const meta = PLATFORM_META[platform];
@@ -842,25 +846,30 @@ export default function SimulatorClient({
         <div className="order-1 flex flex-col items-center gap-3 xl:order-2">
           {/* Persona Switcher */}
           <div className="flex w-full max-w-[398px] flex-wrap justify-center gap-1.5">
-            {PERSONAS.map((p) => (
-              <Button
-                key={p.id}
-                size="xs"
-                color={persona === p.id ? "primary" : "secondary"}
-                onClick={() => void startConversation(p.id)}
-              >
-                {p.labelEn}
+            {slug ? (
+              <Button size="xs" color="primary" onClick={() => void startConversation("new")}>
+                New chat
               </Button>
-            ))}
+            ) : (
+              PERSONAS.map((p) => (
+                <Button
+                  key={p.id}
+                  size="xs"
+                  color={persona === p.id ? "primary" : "secondary"}
+                  onClick={() => void startConversation(p.id)}
+                >
+                  {p.labelEn}
+                </Button>
+              ))
+            )}
           </div>
 
-          {/* Active Buyer Pill */}
           <div className="flex w-full max-w-[398px] items-center justify-between rounded-xl border border-secondary/80 bg-primary px-3 py-1.5 text-xs shadow-2xs">
             <span className="flex items-center gap-1.5 font-medium text-primary">
               <UserCheck className="size-3.5 text-brand-secondary" />
-              {activePersona.customerName}
+              {shownName}
             </span>
-            <span className="font-mono text-[11px] tabular-nums text-tertiary">{activePersona.phone}</span>
+            <span className="font-mono text-[11px] tabular-nums text-tertiary">{shownPhone}</span>
           </div>
 
           {/* Mobile Device Mockup */}

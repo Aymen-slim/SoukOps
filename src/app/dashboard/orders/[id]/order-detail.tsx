@@ -365,6 +365,19 @@ export function OrderDetail({ id }: { id: string }) {
             </div>
           ) : null}
           <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              color="secondary"
+              onClick={() => {
+                if (order.lat == null || order.lng == null) {
+                  setActionError("Confirm the buyer pin before printing a courier slip.");
+                  return;
+                }
+                window.open(`/api/dashboard/orders/${id}/slip`, "_blank", "noopener");
+              }}
+            >
+              Print for courier
+            </Button>
             {canApprove ? (
               <Button type="button" isDisabled={busy} onClick={() => void post(`/api/orders/${id}/approve`)}>
                 Approve

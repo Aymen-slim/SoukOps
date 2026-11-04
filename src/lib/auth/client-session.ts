@@ -50,9 +50,10 @@ export async function fetchClientSession(force = false): Promise<ClientSessionIn
 }
 
 export function useSessionInfo(): ClientSessionInfo | null {
-  const [session, setSession] = useState<ClientSessionInfo | null>(() =>
-    cachedSession && cachedSession.expiresAt > Date.now() ? cachedSession.data : null,
-  );
+  // Always start empty. The module cache is filled in the browser after the
+  // first fetch, so reading it here makes the server HTML ("Seller desk")
+  // disagree with the client's first paint (the shop name).
+  const [session, setSession] = useState<ClientSessionInfo | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -65,6 +66,8 @@ export function useSessionInfo(): ClientSessionInfo | null {
       }
     };
     listeners.add(onUpdate);
+    const warm = cachedSession && cachedSession.expiresAt > Date.now() ? cachedSession.data : null;
+    if (warm) setSession(warm);
     void fetchClientSession().then((data) => {
       if (active) setSession(data);
     });

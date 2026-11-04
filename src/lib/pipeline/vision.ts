@@ -245,9 +245,9 @@ async function rerankWithSpark(req: {
       jsonSchema: rerankJsonSchema,
       schemaName: "match_rerank",
       system:
-        "You re-rank catalog matches for a clothing seller. The first attached image (if any) is the buyer's product photo — the person wearing it may still be in frame; following images (if any) are catalog photos in candidate order. Pick the product that is visually the same garment (type, color, print). Return its productId exactly as listed, a confidence from 0 to 1, and a one-line reason. If none matches, return bestProductId null with low confidence. Never invent a productId.",
+        "You re-rank catalog matches for a shop. The first attached image (if any) is the buyer's product photo — a person holding or wearing it may still be in frame; following images (if any) are catalog photos in candidate order. Pick the product that is visually the same product (type, color, and distinctive details). Return its productId exactly as listed, a confidence from 0 to 1, and a one-line reason. If none matches, return bestProductId null with low confidence. Never invent a productId.",
       user: [
-        req.descriptionEn ? `Buyer description: ${req.descriptionEn}` : "Buyer sent a garment photo (first image).",
+        req.descriptionEn ? `Buyer description: ${req.descriptionEn}` : "Buyer sent a product photo (first image).",
         "Candidates:",
         listing,
       ].join("\n"),
@@ -344,9 +344,9 @@ async function matchAllCatalog(req: {
     jsonSchema: rankAllJsonSchema,
     schemaName: "match_rank_all",
     system:
-      "You match a buyer's garment to a clothing catalog. The attached image (if any) is the buyer's product photo — the person wearing it may still be in frame. Return up to 3 productIds from the list, best first, a confidence from 0 to 1 for the best one, and a one-line reason. Never invent a productId.",
+      "You match a buyer's product to a shop catalog. The attached image (if any) is the buyer's product photo — a person holding or wearing it may still be in frame. Return up to 3 productIds from the list, best first, a confidence from 0 to 1 for the best one, and a one-line reason. Never invent a productId.",
     user: [
-      req.descriptionEn ? `Buyer description: ${req.descriptionEn}` : "Buyer sent a garment photo (attached).",
+      req.descriptionEn ? `Buyer description: ${req.descriptionEn}` : "Buyer sent a product photo (attached).",
       "Catalog:",
       listing,
     ].join("\n"),
@@ -595,10 +595,10 @@ export async function resolveScreenshot(req: {
     nounPhrase: req.samNounPhrase,
     conversationId: req.conversationId,
   });
-  if (sam.objects.length === 0 && req.samNounPhrase.toLowerCase() !== "clothing") {
+  if (sam.objects.length === 0 && req.samNounPhrase.toLowerCase() !== "product") {
     sam = await segmentImage({
       imageDataUrl: dataUrl,
-      nounPhrase: "clothing",
+      nounPhrase: "product",
       conversationId: req.conversationId,
     });
   }
