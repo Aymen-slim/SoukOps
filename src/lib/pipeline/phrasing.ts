@@ -2,7 +2,7 @@ import { sparkText } from "@/lib/ai/spark";
 import { extractAmountsMillimes, passesPriceFirewall } from "@/lib/domain/firewall";
 import { firewallChecked, formatMillimesForChat } from "@/lib/domain/pricing";
 import type { NextAction } from "@/lib/domain/slots";
-import { sellerVoiceFor, type ReplyLanguage } from "./seller-voice";
+import { effectiveReplyLanguage, sellerVoiceFor, type ReplyLanguage } from "./seller-voice";
 
 /**
  * Spark phrasing for negotiation and conversational seller replies:
@@ -59,9 +59,10 @@ const LANGUAGE_LINE: Record<ReplyLanguage, string> = {
 /** Default Derja prompts stay byte-for-byte so cassette keys do not move. */
 function applyVoice(system: string, conversationId?: string): string {
   const voice = sellerVoiceFor(conversationId);
-  if (voice.language === "derja" && !voice.instructions.trim()) return system;
+  const language = effectiveReplyLanguage(conversationId);
+  if (language === "derja" && !voice.instructions.trim()) return system;
   const note = voice.instructions.trim().slice(0, 400).replace(/\s+/g, " ");
-  return `${system}\n${LANGUAGE_LINE[voice.language]}${note ? ` Seller note about tone only, never a price: ${note}` : ""}`;
+  return `${system}\n${LANGUAGE_LINE[language]}${note ? ` Seller note about tone only, never a price: ${note}` : ""}`;
 }
 
 function localizedNegotiation(facts: NegotiationFacts, language: ReplyLanguage): string {
@@ -99,8 +100,8 @@ export async function phraseNegotiationReply(
   facts: NegotiationFacts,
   conversationId?: string,
 ): Promise<{ text: string; source: "spark" | "template" }> {
-  const voice = sellerVoiceFor(conversationId);
-  const fallback = voice.language === "derja" ? negotiationTemplate(facts) : localizedNegotiation(facts, voice.language);
+  const language = effectiveReplyLanguage(conversationId);
+  const fallback = language === "derja" ? negotiationTemplate(facts) : localizedNegotiation(facts, language);
   const offer = formatMillimesForChat(facts.offerMillimes);
   try {
     const raw = await withDeadline(sparkText({
@@ -140,17 +141,61 @@ export async function phraseNegotiationReply(
   return { text: fallback, source: "template" };
 }
 
-/** Deterministic side-question answers. No amounts are invented here. */
-export function assistanceReply(intent: "ask_delivery" | "ask_policy" | "track_order", hasOrder: boolean): string {
-  if (intent === "ask_delivery") {
-    return "El livraison tethseb 3la el wilaya mte3ek w tet2akked fel récap 9bal ma takked. Généralement el commande tet7adhar ba3d ma el vendeur yakkedha, w nwassloulek el wa9t el mou2akked m3a el vendeur.";
-  }
-  if (intent === "ask_policy") {
-    return "Ken el taille ma jech mrigel, tnajem tbeddelha m3a el vendeur ba3d el livraison 3la 7seb el disponibilité. 9olli el taille el jdida w nbeddelha lek fel commande taw ken ma tb3attech.";
-  }
-  return hasOrder
-    ? "El commande mte3ek mtakkda w 3and el vendeur taw. Yab3atlek el mise à jour mta3 el envoi ki tetb3at."
-    : "Mazelt ma l9it commande mtakkda b esmek fel conversation hethi. Ken akkadt deja, el vendeur taw ykabarek b el envoi.";
+const ASSISTANCE: Record<
+  ReplyLanguage,
+  Record<"ask_delivery" | "ask_policy" | "track_order_ordered" | "track_order_none", string>
+> = {
+  derja: {
+    ask_delivery:
+      "El livraison tethseb 3la el wilaya mte3ek w tet2akked fel récap 9bal ma takked. Généralement el commande tet7adhar ba3d ma el vendeur yakkedha, w nwassloulek el wa9t el mou2akked m3a el vendeur.",
+    ask_policy:
+      "Ken el taille ma jech mrigel, tnajem tbeddelha m3a el vendeur ba3d el livraison 3la 7seb el disponibilité. 9olli el taille el jdida w nbeddelha lek fel commande taw ken ma tb3attech.",
+    track_order_ordered:
+      "El commande mte3ek mtakkda w 3and el vendeur taw. Yab3atlek el mise à jour mta3 el envoi ki tetb3at.",
+    track_order_none:
+      "Mazelt ma l9it commande mtakkda b esmek fel conversation hethi. Ken akkadt deja, el vendeur taw ykabarek b el envoi.",
+  },
+  fr: {
+    ask_delivery:
+      "La livraison est calculée selon votre gouvernorat et confirmée dans le récapitulatif avant validation. En général, la commande est préparée après confirmation du vendeur, et le délai confirmé vous est communiqué avec lui.",
+    ask_policy:
+      "Si la taille ne convient pas, vous pouvez l'échanger avec le vendeur après la livraison selon les disponibilités. Dites-moi la nouvelle taille et je la change dans la commande si elle n'est pas encore expédiée.",
+    track_order_ordered:
+      "Votre commande est confirmée et chez le vendeur. Il vous enverra la mise à jour d'expédition dès l'envoi.",
+    track_order_none:
+      "Je ne trouve pas encore de commande confirmée à votre nom dans cette conversation. Si vous avez déjà confirmé, le vendeur vous informera de l'envoi.",
+  },
+  en: {
+    ask_delivery:
+      "Delivery is calculated from your governorate and confirmed in the summary before you confirm. Orders are usually prepared after the seller confirms, and the confirmed timing is shared with the seller.",
+    ask_policy:
+      "If the size is not right, you can exchange it with the seller after delivery, subject to availability. Tell me the new size and I will update the order if it has not shipped yet.",
+    track_order_ordered:
+      "Your order is confirmed and with the seller now. They will send you the shipping update once it ships.",
+    track_order_none:
+      "I can't find a confirmed order under your name in this conversation yet. If you already confirmed, the seller will update you on shipping.",
+  },
+  ar: {
+    ask_delivery:
+      "التوصيل يُحسب حسب ولايتك ويتأكد في الملخص قبل التأكيد. عادة تُحضّر الطلبات بعد تأكيد البائع، ويُشاركك الوقت المؤكد مع البائع.",
+    ask_policy:
+      "إذا لم يناسبك المقاس، يمكنك تبديله مع البائع بعد التوصيل حسب التوفر. قل لي المقاس الجديد وأبدّله في الطلب إذا لم يُرسل بعد.",
+    track_order_ordered: "طلبك مؤكد وعند البائع الآن. سيبعث لك تحديث الشحن عند الإرسال.",
+    track_order_none:
+      "لا أجد بعد طلبًا مؤكدًا باسمك في هذه المحادثة. إذا أكدت من قبل، فسيخبرك البائع بالشحن.",
+  },
+};
+
+/** Deterministic side-question answers, in the buyer's language. No amounts are invented here. */
+export function assistanceReply(
+  intent: "ask_delivery" | "ask_policy" | "track_order",
+  hasOrder: boolean,
+  language: ReplyLanguage = "derja",
+): string {
+  const table = ASSISTANCE[language];
+  if (intent === "ask_delivery") return table.ask_delivery;
+  if (intent === "ask_policy") return table.ask_policy;
+  return hasOrder ? table.track_order_ordered : table.track_order_none;
 }
 
 export interface SellerReplyFacts {
@@ -166,29 +211,62 @@ export interface SellerReplyFacts {
   hasPhone?: boolean;
   hasName?: boolean;
   nextAction: NextAction;
+  /** Full ask bundle (e.g. name + phone together). Defaults to [nextAction]. */
+  askBundle?: NextAction[];
   askHint?: string | null;
+  /** Vertical-aware size instruction ("shoe size / pointure..."), replacing the clothing default. */
+  sizeAsk?: string | null;
   fallbackText: string;
 }
 
-function nextStepInstruction(action: NextAction, hasSize: boolean, askHint?: string | null): string {
+function nextStepInstruction(
+  action: NextAction,
+  hasSize: boolean,
+  askHint?: string | null,
+  bundle?: NextAction[],
+  sizeAsk?: string | null,
+): string {
   switch (action) {
     case "need_product":
       return "Ask the buyer warmly which item they want (they can send a screenshot/photo or describe it).";
     case "need_size":
-      return askHint ?? "Ask for their clothing size (S, M, L, XL).";
+      return askHint ?? sizeAsk ?? "Ask for their clothing size (S, M, L, XL).";
     case "need_name":
+      if (bundle?.includes("need_phone")) {
+        return "Ask for their name AND their Tunisian phone number in ONE single message (name + number together, like 'Ahmed 55123456'). Do not ask them in separate messages.";
+      }
       return "Ask for their name, the way a Tunisian seller would (esmek).";
     case "need_phone":
       return "Ask for their Tunisian phone number to register the order.";
     case "need_governorate":
-      return "Ask which governorate (wilaya) they live in and the nearest landmark (pharmacie, café, mosquée, école) to their home.";
+      return "Ask which governorate (wilaya) they live in and the nearest landmark (pharmacie, café, mosquée, école) to their home, in one message.";
     case "need_landmark":
       return "They already gave the governorate; ask only for the nearest well-known landmark (pharmacie, café, mosquée, école) near their home so you can send the map pin.";
     default:
       return hasSize
         ? "Ask if they want to proceed with the order. Do not ask for a size again."
-        : "Do not ask for a clothing size. Ask only for the next missing detail.";
+        : "Do not ask for a size. Ask only for the next missing detail.";
   }
+}
+
+/** Strict reply discipline: a candidate that re-asks a known slot, or fires
+ * several questions at once, is rejected so the bundled template is sent. */
+export function replyViolatesDiscipline(
+  candidate: string,
+  facts: SellerReplyFacts,
+): boolean {
+  const questions = (candidate.match(/[?؟]/g) ?? []).length;
+  if (questions > 2) return true;
+  if (facts.hasPhone && /(?:chnowa|chnia|a3tini|aatini|9olli|quel|quelle|what|give|donnez|donne|اعطيني|ما هو).{0,40}(?:num(?:ero|éro)?|téléphone|telephone|phone|رقم|هاتف)/i.test(candidate)) {
+    return true;
+  }
+  if (facts.hasName && /(?:chnowa|chnia|a3tini|aatini|9olli|quel est votre nom|what is your name|ما اسمك).{0,20}/i.test(candidate) && /esmek|votre nom|your name|اسمك/i.test(candidate)) {
+    return true;
+  }
+  if (facts.governorate && /(?:win toskon|où habitez|where do you live|أين تسكن|quelle? (?:ville|gouvernorat)|which (?:city|governorate))/i.test(candidate)) {
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -227,7 +305,7 @@ export async function phraseSellerReply(
       : facts.situation === "stock_answer"
         ? "Answer their stock question first."
         : null;
-  const askInstruction = [askLead, nextStepInstruction(facts.nextAction, Boolean(facts.size), facts.askHint)].filter(Boolean).join(" ");
+  const askInstruction = [askLead, nextStepInstruction(facts.nextAction, Boolean(facts.size), facts.askHint, facts.askBundle, facts.sizeAsk)].filter(Boolean).join(" ");
 
   try {
     const raw = await withDeadline(sparkText({
@@ -236,7 +314,7 @@ export async function phraseSellerReply(
         "Sound like a friend who runs the shop (light, kind, a little playful — 'Ahla bik', 'yesss', '3aychek', 'mrigel', '3la rasi'), NEVER like a bot or a form. " +
         "CRITICAL RULES:\n" +
         "1. Acknowledge any new info the buyer just gave (for example if they gave their size or city, confirm you noted it!) and NEVER ask again for information marked as already recorded.\n" +
-        "2. Ask ONLY for the single next needed step described in 'Next step to ask'.\n" +
+        "2. Ask ONLY for the next needed step described in 'Next step to ask' (it may bundle two details like name + phone in one question). Never add another question.\n" +
         "3. Money firewall: NEVER invent or alter any price. If an Exact catalog price is provided and relevant, write it EXACTLY as formatted (e.g. 110DT). If no price is provided, do NOT write any price or money amount.\n" +
         "4. Keep it concise: 1 to 2 natural WhatsApp sentences, no bullet lists, no markdown.",
         conversationId,
@@ -263,6 +341,9 @@ export async function phraseSellerReply(
       return { text: facts.fallbackText, source: "template" };
     }
     if (facts.hasName && /(?:chnowa|chnia|a3tini|aatini|9olli).{0,40}\besmek\b/i.test(candidate)) {
+      return { text: facts.fallbackText, source: "template" };
+    }
+    if (replyViolatesDiscipline(candidate, facts)) {
       return { text: facts.fallbackText, source: "template" };
     }
 

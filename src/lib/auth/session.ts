@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { getServerEnv } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { mapMerchant, SHOP_COLUMNS, type DemoMerchant } from "@/lib/dashboard/merchant";
+import { LEGACY_COLUMNS, mapMerchant, SHOP_COLUMNS, type DemoMerchant } from "@/lib/dashboard/merchant";
 
 export const SANDBOX_COOKIE = "wassalha_sandbox";
 
@@ -50,6 +50,13 @@ async function shopById(supabase: Admin, id: string, sandboxOnly: boolean): Prom
   let query = supabase.from("merchants").select(SHOP_COLUMNS).eq("id", id);
   if (sandboxOnly) query = query.eq("is_sandbox", true);
   const { data, error } = await query.maybeSingle();
+  if (!error && data) return mapMerchant(data as Record<string, unknown>);
+  // Business columns not migrated yet: fall back so sign-in keeps working.
+  let legacy = supabase.from("merchants").select(LEGACY_COLUMNS).eq("id", id);
+  if (sandboxOnly) legacy = legacy.eq("is_sandbox", true);
+  const fallback = await legacy.maybeSingle();
+  if (fallback.error || !fallback.data) return null;
+  return mapMerchant(fallback.data as Record<string, unknown>);
   if (error || !data) return null;
   return mapMerchant(data as Record<string, unknown>);
 }

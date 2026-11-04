@@ -51,6 +51,23 @@ export function nextDraftAction(slots: Record<string, unknown>): NextAction {
   return nextAction(slots);
 }
 
+/**
+ * The ask bundle for the next reply: co-askable missing slots travel in one
+ * human message instead of a form (name + phone together, governorate +
+ * landmark together). State decisions still use nextAction/nextDraftAction;
+ * this only groups what the seller asks. A multi-item draft reuses the same
+ * grouping on its own funnel.
+ */
+export function nextAskBundle(slots: Record<string, unknown>): NextAction[] {
+  const action = nextDraftAction(slots);
+  if (action === "need_name" && !str(slots, "phone")) return ["need_name", "need_phone"];
+  if (action === "need_governorate") {
+    const landmarks = slots.landmarks;
+    if (!Array.isArray(landmarks) || landmarks.length === 0) return ["need_governorate", "need_landmark"];
+  }
+  return [action];
+}
+
 export function nextAction(slots: Record<string, unknown>): NextAction {
   if (str(slots, "orderId")) return "ordered";
   if (slots.summaryPending === true) return "awaiting_confirmation";

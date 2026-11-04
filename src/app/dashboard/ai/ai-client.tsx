@@ -75,7 +75,7 @@ export function AiClient() {
         <p className="text-[11px] font-semibold tracking-[0.16em] text-brand-secondary uppercase">Templates</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-primary sm:text-3xl">How the AI talks</h1>
         <p className="mt-0.5 text-sm text-tertiary">
-          Pick a language template, or add a short note about tone. Prices still come from your catalog.
+          Pick a starting language, or add a short note about tone. Replies then follow the language each buyer uses and switch when they do. Your business type (in Settings) decides what the AI asks about. Prices still come from your catalog.
         </p>
       </div>
       {error ? <Alert color="error">{error}</Alert> : null}

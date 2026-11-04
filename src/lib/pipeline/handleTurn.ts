@@ -6,8 +6,10 @@ import { applyDraftChange, buildChangeConfirmation, type ChangeRequest } from "@
 import { landmarkMatchesAny } from "@/lib/domain/landmarks";
 import { EMPTY_NEGOTIATION, nextNegotiationStep, parseNegotiationState } from "@/lib/domain/negotiation";
 import { firewallChecked, formatMillimesForChat } from "@/lib/domain/pricing";
+import { businessProfile, isBusinessType } from "@/lib/domain/business";
 import { captureOptionAnswer, optionAskHint, optionAskText } from "@/lib/domain/catalog-options";
-import { nextAction, nextDraftAction } from "@/lib/domain/slots";
+import { buyerLanguageOf, resolveBuyerLanguage } from "@/lib/domain/language";
+import { nextAction, nextAskBundle, nextDraftAction } from "@/lib/domain/slots";
 import { ensureProductPolicy } from "@/lib/pipeline/product-policy";
 import { localityPoint } from "@/lib/geo/tunisia";
 import { transcribe } from "@/lib/ai/asr";
@@ -16,7 +18,8 @@ import { findConfirmedAddress, resolveAndSendPin, sendPinForCandidate } from "./
 import { logEvent } from "./events";
 import { createOrderFromAkked, handleBeddel, persistEnteredBuyer, sendSummary } from "./order";
 import { assistanceReply, phraseNegotiationReply, phraseSellerReply } from "./phrasing";
-import { asrBias, bindSellerVoice, clearSellerVoice, loadSellerVoice, sellerVoiceFor } from "./seller-voice";
+import { loadBusinessContext } from "./business";
+import { asrBias, bindBuyerLanguage, bindSellerVoice, clearSellerVoice, loadSellerVoice, sellerVoiceFor } from "./seller-voice";
 import { parseDispatchReconfirm, parseDispatchReconfirmReply } from "@/lib/domain/reconfirm";
 import { applyDispatchReconfirmReply } from "./reconfirm";
 import { applyDeterministicFallbacks, fastPathUnderstanding, understand, type Understanding } from "./understand";
@@ -99,29 +102,67 @@ function mergeSlots(current: Record<string, unknown>, u: Understanding, hadNewIm
   return next;
 }
 
+/** Reply language for this conversation: the buyer's, else Derja. */
+function langOf(slots: Record<string, unknown>): "derja" | "ar" | "fr" | "en" {
+  return buyerLanguageOf(slots) ?? "derja";
+}
+
+/** What the shop sells, as stored on the slots at turn start. Legacy slots
+ * without a stored type keep the historic clothing-size wording. */
+function businessOf(slots: Record<string, unknown>) {
+  if (typeof slots.businessType !== "string") return businessProfile("clothing");
+  return businessProfile(isBusinessType(slots.businessType) ? slots.businessType : "general");
+}
+
+/** Spark size instruction for this vertical (null keeps the clothing default). */
+function sizeAskFor(slots: Record<string, unknown>): string | null {
+  const profile = businessOf(slots);
+  if (profile.sizeKind === "shoe") return "Ask for their shoe size / pointure (38, 39, 40, 41, 42). Do not ask for a clothing size.";
+  if (profile.sizeKind === "none") return "Do not ask for a size. Ask only for the next missing detail.";
+  return null;
+}
+
 /**
- * Deterministic Derja fallback reply that warmly confirms what was understood
- * (in Derja/French, never raw English embedding prompts) and asks for the
- * single next missing piece of information. No prices are stated here.
+ * Deterministic fallback reply that warmly confirms what was understood
+ * (in the buyer's language, never raw English embedding prompts) and asks
+ * for the next bundled piece of information. No prices are stated here.
  */
 export function buildAck(
   slots: Record<string, unknown>,
   hadImage: boolean,
   hadAudio: boolean,
 ): string {
+  const lang = langOf(slots);
+  const sizeWord = businessOf(slots).sizeWord ?? (lang === "en" ? "size" : lang === "ar" ? "مقاس" : "taille");
   const noted: string[] = [];
   if (typeof slots.matchedProductName === "string" && slots.matchedProductName.trim()) {
     noted.push(slots.matchedProductName);
   }
-  if (typeof slots.size === "string" && slots.size.trim()) noted.push(`taille ${slots.size as string}`);
+  if (typeof slots.size === "string" && slots.size.trim()) noted.push(`${sizeWord} ${slots.size as string}`);
   if (typeof slots.customerName === "string" && slots.customerName.trim()) noted.push(slots.customerName);
   if (typeof slots.quantity === "number" && (slots.quantity as number) > 1) noted.push(`x${slots.quantity as number}`);
-  if (typeof slots.governorate === "string" && slots.governorate.trim()) noted.push(`fi ${slots.governorate as string}`);
+  if (typeof slots.governorate === "string" && slots.governorate.trim()) {
+    noted.push(lang === "fr" ? `à ${slots.governorate as string}` : lang === "en" ? `in ${slots.governorate as string}` : lang === "ar" ? `في ${slots.governorate as string}` : `fi ${slots.governorate as string}`);
+  }
 
   const parts: string[] = [];
-  if (hadAudio) parts.push("Sma3t el vocal mte3ek.");
-  if (hadImage) parts.push("Wesletni el taswira.");
-  if (noted.length) parts.push(`Mrigel, sajaltlek ${noted.join(", ")}.`);
+  if (hadAudio) {
+    parts.push(lang === "fr" ? "J'ai bien reçu votre vocal." : lang === "en" ? "I got your voice note." : lang === "ar" ? "وصلني التسجيل الصوتي." : "Sma3t el vocal mte3ek.");
+  }
+  if (hadImage) {
+    parts.push(lang === "fr" ? "J'ai bien reçu la photo." : lang === "en" ? "I got the photo." : lang === "ar" ? "وصلتني الصورة." : "Wesletni el taswira.");
+  }
+  if (noted.length) {
+    parts.push(
+      lang === "fr"
+        ? `C'est noté : ${noted.join(", ")}.`
+        : lang === "en"
+          ? `Noted: ${noted.join(", ")}.`
+          : lang === "ar"
+            ? `تم، سجلت لك ${noted.join(", ")}.`
+            : `Mrigel, sajaltlek ${noted.join(", ")}.`,
+    );
+  }
 
   const hasProduct =
     typeof slots.matchedProductId === "string" ||
@@ -133,9 +174,23 @@ export function buildAck(
 
   let next: string;
   if (!hasProduct && intent === "greeting") {
-    next = "Ahla w sahla! Ana m3ak. Ab3atli taswirt el produit elli t7eb alih, walla 9olli chnowa t7eb techri.";
+    next =
+      lang === "fr"
+        ? "Bonjour et bienvenue ! Je suis avec vous. Envoyez-moi une photo du produit qui vous plaît, ou dites-moi ce que vous cherchez."
+        : lang === "en"
+          ? "Hello and welcome! I'm with you. Send me a photo of the product you like, or tell me what you're looking for."
+          : lang === "ar"
+            ? "أهلا وسهلا! أنا معك. ابعث صورة المنتج الذي يعجبك، أو قل لي ما الذي تبحث عنه."
+            : "Ahla w sahla! Ana m3ak. Ab3atli taswirt el produit elli t7eb alih, walla 9olli chnowa t7eb techri.";
   } else if (!hasProduct) {
-    next = "Marhba bik! Chnowa el produit elli t7eb alih? Ab3atli taswirt el produit walla ousifhouli.";
+    next =
+      lang === "fr"
+        ? "Bienvenue ! Quel produit cherchez-vous ? Envoyez-moi une photo ou décrivez-le."
+        : lang === "en"
+          ? "Welcome! Which product are you looking for? Send me a photo or describe it."
+          : lang === "ar"
+            ? "مرحبا! ما هو المنتج الذي تبحث عنه؟ ابعث صورة أو اوصفه."
+            : "Marhba bik! Chnowa el produit elli t7eb alih? Ab3atli taswirt el produit walla ousifhouli.";
   } else {
     next = nextQuestion({ ...slots, matchedProductId: slots.matchedProductId ?? "pending" });
   }
@@ -184,19 +239,57 @@ export function buildPriceReply(
   slots: Record<string, unknown>,
   stock?: number,
 ): string {
+  const lang = langOf(slots);
   const price = formatMillimesForChat(priceMillimes);
+  const out = stock !== undefined && stock <= 0;
   const head =
-    stock !== undefined && stock <= 0
-      ? `El ${name} soumou ${price}, amma howa kemmel fel stock taw.`
-      : `El ${name} soumou ${price}.`;
+    lang === "fr"
+      ? out
+        ? `Le ${name} coûte ${price}, mais il est en rupture de stock.`
+        : `Le ${name} coûte ${price}.`
+      : lang === "en"
+        ? out
+          ? `The ${name} costs ${price}, but it's out of stock right now.`
+          : `The ${name} costs ${price}.`
+        : lang === "ar"
+          ? out
+            ? `${name} سعره ${price}، لكنه نفد من المخزون الآن.`
+            : `${name} سعره ${price}.`
+          : out
+            ? `El ${name} soumou ${price}, amma howa kemmel fel stock taw.`
+            : `El ${name} soumou ${price}.`;
   return `${head} ${nextQuestion({ ...slots, matchedProductId: slots.matchedProductId ?? "known" })}`;
 }
 
 export function buildStockReply(name: string, stock: number, slots: Record<string, unknown>): string {
+  const lang = langOf(slots);
   if (stock > 0) {
-    return `Ay, el ${name} mawjoud fel stock. ${nextQuestion({ ...slots, matchedProductId: slots.matchedProductId ?? "known" })}`;
+    const head =
+      lang === "fr"
+        ? `Oui, le ${name} est en stock.`
+        : lang === "en"
+          ? `Yes, the ${name} is in stock.`
+          : lang === "ar"
+            ? `نعم، ${name} متوفر في المخزون.`
+            : `Ay, el ${name} mawjoud fel stock.`;
+    return `${head} ${nextQuestion({ ...slots, matchedProductId: slots.matchedProductId ?? "known" })}`;
   }
   const alternative = typeof slots.alternativeProductName === "string" ? slots.alternativeProductName : null;
+  if (lang === "fr") {
+    return alternative
+      ? `Désolé, le ${name} est en rupture de stock. Mais le ${alternative} est disponible, vous voulez le voir ?`
+      : `Désolé, le ${name} est en rupture de stock.`;
+  }
+  if (lang === "en") {
+    return alternative
+      ? `Sorry, the ${name} is out of stock. But the ${alternative} is available, would you like to see it?`
+      : `Sorry, the ${name} is out of stock right now.`;
+  }
+  if (lang === "ar") {
+    return alternative
+      ? `آسف، ${name} نفد من المخزون. لكن ${alternative} متوفر، هل تريد رؤيته؟`
+      : `آسف، ${name} نفد من المخزون الآن.`;
+  }
   return alternative
     ? `Samahni, el ${name} kemmel fel stock. Amma el ${alternative} mawjoud, t7eb tchoufou?`
     : `Samahni, el ${name} kemmel fel stock taw.`;
@@ -207,14 +300,34 @@ export function matchedText(name: string, slots: Record<string, unknown>, priceM
   if (slots.primaryIntent === "ask_price" && priceMillimes !== undefined) {
     return buildPriceReply(name, priceMillimes, slots);
   }
+  const lang = langOf(slots);
+  const sizeWord = businessOf(slots).sizeWord ?? (lang === "en" ? "size" : lang === "ar" ? "مقاس" : "taille");
   const pricePart = priceMillimes !== undefined ? ` (${formatMillimesForChat(priceMillimes)})` : "";
   const noted: string[] = [];
-  if (typeof slots.size === "string" && slots.size.trim()) noted.push(`taille ${slots.size}`);
+  if (typeof slots.size === "string" && slots.size.trim()) noted.push(`${sizeWord} ${slots.size}`);
   if (typeof slots.quantity === "number" && (slots.quantity as number) > 1) noted.push(`x${slots.quantity as number}`);
-  if (typeof slots.governorate === "string" && slots.governorate.trim()) noted.push(`fi ${slots.governorate}`);
-  const notedPart = noted.length > 0 ? ` Sajaltlek ${noted.join(", ")} mrigel!` : "";
+  if (typeof slots.governorate === "string" && slots.governorate.trim()) {
+    noted.push(lang === "fr" ? `à ${slots.governorate}` : lang === "en" ? `in ${slots.governorate}` : lang === "ar" ? `في ${slots.governorate}` : `fi ${slots.governorate}`);
+  }
+  const notedPart =
+    noted.length > 0
+      ? lang === "fr"
+        ? ` J'ai noté ${noted.join(", ")} !`
+        : lang === "en"
+          ? ` Noted ${noted.join(", ")}!`
+          : lang === "ar"
+            ? ` سجلت لك ${noted.join(", ")}!`
+            : ` Sajaltlek ${noted.join(", ")} mrigel!`
+      : "";
 
-  const base = `Yesss, l9itou! Hedha el ${name}${pricePart}.${notedPart}`;
+  const base =
+    lang === "fr"
+      ? `Super, je l'ai trouvé ! C'est le ${name}${pricePart}.${notedPart}`
+      : lang === "en"
+        ? `Great, found it! This is the ${name}${pricePart}.${notedPart}`
+        : lang === "ar"
+          ? `وجدته! هذا هو ${name}${pricePart}.${notedPart}`
+          : `Yesss, l9itou! Hedha el ${name}${pricePart}.${notedPart}`;
   return `${base} ${nextQuestion({ ...slots, matchedProductId: slots.matchedProductId ?? "matched" })}`;
 }
 
@@ -232,23 +345,123 @@ export function draftContext(slots: Record<string, unknown>): string | undefined
   return parts.length > 0 ? parts.join(", ") : undefined;
 }
 
-/** The one question the seller asks next. Amounts never appear here. */
+/**
+ * The one bundled question the seller asks next, in the buyer's language and
+ * the shop's own words. Amounts never appear here. Name + phone ride in a
+ * single message; governorate + landmark already do.
+ */
 export function nextQuestion(slots: Record<string, unknown>): string {
-  const action = nextDraftAction(slots);
+  const lang = langOf(slots);
+  const profile = businessOf(slots);
+  const bundle = nextAskBundle(slots);
+  const action = bundle[0] ?? nextDraftAction(slots);
   if (action === "need_size") {
-    const stockout = slots.optionStockout === true ? "El combinaison hedhi ma3adhech fel stock. " : "";
-    return `${stockout}${optionAskText(slots) ?? "Behi! Chnowa el taille mte3ek? (S, M, L, XL)"}`;
+    const stockout =
+      slots.optionStockout === true
+        ? lang === "fr"
+          ? "Cette combinaison n'est plus en stock. "
+          : lang === "en"
+            ? "That combination is out of stock. "
+            : lang === "ar"
+              ? "هذا الخيار نفد من المخزون. "
+              : "El combinaison hedhi ma3adhech fel stock. "
+        : "";
+    const optionText = optionAskText(slots, lang);
+    if (optionText) return `${stockout}${optionText}`;
+    if (profile.sizeKind === "shoe") {
+      return `${stockout}${
+        lang === "fr"
+          ? "Parfait ! Quelle est votre pointure ? (38, 39, 40, 41, 42)"
+          : lang === "en"
+            ? "Great! What is your shoe size? (38, 39, 40, 41, 42)"
+            : lang === "ar"
+              ? "تمام! ما هو مقاس حذائك؟ (38، 39، 40، 41، 42)"
+              : "Behi! Chnowa el pointure mte3ek? (38, 39, 40, 41, 42)"
+      }`;
+    }
+    if (profile.sizeKind === "clothing") {
+      return `${stockout}${
+        lang === "fr"
+          ? "Parfait ! Quelle est votre taille ? (S, M, L, XL)"
+          : lang === "en"
+            ? "Great! What size do you need? (S, M, L, XL)"
+            : lang === "ar"
+              ? "تمام! ما هو مقاسك؟ (S, M, L, XL)"
+              : "Behi! Chnowa el taille mte3ek? (S, M, L, XL)"
+      }`;
+    }
+    return `${stockout}${
+      lang === "fr"
+        ? "Parfait ! Quelle option souhaitez-vous ?"
+        : lang === "en"
+          ? "Great! Which option would you like?"
+          : lang === "ar"
+            ? "تمام! ما هو الخيار الذي تريده؟"
+            : "Behi! Chnowa el ikhtiyar elli t7ebou?"
+    }`;
   }
-  if (action === "need_name") return "Chnowa esmek, 3aychek?";
-  if (action === "need_phone") return "Aatini numero el téléphone mte3ek, w nkammlou el commande bel 3ayni.";
+  if (action === "need_name" && bundle.includes("need_phone")) {
+    return lang === "fr"
+      ? "Parfait ! Quel est votre nom et votre numéro de téléphone, s'il vous plaît ? (en un seul message)"
+      : lang === "en"
+        ? "Great! What is your name and phone number, please? (in one message)"
+        : lang === "ar"
+          ? "تمام! ما اسمك ورقم هاتفك، من فضلك؟ (في رسالة واحدة)"
+          : "Behi! Chnowa esmek w numero el téléphone mte3ek, 3aychek? (ab3athom fi message wa7da)";
+  }
+  if (action === "need_name") {
+    return lang === "fr"
+      ? "Quel est votre nom, s'il vous plaît ?"
+      : lang === "en"
+        ? "What is your name, please?"
+        : lang === "ar"
+          ? "ما اسمك، من فضلك؟"
+          : "Chnowa esmek, 3aychek?";
+  }
+  if (action === "need_phone") {
+    return lang === "fr"
+      ? "Quel est votre numéro de téléphone, s'il vous plaît ?"
+      : lang === "en"
+        ? "What is your phone number, please?"
+        : lang === "ar"
+          ? "ما هو رقم هاتفك، من فضلك؟"
+          : "Aatini numero el téléphone mte3ek, w nkammlou el commande bel 3ayni.";
+  }
   if (action === "need_governorate") {
-    return "Win toskon? Aatini el wilaya w a9reb repère (pharmacie, café, mosquée...) lel dar.";
+    return lang === "fr"
+      ? "Où habitez-vous ? Donnez-moi le gouvernorat (wilaya) et le repère le plus proche de chez vous (pharmacie, café, mosquée...)."
+      : lang === "en"
+        ? "Where do you live? Tell me the governorate and the nearest landmark (pharmacy, café, mosque...) to your home."
+        : lang === "ar"
+          ? "أين تسكن؟ أعطني الولاية وأقرب معلم لدارك (صيدلية، مقهى، مسجد...)."
+          : "Win toskon? Aatini el wilaya w a9reb repère (pharmacie, café, mosquée...) lel dar.";
   }
   if (action === "need_landmark") {
-    return `Aatini bark a9reb repère (pharmacie, café, mosquée, école...) ba7dha darek fi ${slots.governorate as string} bch nab3athlek el pin.`;
+    const gov = typeof slots.governorate === "string" ? slots.governorate : "";
+    return lang === "fr"
+      ? `Donnez-moi seulement le repère le plus proche de chez vous à ${gov} (pharmacie, café, mosquée, école...) pour vous envoyer le pin.`
+      : lang === "en"
+        ? `Just give me the nearest landmark to your home in ${gov} (pharmacy, café, mosque, school...) so I can send you the pin.`
+        : lang === "ar"
+          ? `أعطني فقط أقرب معلم لدارك في ${gov} (صيدلية، مقهى، مسجد، مدرسة...) لأبعث لك الرابط.`
+          : `Aatini bark a9reb repère (pharmacie, café, mosquée, école...) ba7dha darek fi ${slots.governorate as string} bch nab3athlek el pin.`;
   }
-  if (action === "need_product") return "Chnowa el produit elli t7eb alih? Ab3atli taswirt el produit walla ousifhouli.";
-  return "T7eb nkammlou el commande? Ana mrigel.";
+  if (action === "need_product") {
+    return lang === "fr"
+      ? "Quel produit cherchez-vous ? Envoyez-moi une photo du produit ou décrivez-le."
+      : lang === "en"
+        ? "Which product are you looking for? Send me a photo of the product or describe it."
+        : lang === "ar"
+          ? "ما هو المنتج الذي تبحث عنه؟ ابعث صورة المنتج أو اوصفه."
+          : "Chnowa el produit elli t7eb alih? Ab3atli taswirt el produit walla ousifhouli.";
+  }
+  return lang === "fr"
+    ? "On continue la commande ?"
+    : lang === "en"
+      ? "Shall we continue the order?"
+      : lang === "ar"
+        ? "نكملو الطلب؟"
+        : "T7eb nkammlou el commande? Ana mrigel.";
 }
 
 async function phraseMatchCaption(
@@ -275,7 +488,9 @@ async function phraseMatchCaption(
       hasPhone: typeof slots.phone === "string",
       hasName: typeof slots.customerName === "string",
       nextAction: nextAction(withMatch),
+      askBundle: nextAskBundle(withMatch),
       askHint: optionAskHint(withMatch),
+      sizeAsk: sizeAskFor(withMatch),
       fallbackText: matchedText(name, withMatch, priceMillimes),
     },
     conversationId,
@@ -382,10 +597,24 @@ export async function runTurn(conversationId: string): Promise<void> {
     // Keywords for ASR biasing: catalog names/categories for this merchant.
     const { data: products } = await supabase
       .from("products")
-      .select("name, category_phrase")
+      .select("name, category_phrase, product_type")
       .eq("merchant_id", merchantId)
       .limit(50);
     const keywords = [...new Set((products ?? []).flatMap((p) => [p.name, p.category_phrase]))];
+    const productTypes = [
+      ...new Set(
+        (products ?? []).flatMap((p) => {
+          const row = p as { product_type?: unknown; category_phrase?: unknown };
+          return [row.product_type, row.category_phrase].filter(
+            (v): v is string => typeof v === "string" && Boolean(v.trim()),
+          );
+        }),
+      ),
+    ];
+    // What the shop sells (seller-confirmed, catalog-suggested) for this turn.
+    const business = await loadBusinessContext(supabase, merchantId, productTypes);
+    const priorSlots = (conversation.slots ?? {}) as Record<string, unknown>;
+    const asrLanguage = buyerLanguageOf(priorSlots) ?? sellerVoiceFor(conversationId).language;
 
     const textParts: string[] = [];
     const imageDataUrls: string[] = [];
@@ -404,7 +633,7 @@ export async function runTurn(conversationId: string): Promise<void> {
           wav,
           keywords,
           conversationId,
-          languageBias: asrBias(sellerVoiceFor(conversationId).language),
+          languageBias: asrBias(asrLanguage),
         });
         textParts.push(transcript);
         await logEvent(conversationId, "asr.transcript", { transcript });
@@ -440,6 +669,7 @@ export async function runTurn(conversationId: string): Promise<void> {
       Boolean(pendingBeforeUnderstand || (pendingLmBeforeUnderstand && pendingLmBeforeUnderstand.length > 0));
 
     const expectingSize =
+      business.profile.extractSize &&
       typeof currentSlots.size !== "string" &&
       (Boolean(currentSlots.matchedProductId) || imageCount > 0 || Boolean(pendingBeforeUnderstand));
 
@@ -481,10 +711,19 @@ export async function runTurn(conversationId: string): Promise<void> {
             expectingSize,
             conversationId,
             context: draftContext(currentSlots),
+            business,
           })));
     await logEvent(conversationId, "understand", { understanding: result });
 
     let slots = mergeSlots(currentSlots, result, imageCount > 0);
+    // Buyer language mirrors the buyer's messages (first message sets it, a
+    // clear switch changes it); what the shop sells is stored alongside so
+    // every deterministic reply uses the right words.
+    const detectedLanguage = resolveBuyerLanguage(currentSlots.buyerLanguage, combinedText);
+    if (detectedLanguage) slots.buyerLanguage = detectedLanguage;
+    const activeLanguage = buyerLanguageOf(slots);
+    if (activeLanguage) bindBuyerLanguage(conversationId, activeLanguage);
+    slots.businessType = business.type;
     await ensureProductPolicy(supabase, slots);
     captureOptionAnswer(
       slots,
@@ -545,9 +784,15 @@ export async function runTurn(conversationId: string): Promise<void> {
       const lateUnderstanding = await understand({
         text: lateText,
         imageCount: 0,
-        expectingSize: typeof slots.size !== "string",
+        expectingSize: business.profile.extractSize && typeof slots.size !== "string",
         conversationId,
+        business,
       });
+      const lateLanguage = resolveBuyerLanguage(slots.buyerLanguage, lateText);
+      if (lateLanguage) {
+        slots.buyerLanguage = lateLanguage;
+        bindBuyerLanguage(conversationId, lateLanguage);
+      }
       await logEvent(conversationId, "understand.late", { understanding: lateUnderstanding });
       slots = mergeSlots(slots, lateUnderstanding, false);
     };
@@ -827,7 +1072,10 @@ export async function runTurn(conversationId: string): Promise<void> {
       await supabase.from("conversations").update({ slots, updated_at: burstCursor }).eq("id", conversationId);
       const hasOrder = Boolean(slots.orderId);
       const tail = hasOrder || intent === "track_order" ? "" : ` ${nextQuestion(slots)}`;
-      await channelAdapter.sendText(conversationId, `${assistanceReply(intent, hasOrder)}${tail}`);
+      await channelAdapter.sendText(
+        conversationId,
+        `${assistanceReply(intent, hasOrder, buyerLanguageOf(slots) ?? "derja")}${tail}`,
+      );
       await logEvent(conversationId, "assistance.answer", { intent });
       await logEvent(conversationId, "reply.sent", { reply: "assistance", template: "assistance" });
       return;
@@ -1259,6 +1507,8 @@ export async function runTurn(conversationId: string): Promise<void> {
         const phrased = await phraseSellerReply(
           {
             situation: "price_answer",
+            askBundle: nextAskBundle(slots),
+            sizeAsk: sizeAskFor(slots),
             buyerText: combinedText,
             productName: matchedProduct.name as string,
             priceMillimes: matchedProduct.price_millimes as number,
@@ -1281,6 +1531,8 @@ export async function runTurn(conversationId: string): Promise<void> {
         const phrased = await phraseSellerReply(
           {
             situation: "stock_answer",
+            askBundle: nextAskBundle(slots),
+            sizeAsk: sizeAskFor(slots),
             buyerText: combinedText,
             productName: matchedProduct.name as string,
             priceMillimes: matchedProduct.price_millimes as number,
@@ -1320,6 +1572,8 @@ export async function runTurn(conversationId: string): Promise<void> {
       : await phraseSellerReply(
       {
         situation: "collect_slot",
+        askBundle: nextAskBundle(slots),
+        sizeAsk: sizeAskFor(slots),
         buyerText: combinedText,
         productName:
           (typeof slots.matchedProductName === "string" ? slots.matchedProductName : null) ??

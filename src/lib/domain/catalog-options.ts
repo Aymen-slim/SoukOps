@@ -247,12 +247,18 @@ export function sizeSlotSatisfied(slots: Record<string, unknown>): boolean {
   return typeof slots.size === "string" && Boolean(slots.size.trim());
 }
 
-export function optionAskText(slots: Record<string, unknown>): string | null {
+export function optionAskText(
+  slots: Record<string, unknown>,
+  language: "derja" | "ar" | "fr" | "en" = "derja",
+): string | null {
   if (readSizePolicy(slots) !== "options") return null;
   const name = missingOptionName(slots);
   if (!name) return null;
   const choices = optionChoicesOf(slots)[name] ?? [];
   const list = choices.length > 0 ? ` (${choices.slice(0, 8).join(", ")})` : "";
+  if (language === "fr") return `Parfait ! Quel ${name} souhaitez-vous ?${list}`;
+  if (language === "en") return `Great! Which ${name} would you like?${list}`;
+  if (language === "ar") return `تمام! ما هو ${name} الذي تريده؟${list}`;
   return `Behi! Chnowa ${name}?${list}`;
 }
 
@@ -262,7 +268,7 @@ export function optionAskHint(slots: Record<string, unknown>): string | null {
   if (!name) return null;
   const choices = optionChoicesOf(slots)[name] ?? [];
   const list = choices.length > 0 ? ` Allowed values: ${choices.join(", ")}.` : "";
-  return `Ask only for the product option "${name}". Do not ask for a clothing size.${list}`;
+  return `Ask only for the product option "${name}". Do not ask for a size.${list}`;
 }
 
 function mentionsValue(text: string, value: string): boolean {

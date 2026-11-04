@@ -180,6 +180,30 @@ export function extractCustomerName(text: string): string | null {
   return name.length >= 2 ? name : null;
 }
 
+const NAME_BLOCKLIST =
+  /\b(hoodie|sweat|robe|dress|pantalon|jean|produit|product|taille|size|livraison|prix|soum|commande|order|photo|taswira|merci|bonjour|salut|hello|ahla|marhba|ok|oui|non|yes)\b/i;
+
+/**
+ * Bare name in a bundled identity reply ("Ahmed 55123456",
+ * "Sarra Ben Ali, 22123456"). Only fires when a phone is present in the
+ * same message — that is the signal the buyer is answering name + number
+ * together — and the rest is one to three plain name words.
+ */
+export function extractNameWithPhone(text: string): string | null {
+  if (!extractPhone(text)) return null;
+  const rest = text
+    .replace(/(?:\+216|00216)?[\s.\-()]*[24579]\d(?:[\s.\-()]*\d){6}\b/g, " ")
+    .replace(/\b(?:esmi|ismi|je m['’]appelle|my name is|numero|numéro|tel|téléphone|telephone|numeri)\b/gi, " ")
+    .replace(/[,;:]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!rest || NAME_BLOCKLIST.test(rest)) return null;
+  if (!/^[A-Za-zÀ-ÿ\u0600-\u06FF][A-Za-zÀ-ÿ\u0600-\u06FF'’-]*(\s+[A-Za-zÀ-ÿ\u0600-\u06FF][A-Za-zÀ-ÿ\u0600-\u06FF'’-]*){0,2}$/.test(rest)) {
+    return null;
+  }
+  return rest.length >= 2 ? rest : null;
+}
+
 /** Extracts a Tunisian phone number embedded anywhere inside a buyer message. */
 export function extractPhone(text: string): string | null {
   const direct = normalizeTunisianPhone(text);

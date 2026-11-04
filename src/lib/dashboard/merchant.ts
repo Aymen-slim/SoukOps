@@ -1,3 +1,4 @@
+import { isBusinessType, type BusinessType } from "@/lib/domain/business";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isReplyLanguage, type ReplyLanguage } from "@/lib/pipeline/seller-voice";
 
@@ -12,13 +13,15 @@ export interface DemoMerchant {
   courier_mode: "mock_api" | "browser" | "real_api";
   reply_language: ReplyLanguage;
   ai_instructions: string;
+  business_type: BusinessType;
+  business_description: string;
   is_sandbox: boolean;
 }
 
 export const SHOP_COLUMNS =
-  "id, name, slug, payment_link, free_delivery_threshold_millimes, courier_mode, reply_language, ai_instructions, is_sandbox";
+  "id, name, slug, payment_link, free_delivery_threshold_millimes, courier_mode, reply_language, ai_instructions, business_type, business_description, is_sandbox";
 
-const LEGACY_COLUMNS = "id, name, payment_link, free_delivery_threshold_millimes, courier_mode";
+export const LEGACY_COLUMNS = "id, name, payment_link, free_delivery_threshold_millimes, courier_mode";
 
 export function mapMerchant(row: Record<string, unknown>): DemoMerchant {
   const mode = row.courier_mode;
@@ -31,6 +34,8 @@ export function mapMerchant(row: Record<string, unknown>): DemoMerchant {
     courier_mode: mode === "browser" || mode === "real_api" || mode === "mock_api" ? mode : "mock_api",
     reply_language: isReplyLanguage(row.reply_language) ? row.reply_language : "derja",
     ai_instructions: typeof row.ai_instructions === "string" ? row.ai_instructions : "",
+    business_type: isBusinessType(row.business_type) ? row.business_type : "general",
+    business_description: typeof row.business_description === "string" ? row.business_description : "",
     is_sandbox: Boolean(row.is_sandbox),
   };
 }

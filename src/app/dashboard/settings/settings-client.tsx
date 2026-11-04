@@ -28,8 +28,21 @@ interface Settings {
   paymentLink: string | null;
   freeDeliveryThresholdMillimes: number | null;
   courierMode: "mock_api" | "browser" | "real_api";
+  businessType?: string;
+  businessDescription?: string;
+  suggestedBusinessType?: string;
   fees: FeeRow[];
 }
+
+const BUSINESS_OPTIONS = [
+  { value: "clothing", label: "Clothing" },
+  { value: "shoes", label: "Shoes" },
+  { value: "beauty", label: "Beauty & cosmetics" },
+  { value: "food", label: "Food & groceries" },
+  { value: "electronics", label: "Electronics" },
+  { value: "home", label: "Home goods" },
+  { value: "general", label: "General / mixed" },
+];
 
 export function SettingsClient() {
   const cached = getCachedDashboard<Settings & { shopName?: string }>("/api/dashboard/settings");
@@ -38,6 +51,9 @@ export function SettingsClient() {
   const [paymentLink, setPaymentLink] = useState(cached?.paymentLink ?? "");
   const [thresholdDt, setThresholdDt] = useState(cached?.freeDeliveryThresholdMillimes == null ? "" : String(cached.freeDeliveryThresholdMillimes / 1000));
   const [mode, setMode] = useState<Settings["courierMode"]>(cached?.courierMode ?? "mock_api");
+  const [businessType, setBusinessType] = useState(cached?.businessType ?? "general");
+  const [businessDescription, setBusinessDescription] = useState(cached?.businessDescription ?? "");
+  const [suggestedBusinessType, setSuggestedBusinessType] = useState<string | null>(cached?.suggestedBusinessType ?? null);
 
 
 
@@ -64,6 +80,9 @@ export function SettingsClient() {
               : String(body.freeDeliveryThresholdMillimes / 1000),
           );
           setMode(body.courierMode);
+          setBusinessType(body.businessType ?? "general");
+          setBusinessDescription(body.businessDescription ?? "");
+          setSuggestedBusinessType(body.suggestedBusinessType ?? null);
         });
     }, 0);
     return () => clearTimeout(timer);
@@ -86,6 +105,8 @@ export function SettingsClient() {
         paymentLink: paymentLink.trim() || null,
         freeDeliveryThresholdMillimes: threshold,
         courierMode: mode,
+        businessType,
+        businessDescription: businessDescription.trim(),
       }),
     });
     const body = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -130,6 +151,30 @@ export function SettingsClient() {
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="shop-name">Shop name</Label>
                 <Input id="shop-name" aria-label="Shop name" value={shopName} onChange={setShopName} />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <NativeSelect
+                  label="What kind of business is this?"
+                  value={businessType}
+                  onChange={(event) => setBusinessType(event.target.value)}
+                  options={BUSINESS_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+                />
+                <p className="text-xs text-tertiary">
+                  The AI asks only what fits your products (no clothing size for food or beauty) and uses your words.
+                  {suggestedBusinessType && suggestedBusinessType !== businessType
+                    ? ` Suggested from your catalog: ${BUSINESS_OPTIONS.find((o) => o.value === suggestedBusinessType)?.label ?? suggestedBusinessType}.`
+                    : ""}
+                </p>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="sells">What we sell (one line)</Label>
+                <Input
+                  id="sells"
+                  aria-label="What we sell (one line)"
+                  value={businessDescription}
+                  onChange={setBusinessDescription}
+                  placeholder="e.g. Women's clothing, hoodies and dresses"
+                />
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="pay">Payment link (Flouci / Konnect)</Label>

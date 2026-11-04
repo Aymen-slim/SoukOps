@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { sparkJson } from "@/lib/ai/spark";
+import type { BusinessContext } from "@/lib/domain/business";
 import {
   detectAssistanceIntent,
   extractBuildingDetails,
@@ -10,6 +11,7 @@ import {
   extractQuantity,
   extractSize,
   extractCustomerName,
+  extractNameWithPhone,
   normalizeTunisianPhone,
   parseMoneyMillimes,
   parseOrderChange,
@@ -147,14 +149,19 @@ export function applyDeterministicFallbacks(
   text: string,
   base: Understanding,
   expectingSize = false,
+  allowSize = true,
 ): Understanding {
   const cleanText = text === "(image only, no text)" ? "" : text;
   const refinedIntent = refinePrimaryIntent(cleanText, base.primaryIntent) as Understanding["primaryIntent"];
-  const extractedSize = base.size ? base.size.trim().toUpperCase() : extractSize(cleanText, expectingSize);
+  const extractedSize = !allowSize
+    ? base.size
+    : base.size
+      ? base.size.trim().toUpperCase()
+      : extractSize(cleanText, expectingSize);
   const extractedPhone = base.phone
     ? (normalizeTunisianPhone(base.phone) ?? extractPhone(cleanText))
     : extractPhone(cleanText);
-  const extractedName = base.customerName?.trim() || extractCustomerName(cleanText);
+  const extractedName = base.customerName?.trim() || extractCustomerName(cleanText) || extractNameWithPhone(cleanText);
   const extractedQty = base.quantity ?? extractQuantity(cleanText);
   const detLandmarks = extractLandmarks(cleanText);
   const landmarks = [...base.landmarks];
@@ -284,26 +291,31 @@ export async function understand(req: {
   conversationId?: string;
   /** Compact current-draft snapshot (no ids/timestamps) for coreference like "el tani" / "mouch hedha". */
   context?: string;
+  /** What the shop sells: personalizes extraction (image noun, size meaning). */
+  business?: BusinessContext;
 }): Promise<Understanding> {
+  const system = req.business ? `${SYSTEM}\n- ${req.business.promptLine}` : SYSTEM;
   const user = [
     `Buyer message (transcribed/typed): ${req.text}`,
     req.context ? `Current order draft: ${req.context}` : null,
     req.imageCount > 0
-      ? `The buyer attached ${req.imageCount} image(s), included in this request. Identify the main clothing item worn/shown in the image (ignore phone UI, captions and other people if several) and fill samNounPhrase, productDescriptionEn, color and spatialHint from what you SEE, AND also fill size, quantity, governorate, landmarks, phone, customerName or counterOfferMillimes from the buyer message text if stated.`
+      ? (req.business?.imageInstruction ??
+        `The buyer attached ${req.imageCount} image(s), included in this request. Identify the main clothing item worn/shown in the image (ignore phone UI, captions and other people if several) and fill samNounPhrase, productDescriptionEn, color and spatialHint from what you SEE, AND also fill size, quantity, governorate, landmarks, phone, customerName or counterOfferMillimes from the buyer message text if stated.`)
       : "No image attached.",
   ].filter(Boolean).join("\n");
+  const allowSize = req.business?.profile.extractSize ?? true;
   try {
     const result = await sparkJson({
       schema: understandSchema,
       jsonSchema: understandJsonSchema,
       schemaName: "understand_turn",
-      system: SYSTEM,
+      system,
       user,
       images: req.images,
       conversationId: req.conversationId,
     });
-    return applyDeterministicFallbacks(req.text, result, req.expectingSize);
+    return applyDeterministicFallbacks(req.text, result, req.expectingSize, allowSize);
   } catch {
-    return applyDeterministicFallbacks(req.text, EMPTY_UNDERSTANDING, req.expectingSize);
+    return applyDeterministicFallbacks(req.text, EMPTY_UNDERSTANDING, req.expectingSize, allowSize);
   }
 }

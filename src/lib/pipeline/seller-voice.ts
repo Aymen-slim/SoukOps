@@ -1,6 +1,7 @@
+import type { BuyerLanguage } from "@/lib/domain/language";
 import type { createAdminClient } from "@/lib/supabase/admin";
 
-export type ReplyLanguage = "derja" | "ar" | "fr" | "en";
+export type ReplyLanguage = BuyerLanguage;
 
 export interface SellerVoice {
   language: ReplyLanguage;
@@ -21,6 +22,24 @@ export function bindSellerVoice(conversationId: string, voice: SellerVoice): voi
 
 export function clearSellerVoice(conversationId: string): void {
   bound.delete(conversationId);
+  boundBuyer.delete(conversationId);
+}
+
+const boundBuyer = new Map<string, BuyerLanguage>();
+
+/** The buyer's own language for this conversation (mirrors their messages). */
+export function bindBuyerLanguage(conversationId: string, language: BuyerLanguage): void {
+  boundBuyer.set(conversationId, language);
+}
+
+export function buyerLanguageBound(conversationId?: string): BuyerLanguage | null {
+  if (!conversationId) return null;
+  return boundBuyer.get(conversationId) ?? null;
+}
+
+/** Buyer language wins; the seller template is only the starting default. */
+export function effectiveReplyLanguage(conversationId?: string): ReplyLanguage {
+  return buyerLanguageBound(conversationId) ?? sellerVoiceFor(conversationId).language;
 }
 
 export function sellerVoiceFor(conversationId?: string): SellerVoice {
