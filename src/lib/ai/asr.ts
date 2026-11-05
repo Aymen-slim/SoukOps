@@ -51,6 +51,7 @@ export async function transcribeWithMeta(req: TranscribeRequest): Promise<string
         method: "POST",
         headers: { Authorization: `Bearer ${env.MODEL_API_KEY}` },
         body: form,
+        signal: AbortSignal.timeout(120_000),
       });
       if (!res.ok) throw new Error(`Meta ASR failed: ${res.status} ${await res.text()}`);
       const parsed = metaAsrResponseSchema.parse(await res.json());

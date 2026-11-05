@@ -2,7 +2,7 @@ import { sparkText } from "@/lib/ai/spark";
 import { extractAmountsMillimes, passesPriceFirewall } from "@/lib/domain/firewall";
 import { firewallChecked, formatMillimesForChat } from "@/lib/domain/pricing";
 import type { NextAction } from "@/lib/domain/slots";
-import { effectiveReplyLanguage, sellerVoiceFor, type ReplyLanguage } from "./seller-voice";
+import { buyerScriptBound, effectiveReplyLanguage, sellerVoiceFor, type ReplyLanguage } from "./seller-voice";
 
 /**
  * Spark phrasing for negotiation and conversational seller replies:
@@ -56,13 +56,36 @@ const LANGUAGE_LINE: Record<ReplyLanguage, string> = {
   fr: "Reply in clear French.",
 };
 
+/** Spark text under the phrasing deadline, with the provider request actually cancelled on timeout. */
+async function sparkTextWithDeadline(req: {
+  system?: string;
+  user: string;
+  conversationId?: string;
+}): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PHRASE_DEADLINE_MS);
+  try {
+    return await withDeadline(
+      sparkText({ ...req, signal: controller.signal }),
+      PHRASE_DEADLINE_MS,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Default Derja prompts stay byte-for-byte so cassette keys do not move. */
 function applyVoice(system: string, conversationId?: string): string {
   const voice = sellerVoiceFor(conversationId);
   const language = effectiveReplyLanguage(conversationId);
-  if (language === "derja" && !voice.instructions.trim()) return system;
+  const script = buyerScriptBound(conversationId);
+  if (language === "derja" && script !== "arabic" && !voice.instructions.trim()) return system;
   const note = voice.instructions.trim().slice(0, 400).replace(/\s+/g, " ");
-  return `${system}\n${LANGUAGE_LINE[language]}${note ? ` Seller note about tone only, never a price: ${note}` : ""}`;
+  const languageLine =
+    language === "derja" && script === "arabic"
+      ? "Reply in natural Tunisian Derja written in Arabic script (not Modern Standard Arabic, not Arabizi)."
+      : LANGUAGE_LINE[language];
+  return `${system}\n${languageLine}${note ? ` Seller note about tone only, never a price: ${note}` : ""}`;
 }
 
 function localizedNegotiation(facts: NegotiationFacts, language: ReplyLanguage): string {
@@ -85,6 +108,17 @@ function localizedNegotiation(facts: NegotiationFacts, language: ReplyLanguage):
   return negotiationTemplate(facts);
 }
 
+export function negotiationTemplateArabicScript(facts: NegotiationFacts): string {
+  const offer = formatMillimesForChat(facts.offerMillimes);
+  if (facts.acceptedCounter) {
+    return `موافق على راسي! السعر الأخير هو ${offer}. نكملو الطلب بيه؟`;
+  }
+  if (facts.isFinal) {
+    return `والله هذا آخر سعر نقدر نعملهولك: ${offer}. ما نقدرش نقص أكثر، تحب نكملو بيه؟`;
+  }
+  return `على خاطرك نعملك سعر باهي: ${offer}. كان يساعدك نكملو الطلب بيه!`;
+}
+
 export function negotiationTemplate(facts: NegotiationFacts): string {
   const offer = formatMillimesForChat(facts.offerMillimes);
   if (facts.acceptedCounter) {
@@ -101,10 +135,15 @@ export async function phraseNegotiationReply(
   conversationId?: string,
 ): Promise<{ text: string; source: "spark" | "template" }> {
   const language = effectiveReplyLanguage(conversationId);
-  const fallback = language === "derja" ? negotiationTemplate(facts) : localizedNegotiation(facts, language);
+  const fallback =
+    language === "derja"
+      ? buyerScriptBound(conversationId) === "arabic"
+        ? negotiationTemplateArabicScript(facts)
+        : negotiationTemplate(facts)
+      : localizedNegotiation(facts, language);
   const offer = formatMillimesForChat(facts.offerMillimes);
   try {
-    const raw = await withDeadline(sparkText({
+    const raw = await sparkTextWithDeadline({
       system: applyVoice(
         "You are a warm, playful, easygoing Tunisian shop seller chatting on WhatsApp in natural Tunisian Derja (Arabizi). " +
         "Use ONLY the facts given. Never invent or change an amount: the only prices you may write are the offer " +
@@ -122,7 +161,7 @@ export async function phraseNegotiationReply(
             : "Make this counter-offer warmly like a Tunisian seller and ask if it suits them to continue the order.",
       ].join("\n"),
       conversationId,
-    }), PHRASE_DEADLINE_MS);
+    });
     const candidate = raw.trim();
     const allowed = [facts.offerMillimes, facts.listPriceMillimes];
     const statesOffer = extractAmountsMillimes(candidate).includes(facts.offerMillimes);
@@ -308,7 +347,7 @@ export async function phraseSellerReply(
   const askInstruction = [askLead, nextStepInstruction(facts.nextAction, Boolean(facts.size), facts.askHint, facts.askBundle, facts.sizeAsk)].filter(Boolean).join(" ");
 
   try {
-    const raw = await withDeadline(sparkText({
+    const raw = await sparkTextWithDeadline({
       system: applyVoice(
         "You are a warm, playful, easygoing Tunisian shop seller chatting on WhatsApp in natural Tunisian Derja (Arabizi). " +
         "Sound like a friend who runs the shop (light, kind, a little playful — 'Ahla bik', 'yesss', '3aychek', 'mrigel', '3la rasi'), NEVER like a bot or a form. " +
@@ -329,7 +368,7 @@ export async function phraseSellerReply(
         .filter(Boolean)
         .join("\n"),
       conversationId,
-    }), PHRASE_DEADLINE_MS);
+    });
 
     const candidate = raw.trim();
     if (!candidate || candidate.length > 420) {

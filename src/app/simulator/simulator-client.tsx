@@ -327,7 +327,7 @@ export default function SimulatorClient({
     let stop = false;
     const loop = () => {
       if (stop) return;
-      const wait = document.hidden ? 2_000 : awaiting ? 600 : 1_500;
+      const wait = document.hidden ? 2_000 : awaiting ? 350 : 1_500;
       timer = window.setTimeout(() => {
         if (!refreshBusy.current) void refresh();
         loop();

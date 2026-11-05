@@ -200,16 +200,17 @@ async function downloadCropDataUrls(
   candidates: MatchCandidate[],
   limit: number,
 ): Promise<string[]> {
-  const urls: string[] = [];
-  for (const candidate of candidates.slice(0, limit)) {
-    if (!candidate.cropPath || urls.length >= limit) continue;
-    const { data } = await supabase.storage.from("crops").download(candidate.cropPath);
-    if (data) {
+  // Downloads are independent: fetch together, keep candidate order.
+  const downloaded = await Promise.all(
+    candidates.slice(0, limit).map(async (candidate) => {
+      if (!candidate.cropPath) return null;
+      const { data } = await supabase.storage.from("crops").download(candidate.cropPath);
+      if (!data) return null;
       const bytes = Buffer.from(await data.arrayBuffer());
-      urls.push(`data:image/png;base64,${bytes.toString("base64")}`);
-    }
-  }
-  return urls;
+      return `data:image/png;base64,${bytes.toString("base64")}`;
+    }),
+  );
+  return downloaded.filter((url): url is string => url !== null);
 }
 
 /**
@@ -385,11 +386,13 @@ export async function matchProduct(req: {
   cropPng?: Buffer;
   descriptionEn?: string | null;
   conversationId?: string;
+  /** Candidates already fetched for this exact embedding: reuse, do not query again. */
+  candidates?: MatchCandidate[];
 }): Promise<MatchResult> {
   if (getServerEnv().MATCHER === "all") {
     return matchAllCatalog(req);
   }
-  const candidates = await fetchCandidates(req.supabase, req.merchantId, req.embedding, 10);
+  const candidates = req.candidates ?? (await fetchCandidates(req.supabase, req.merchantId, req.embedding, 10));
   if (candidates.length === 0) {
     return { decision: "unmatched", chosen: null, top: [], candidates: [], score: 0, scoreSource: "vector", alternative: null };
   }
@@ -448,6 +451,8 @@ export interface CropOption {
   embedding: number[];
   best: MatchCandidate | null;
   bestSimilarity: number;
+  /** Candidates already probed for this crop, reused by the full match. */
+  candidates?: MatchCandidate[];
 }
 
 export type ScreenshotOutcome =
@@ -668,11 +673,20 @@ export async function resolveScreenshot(req: {
     options.map((o) => o.cropPng.toString("base64")),
     req.conversationId,
   );
+  // Probe every crop together (same k the full match uses, so the probed
+  // list can be reused verbatim instead of querying pgvector twice).
+  const probed = await Promise.all(
+    options.map(async (option, i) => {
+      const embedding = embeddings[i] ?? [];
+      const candidates = embedding.length > 0 ? await fetchCandidates(req.supabase, req.merchantId, embedding, 10) : [];
+      return { embedding, candidates };
+    }),
+  );
   for (let i = 0; i < options.length; i++) {
-    options[i].embedding = embeddings[i] ?? [];
-    const candidates = await fetchCandidates(req.supabase, req.merchantId, options[i].embedding, 5);
-    options[i].best = candidates[0] ?? null;
-    options[i].bestSimilarity = candidates[0]?.similarity ?? 0;
+    options[i].embedding = probed[i].embedding;
+    options[i].candidates = probed[i].candidates;
+    options[i].best = probed[i].candidates[0] ?? null;
+    options[i].bestSimilarity = probed[i].candidates[0]?.similarity ?? 0;
   }
 
   const finishWith = async (option: CropOption): Promise<ScreenshotOutcome> => {
@@ -682,6 +696,7 @@ export async function resolveScreenshot(req: {
       embedding: option.embedding,
       cropPng: option.cropPng,
       conversationId: req.conversationId,
+      candidates: option.candidates,
     });
     if (match.decision === "unmatched") {
       return { status: "unmatched", option, match, embedding: option.embedding };

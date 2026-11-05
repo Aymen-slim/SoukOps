@@ -50,6 +50,29 @@ describe("negotiation phrasing (Spark words, code decides)", () => {
     expect(res.text).toContain("95DT");
   });
 
+  it("cancels the Spark call when the phrasing deadline passes", async () => {
+    let aborted = false;
+    sparkTextMock.mockImplementation((req: { signal?: AbortSignal }) => {
+      return new Promise((_resolve, reject) => {
+        if (!req.signal) return; // never settles: only abort can end it
+        req.signal.addEventListener("abort", () => {
+          aborted = true;
+          reject(new Error("aborted"));
+        });
+      });
+    });
+    const res = await phraseSellerReply({
+      situation: "collect_slot",
+      buyerText: "L",
+      productName: "Sweat jaune",
+      size: "L",
+      nextAction: "need_governorate",
+      fallbackText: "Mrigel, sajaltlek taille L. Win toskon?",
+    });
+    expect(res.source).toBe("template");
+    expect(aborted).toBe(true);
+  });
+
   it("phraseSellerReply rejects model output that re-asks for size when size is already known", async () => {
     sparkTextMock.mockResolvedValue("Ahla bik! Chnowa el taille mte3ek?");
     const res = await phraseSellerReply({

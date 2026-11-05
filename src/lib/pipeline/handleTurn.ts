@@ -1,14 +1,14 @@
 import { embedImages } from "@/lib/ai/embeddings";
 import type { SamBox } from "@/lib/ai/sam";
 import { channelAdapter } from "@/lib/channels";
-import { detectAssistanceIntent, normalizeTunisianPhone, parseMoneyMillimes, parseOrderChange } from "@/lib/domain/derja";
+import { DERJA_GLOSSARY, detectAssistanceIntent, normalizeTunisianPhone, parseMoneyMillimes, parseOrderChange } from "@/lib/domain/derja";
 import { applyDraftChange, buildChangeConfirmation, type ChangeRequest } from "@/lib/domain/draft";
 import { landmarkMatchesAny } from "@/lib/domain/landmarks";
 import { EMPTY_NEGOTIATION, nextNegotiationStep, parseNegotiationState } from "@/lib/domain/negotiation";
 import { firewallChecked, formatMillimesForChat } from "@/lib/domain/pricing";
 import { businessProfile, isBusinessType } from "@/lib/domain/business";
 import { captureOptionAnswer, optionAskHint, optionAskText } from "@/lib/domain/catalog-options";
-import { buyerLanguageOf, resolveBuyerLanguage } from "@/lib/domain/language";
+import { buyerLanguageOf, buyerScriptOf, detectTextScript, resolveBuyerLanguage } from "@/lib/domain/language";
 import { nextAction, nextAskBundle, nextDraftAction } from "@/lib/domain/slots";
 import { ensureProductPolicy } from "@/lib/pipeline/product-policy";
 import { localityPoint } from "@/lib/geo/tunisia";
@@ -19,7 +19,7 @@ import { logEvent } from "./events";
 import { createOrderFromAkked, handleBeddel, persistEnteredBuyer, sendSummary } from "./order";
 import { assistanceReply, phraseNegotiationReply, phraseSellerReply } from "./phrasing";
 import { loadBusinessContext } from "./business";
-import { asrBias, bindBuyerLanguage, bindSellerVoice, clearSellerVoice, loadSellerVoice, sellerVoiceFor } from "./seller-voice";
+import { asrBias, bindBuyerLanguage, bindBuyerScript, bindSellerVoice, clearSellerVoice, loadSellerVoice, sellerVoiceFor } from "./seller-voice";
 import { parseDispatchReconfirm, parseDispatchReconfirmReply } from "@/lib/domain/reconfirm";
 import { applyDispatchReconfirmReply } from "./reconfirm";
 import { applyDeterministicFallbacks, fastPathUnderstanding, understand, type Understanding } from "./understand";
@@ -107,6 +107,14 @@ function langOf(slots: Record<string, unknown>): "derja" | "ar" | "fr" | "en" {
   return buyerLanguageOf(slots) ?? "derja";
 }
 
+function scriptOf(slots: Record<string, unknown>): "arabic" | "latin" | null {
+  return buyerScriptOf(slots);
+}
+
+function isArabicDerja(slots: Record<string, unknown>): boolean {
+  return langOf(slots) === "derja" && scriptOf(slots) === "arabic";
+}
+
 /** What the shop sells, as stored on the slots at turn start. Legacy slots
  * without a stored type keep the historic clothing-size wording. */
 function businessOf(slots: Record<string, unknown>) {
@@ -133,6 +141,33 @@ export function buildAck(
   hadAudio: boolean,
 ): string {
   const lang = langOf(slots);
+  if (isArabicDerja(slots)) {
+    const notedAr: string[] = [];
+    if (typeof slots.matchedProductName === "string" && slots.matchedProductName.trim()) notedAr.push(slots.matchedProductName);
+    if (typeof slots.size === "string" && slots.size.trim()) notedAr.push(`مقاس ${slots.size as string}`);
+    if (typeof slots.customerName === "string" && slots.customerName.trim()) notedAr.push(slots.customerName);
+    if (typeof slots.quantity === "number" && (slots.quantity as number) > 1) notedAr.push(`x${slots.quantity as number}`);
+    if (typeof slots.governorate === "string" && slots.governorate.trim()) notedAr.push(`في ${slots.governorate as string}`);
+    const partsAr: string[] = [];
+    if (hadAudio) partsAr.push("سمعت الفوكال متاعك.");
+    if (hadImage) partsAr.push("وصلتني التصويرة.");
+    if (notedAr.length) partsAr.push(`مريقل، سجلتلك ${notedAr.join("، ")}.`);
+    const hasProductAr =
+      typeof slots.matchedProductId === "string" ||
+      typeof slots.matchedProductName === "string" ||
+      typeof slots.productDescriptionEn === "string" ||
+      typeof slots.samNounPhrase === "string" ||
+      hadImage;
+    const intentAr = typeof slots.primaryIntent === "string" ? (slots.primaryIntent as string) : "other";
+    if (!hasProductAr && intentAr === "greeting") {
+      partsAr.push("أهلا وسهلا! أنا معاك. ابعثلي تصويرة المنتج اللي تحب عليه، وإلا قولي شنوة تحب تشري.");
+    } else if (!hasProductAr) {
+      partsAr.push("مرحبا بيك! شنوة المنتج اللي تحب عليه؟ ابعثلي تصويرتو وإلا أوصفهولي.");
+    } else {
+      partsAr.push(nextQuestion({ ...slots, matchedProductId: slots.matchedProductId ?? "pending" }));
+    }
+    return partsAr.join(" ");
+  }
   const sizeWord = businessOf(slots).sizeWord ?? (lang === "en" ? "size" : lang === "ar" ? "مقاس" : "taille");
   const noted: string[] = [];
   if (typeof slots.matchedProductName === "string" && slots.matchedProductName.trim()) {
@@ -241,6 +276,11 @@ export function buildPriceReply(
 ): string {
   const lang = langOf(slots);
   const price = formatMillimesForChat(priceMillimes);
+  if (isArabicDerja(slots)) {
+    const outAr = stock !== undefined && stock <= 0;
+    const headAr = outAr ? `${name} سعره ${price}، أما كمل في الستوك توا.` : `${name} سعره ${price}.`;
+    return `${headAr} ${nextQuestion({ ...slots, matchedProductId: slots.matchedProductId ?? "known" })}`;
+  }
   const out = stock !== undefined && stock <= 0;
   const head =
     lang === "fr"
@@ -262,6 +302,15 @@ export function buildPriceReply(
 }
 
 export function buildStockReply(name: string, stock: number, slots: Record<string, unknown>): string {
+  if (isArabicDerja(slots)) {
+    if (stock > 0) {
+      return `إي، ${name} موجود في الستوك. ${nextQuestion({ ...slots, matchedProductId: slots.matchedProductId ?? "known" })}`;
+    }
+    const alternativeAr = typeof slots.alternativeProductName === "string" ? slots.alternativeProductName : null;
+    return alternativeAr
+      ? `سامحني، ${name} كمل في الستوك. أما ${alternativeAr} موجود، تحب تشوف؟`
+      : `سامحني، ${name} كمل في الستوك توا.`;
+  }
   const lang = langOf(slots);
   if (stock > 0) {
     const head =
@@ -301,6 +350,15 @@ export function matchedText(name: string, slots: Record<string, unknown>, priceM
     return buildPriceReply(name, priceMillimes, slots);
   }
   const lang = langOf(slots);
+  if (isArabicDerja(slots)) {
+    const pricePartAr = priceMillimes !== undefined ? ` (${formatMillimesForChat(priceMillimes)})` : "";
+    const notedAr: string[] = [];
+    if (typeof slots.size === "string" && slots.size.trim()) notedAr.push(`مقاس ${slots.size}`);
+    if (typeof slots.quantity === "number" && (slots.quantity as number) > 1) notedAr.push(`x${slots.quantity as number}`);
+    if (typeof slots.governorate === "string" && slots.governorate.trim()) notedAr.push(`في ${slots.governorate}`);
+    const notedPartAr = notedAr.length > 0 ? ` سجلتلك ${notedAr.join("، ")} مريقل!` : "";
+    return `ياس، لقيتو! هذا هو ${name}${pricePartAr}.${notedPartAr} ${nextQuestion({ ...slots, matchedProductId: slots.matchedProductId ?? "matched" })}`;
+  }
   const sizeWord = businessOf(slots).sizeWord ?? (lang === "en" ? "size" : lang === "ar" ? "مقاس" : "taille");
   const pricePart = priceMillimes !== undefined ? ` (${formatMillimesForChat(priceMillimes)})` : "";
   const noted: string[] = [];
@@ -351,6 +409,33 @@ export function draftContext(slots: Record<string, unknown>): string | undefined
  * single message; governorate + landmark already do.
  */
 export function nextQuestion(slots: Record<string, unknown>): string {
+  if (isArabicDerja(slots)) {
+    const bundleAr = nextAskBundle(slots);
+    const actionAr = bundleAr[0] ?? nextDraftAction(slots);
+    const govAr = typeof slots.governorate === "string" ? slots.governorate : "";
+    if (actionAr === "need_size") {
+      const stockoutAr = slots.optionStockout === true ? "التركيبة هذه ما عادش في الستوك. " : "";
+      const profileAr = businessOf(slots);
+      if (profileAr.sizeKind === "shoe") return `${stockoutAr}مريقل! شنوة القياس متاع الصباط؟ (38، 39، 40، 41، 42)`;
+      if (profileAr.sizeKind === "clothing") return `${stockoutAr}مريقل! شنوة المقاس متاعك؟ (S، M، L، XL)`;
+      return `${stockoutAr}مريقل! شنوة الخيار اللي تحبو؟`;
+    }
+    if (actionAr === "need_name" && bundleAr.includes("need_phone")) {
+      return "مريقل! شنوة اسمك ورقم التليفون متاعك، عيشك؟ (ابعثهم في رسالة وحدة)";
+    }
+    if (actionAr === "need_name") return "شنوة اسمك، عيشك؟";
+    if (actionAr === "need_phone") return "شنوة رقم التليفون متاعك، عيشك؟";
+    if (actionAr === "need_governorate") {
+      return "وين تسكن؟ عطيني الولاية وأقرب معلم لدارك (صيدلية، قهوة، جامع...).";
+    }
+    if (actionAr === "need_landmark") {
+      return `عطيني برك أقرب معلم لدارك في ${govAr} (صيدلية، قهوة، جامع، مدرسة...) باش نبعثلك الرابط.`;
+    }
+    if (actionAr === "need_product") {
+      return "شنوة المنتج اللي تحب عليه؟ ابعثلي تصويرة المنتج وإلا أوصفهولي.";
+    }
+    return "نكملو الطلب؟";
+  }
   const lang = langOf(slots);
   const profile = businessOf(slots);
   const bundle = nextAskBundle(slots);
@@ -527,15 +612,19 @@ export async function runTurn(conversationId: string): Promise<void> {
       .single();
     if (convError || !conversation) throw new Error(`conversation not found: ${convError?.message}`);
     const merchantId = conversation.merchant_id as string;
-    bindSellerVoice(conversationId, await loadSellerVoice(supabase, merchantId));
-
-    const { data: messages, error: msgError } = await supabase
-      .from("messages")
-      .select("id, kind, body, media_path, created_at")
-      .eq("conversation_id", conversationId)
-      .eq("direction", "in")
-      .gt("created_at", conversation.updated_at)
-      .order("created_at", { ascending: true });
+    // Seller voice and the burst fetch are independent: run them together.
+    const [sellerVoice, messagesResult] = await Promise.all([
+      loadSellerVoice(supabase, merchantId),
+      supabase
+        .from("messages")
+        .select("id, kind, body, media_path, created_at")
+        .eq("conversation_id", conversationId)
+        .eq("direction", "in")
+        .gt("created_at", conversation.updated_at)
+        .order("created_at", { ascending: true }),
+    ]);
+    bindSellerVoice(conversationId, sellerVoice);
+    const { data: messages, error: msgError } = messagesResult;
     if (msgError) throw new Error(`messages fetch failed: ${msgError.message}`);
     const burst = (messages ?? []) as MessageRow[];
     if (burst.length === 0) return;
@@ -600,7 +689,23 @@ export async function runTurn(conversationId: string): Promise<void> {
       .select("name, category_phrase, product_type")
       .eq("merchant_id", merchantId)
       .limit(50);
-    const keywords = [...new Set((products ?? []).flatMap((p) => [p.name, p.category_phrase]))];
+    const keywords = [
+      ...new Set([
+        ...(products ?? []).flatMap((p) => [p.name, p.category_phrase]),
+        // Tunisian commerce/location vocabulary biases ASR toward Derja
+        // words it would otherwise hear as MSA or French.
+        ...Object.keys(DERJA_GLOSSARY),
+        "taille",
+        "pointure",
+        "livraison",
+        "commande",
+        "pharmacie",
+        "café",
+        "mosquée",
+        "école",
+        "wilaya",
+      ]),
+    ].slice(0, 100);
     const productTypes = [
       ...new Set(
         (products ?? []).flatMap((p) => {
@@ -719,10 +824,16 @@ export async function runTurn(conversationId: string): Promise<void> {
     // Buyer language mirrors the buyer's messages (first message sets it, a
     // clear switch changes it); what the shop sells is stored alongside so
     // every deterministic reply uses the right words.
-    const detectedLanguage = resolveBuyerLanguage(currentSlots.buyerLanguage, combinedText);
+    const detectedLanguage = resolveBuyerLanguage(currentSlots.buyerLanguage, combinedText, {
+      fromAudio: hadAudio,
+    });
     if (detectedLanguage) slots.buyerLanguage = detectedLanguage;
+    const detectedScript = detectTextScript(combinedText);
+    if (detectedScript) slots.buyerScript = detectedScript;
     const activeLanguage = buyerLanguageOf(slots);
     if (activeLanguage) bindBuyerLanguage(conversationId, activeLanguage);
+    const activeScript = buyerScriptOf(slots);
+    if (activeScript) bindBuyerScript(conversationId, activeScript);
     slots.businessType = business.type;
     await ensureProductPolicy(supabase, slots);
     captureOptionAnswer(
@@ -781,17 +892,26 @@ export async function runTurn(conversationId: string): Promise<void> {
       burstCursor = late[late.length - 1].created_at;
       pendingRerun.delete(conversationId);
       if (!lateText) return;
-      const lateUnderstanding = await understand({
-        text: lateText,
-        imageCount: 0,
-        expectingSize: business.profile.extractSize && typeof slots.size !== "string",
-        conversationId,
-        business,
-      });
+      const lateExpectingSize = business.profile.extractSize && typeof slots.size !== "string";
+      // Slot-only follow-ups (a size, a phone) need no model round trip.
+      const lateUnderstanding =
+        fastPathUnderstanding(lateText, lateExpectingSize) ??
+        (await understand({
+          text: lateText,
+          imageCount: 0,
+          expectingSize: lateExpectingSize,
+          conversationId,
+          business,
+        }));
       const lateLanguage = resolveBuyerLanguage(slots.buyerLanguage, lateText);
       if (lateLanguage) {
         slots.buyerLanguage = lateLanguage;
         bindBuyerLanguage(conversationId, lateLanguage);
+      }
+      const lateScript = detectTextScript(lateText);
+      if (lateScript) {
+        slots.buyerScript = lateScript;
+        bindBuyerScript(conversationId, lateScript);
       }
       await logEvent(conversationId, "understand.late", { understanding: lateUnderstanding });
       slots = mergeSlots(slots, lateUnderstanding, false);

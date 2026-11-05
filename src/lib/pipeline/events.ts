@@ -11,14 +11,18 @@ export async function logEvent(
   if (!hasAdminConfig()) return;
   try {
     const supabase = createAdminClient();
-    await supabase.from("agent_events").insert({
-      conversation_id: conversationId,
-      kind,
-      model: model ?? null,
-      provider: provider ?? null,
-      ok: true,
-      detail,
-    });
+    // Fire-and-forget: pipeline events are observability, not turn state, so
+    // they must not add a round-trip before the buyer's reply is sent.
+    void Promise.resolve(
+      supabase.from("agent_events").insert({
+        conversation_id: conversationId,
+        kind,
+        model: model ?? null,
+        provider: provider ?? null,
+        ok: true,
+        detail,
+      }),
+    ).catch(() => undefined);
   } catch {
     // Tracing must never break the turn.
   }

@@ -92,6 +92,8 @@ export async function sparkText(req: {
   system?: string;
   user: string;
   conversationId?: string;
+  /** Aborts the provider request (e.g. when a phrasing deadline passes). */
+  signal?: AbortSignal;
 }): Promise<string> {
   const { client, model, provider } = getLlmClient();
   return withCassette(
@@ -99,14 +101,17 @@ export async function sparkText(req: {
     { model, system: req.system ?? null, user: req.user },
     () =>
       traced({ kind: "spark.text", model, provider, conversationId: req.conversationId }, async () => {
-        const completion = await client.chat.completions.create({
-          model,
-          reasoning_effort: "low",
-          messages: [
-            ...(req.system ? [{ role: "system" as const, content: req.system }] : []),
-            { role: "user" as const, content: req.user },
-          ],
-        });
+        const completion = await client.chat.completions.create(
+          {
+            model,
+            reasoning_effort: "low",
+            messages: [
+              ...(req.system ? [{ role: "system" as const, content: req.system }] : []),
+              { role: "user" as const, content: req.user },
+            ],
+          },
+          req.signal ? { signal: req.signal } : undefined,
+        );
         return completion.choices[0]?.message?.content ?? "";
       }),
   );

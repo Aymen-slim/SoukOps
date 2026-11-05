@@ -46,10 +46,12 @@ export async function traced<T>(
   const started = performance.now();
   try {
     const result = await call();
-    await trace({ ...meta, latencyMs: performance.now() - started, ok: true });
+    // Tracing must not add a database round-trip to the reply path: the
+    // insert runs concurrently with whatever the caller does next.
+    void trace({ ...meta, latencyMs: performance.now() - started, ok: true });
     return result;
   } catch (err) {
-    await trace({
+    void trace({
       ...meta,
       latencyMs: performance.now() - started,
       ok: false,

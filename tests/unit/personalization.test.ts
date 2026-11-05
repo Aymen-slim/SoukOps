@@ -4,18 +4,33 @@ const sparkTextMock = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/ai/spark", () => ({ sparkText: sparkTextMock }));
 
 import { buildBusinessContext, businessProfile, inferBusinessType, resolveBusinessType } from "@/lib/domain/business";
-import { buyerLanguageOf, detectBuyerLanguage, resolveBuyerLanguage } from "@/lib/domain/language";
+import { buyerLanguageOf, detectBuyerLanguage, detectTextScript, resolveBuyerLanguage } from "@/lib/domain/language";
 import { nextAskBundle } from "@/lib/domain/slots";
 import { buildAck, buildPriceReply } from "@/lib/pipeline/handleTurn";
 import { assistanceReply, phraseSellerReply } from "@/lib/pipeline/phrasing";
+import { asrBias } from "@/lib/pipeline/seller-voice";
 import { fastPathUnderstanding } from "@/lib/pipeline/understand";
 
 describe("buyer language detection (code decides, no model call)", () => {
   it("detects French, Arabic script, Derja Arabizi and English from the first message", () => {
     expect(detectBuyerLanguage("Bonjour, je voudrais commander ce produit, quel est le prix ?")?.language).toBe("fr");
-    expect(detectBuyerLanguage("أهلا، نحب نطلب هذا المنتج")?.language).toBe("ar");
+    // Tunisian in Arabic script is Derja, not MSA: نحب / بقداش are Tunisian.
+    expect(detectBuyerLanguage("أهلا، نحب نطلب هذا المنتج")?.language).toBe("derja");
+    expect(detectBuyerLanguage("بقداش هذا؟ فما منو؟")?.language).toBe("derja");
     expect(detectBuyerLanguage("Ahla, n7eb ncommandi hedha el produit")?.language).toBe("derja");
     expect(detectBuyerLanguage("Hello, I would like to order this, what is the price?")?.language).toBe("en");
+  });
+
+  it("keeps Derja as the default for voice transcripts on a weak signal", () => {
+    expect(resolveBuyerLanguage(null, "merci", { fromAudio: true })).toBeNull();
+    expect(resolveBuyerLanguage("derja", "merci", { fromAudio: true })).toBeNull();
+    expect(asrBias("derja")).toEqual(["Arabic", "French"]);
+  });
+
+  it("tracks script separately from language", () => {
+    expect(detectTextScript("نحب هذا المنتج")).toBe("arabic");
+    expect(detectTextScript("n7eb hedha el produit")).toBe("latin");
+    expect(detectTextScript("55123456")).toBeNull();
   });
 
   it("returns null for slot-only replies so the current language is kept", () => {
@@ -30,6 +45,13 @@ describe("buyer language detection (code decides, no model call)", () => {
     expect(resolveBuyerLanguage("derja", "Bonjour, je parle français maintenant, quel est le prix de livraison ?")).toBe("fr");
     expect(resolveBuyerLanguage("fr", "Ahla, n7eb ncommandi hedha el produit, b9addech?")).toBe("derja");
     expect(resolveBuyerLanguage("fr", "L")).toBeNull();
+  });
+
+  it("answers Arabic-script Derja buyers in Arabic-script Derja, not MSA or Arabizi", () => {
+    const reply = buildPriceReply("Sweat jaune", 110_000, { size: "L", buyerLanguage: "derja", buyerScript: "arabic" });
+    expect(reply).toContain("سعره");
+    expect(reply).toContain("110DT");
+    expect(reply).not.toContain("soumou");
   });
 
   it("reads the stored buyer language from slots", () => {

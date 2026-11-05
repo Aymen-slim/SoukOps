@@ -1,13 +1,18 @@
 import OpenAI from "openai";
 import { getServerEnv, requireEnv } from "@/lib/env";
 
-/** Baseten Model APIs client for Muse Spark Open (OpenAI-compatible). Server-only. */
+let cachedLlm: OpenAI | null = null;
+
+/** Baseten Model APIs client for Muse Spark Open (OpenAI-compatible). Server-only. Reused across calls. */
 export function getBasetenLlmClient(): OpenAI {
+  if (cachedLlm) return cachedLlm;
   requireEnv("BASETEN_API_KEY");
-  return new OpenAI({
+  cachedLlm = new OpenAI({
     apiKey: getServerEnv().BASETEN_API_KEY,
     baseURL: "https://inference.baseten.co/v1",
+    timeout: 120_000,
   });
+  return cachedLlm;
 }
 
 export function basetenConfigured(): boolean {
@@ -32,6 +37,7 @@ export async function pePredict(body: Record<string, unknown>): Promise<unknown>
   }
   const res = await fetch(env.peEmbedUrl, {
     method: "POST",
+    signal: AbortSignal.timeout(120_000),
     headers: {
       ...(env.peEmbedApiKey ? { Authorization: `Bearer ${env.peEmbedApiKey}` } : {}),
       "Content-Type": "application/json",

@@ -1,4 +1,4 @@
-import type { BuyerLanguage } from "@/lib/domain/language";
+import type { BuyerLanguage, TextScript } from "@/lib/domain/language";
 import type { createAdminClient } from "@/lib/supabase/admin";
 
 export type ReplyLanguage = BuyerLanguage;
@@ -22,7 +22,20 @@ export function bindSellerVoice(conversationId: string, voice: SellerVoice): voi
 
 export function clearSellerVoice(conversationId: string): void {
   bound.delete(conversationId);
+  boundScript.delete(conversationId);
   boundBuyer.delete(conversationId);
+}
+
+const boundScript = new Map<string, TextScript>();
+
+/** Script the buyer writes in (Arabic vs Latin), bound for phrasing. */
+export function bindBuyerScript(conversationId: string, script: TextScript): void {
+  boundScript.set(conversationId, script);
+}
+
+export function buyerScriptBound(conversationId?: string): TextScript | null {
+  if (!conversationId) return null;
+  return boundScript.get(conversationId) ?? null;
 }
 
 const boundBuyer = new Map<string, BuyerLanguage>();
@@ -67,5 +80,6 @@ export function asrBias(language: ReplyLanguage): string[] | undefined {
   if (language === "en") return ["English"];
   if (language === "fr") return ["French", "Arabic"];
   if (language === "ar") return ["Arabic"];
-  return undefined;
+  // Derja is Tunisian Arabic: explicit Arabic bias (French for loanwords).
+  return ["Arabic", "French"];
 }
