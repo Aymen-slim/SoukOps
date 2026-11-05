@@ -2,21 +2,31 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
+import { MarkerPin01, ShieldTick, Stars01 } from "@untitledui/icons";
 import { Button } from "@/components/base/buttons/button";
 import { Input } from "@/components/base/input/input";
-import { Label } from "@/components/base/input/label";
-import { Alert } from "@/components/foundations/alert/alert";
 import { DemoAccountButton } from "@/components/site-bar";
 import { invalidateClientSession } from "@/lib/auth/client-session";
 
+const PROOF = [
+  { icon: Stars01, text: "A screenshot or a Derja voice note matches a product in the shop." },
+  { icon: ShieldTick, text: "The price never drops under the floor you set." },
+  { icon: MarkerPin01, text: "A landmark description becomes a door pin you approve." },
+] as const;
+
 export function AuthForm({ mode }: { mode: "login" | "signup" }) {
   const router = useRouter();
+  const errorRef = useRef<HTMLDivElement>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const signup = mode === "signup";
+
+  useEffect(() => {
+    if (error) errorRef.current?.focus();
+  }, [error]);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -41,51 +51,97 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-md flex-col gap-6 px-4 py-16">
-      <div>
-        <p className="text-[11px] font-semibold tracking-[0.16em] text-brand-secondary uppercase">
-          {signup ? "Create a shop" : "Welcome back"}
-        </p>
-        <h1 className="mt-1 text-3xl font-semibold tracking-tight text-primary">
-          {signup ? "Sign up" : "Log in"}
-        </h1>
-        <p className="mt-2 text-sm text-tertiary">Email and password. That&apos;s the whole form.</p>
+    <div className="mx-auto grid w-full max-w-[1200px] items-center gap-10 px-4 py-12 lg:grid-cols-2 lg:py-20 sm:px-6">
+      <div className="wassalha-glass rounded-3xl p-6 sm:p-8">
+        <p className="text-xs font-semibold tracking-wide text-brand-secondary uppercase">Wassalha</p>
+        <h2 className="mt-3 text-3xl font-semibold tracking-tight text-primary">
+          A seller who answers, bargains, and pins the door.
+        </h2>
+        <ul className="mt-6 flex flex-col gap-4">
+          {PROOF.map((item) => {
+            const Icon = item.icon;
+            return (
+              <li key={item.text} className="flex items-start gap-3 text-base leading-relaxed text-tertiary">
+                <span className="mt-0.5 flex size-11 shrink-0 items-center justify-center rounded-xl bg-brand-primary text-brand-secondary">
+                  <Icon className="size-5" aria-hidden="true" />
+                </span>
+                <span>{item.text}</span>
+              </li>
+            );
+          })}
+        </ul>
       </div>
-      {error ? <Alert color="error">{error}</Alert> : null}
-      <form
-        onSubmit={(event) => void onSubmit(event)}
-        className="flex flex-col gap-4 rounded-2xl border border-secondary bg-primary p-5 shadow-xs"
-      >
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="email">Email</Label>
-          <Input id="email" type="email" autoComplete="email" value={email} onChange={setEmail} aria-label="Email" />
+
+      <div className="flex flex-col gap-6">
+        <div>
+          <p className="text-xs font-semibold tracking-wide text-brand-secondary uppercase">
+            {signup ? "Create a shop" : "Welcome back"}
+          </p>
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight text-primary">{signup ? "Sign up" : "Log in"}</h1>
+          <p className="mt-2 text-base text-tertiary">Email and password. That&apos;s the whole form.</p>
         </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="password">Password</Label>
+        <form
+          onSubmit={(event) => void onSubmit(event)}
+          aria-busy={busy}
+          className="flex flex-col gap-4 rounded-2xl border border-secondary bg-primary p-5 shadow-xs"
+          noValidate
+        >
+          {error ? (
+            <div
+              ref={errorRef}
+              id="auth-error"
+              tabIndex={-1}
+              role="alert"
+              className="rounded-xl border border-error_subtle bg-error-primary px-4 py-3 text-sm text-error-primary outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+            >
+              <p className="font-semibold">Couldn&apos;t continue</p>
+              <p className="mt-1">{error}</p>
+            </div>
+          ) : null}
           <Input
+            label="Email"
+            id="email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={setEmail}
+            isInvalid={Boolean(error)}
+            aria-describedby={error ? "auth-error" : undefined}
+            inputClassName="min-h-11 text-base"
+          />
+          <Input
+            label="Password"
             id="password"
             type="password"
             autoComplete={signup ? "new-password" : "current-password"}
             value={password}
             onChange={setPassword}
-            aria-label="Password"
+            isInvalid={Boolean(error)}
+            aria-describedby={error ? "auth-error" : undefined}
+            inputClassName="min-h-11 text-base"
           />
+          <Button type="submit" className="min-h-11" isDisabled={busy} isLoading={busy} showTextWhileLoading>
+            {busy ? "Please wait…" : signup ? "Create account" : "Log in"}
+          </Button>
+        </form>
+        <div className="flex flex-wrap items-center justify-between gap-3 text-base text-tertiary">
+          {signup ? (
+            <Link
+              href="/login"
+              className="font-medium text-primary hover:text-brand-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+            >
+              Already have an account? Log in
+            </Link>
+          ) : (
+            <Link
+              href="/signup"
+              className="font-medium text-primary hover:text-brand-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+            >
+              Need a shop? Sign up
+            </Link>
+          )}
+          <DemoAccountButton label="Try the desk" quiet />
         </div>
-        <Button type="submit" isDisabled={busy}>
-          {busy ? "Please wait…" : signup ? "Create account" : "Log in"}
-        </Button>
-      </form>
-      <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-tertiary">
-        {signup ? (
-          <Link href="/login" className="font-medium text-primary hover:text-brand-secondary">
-            Already have an account? Log in
-          </Link>
-        ) : (
-          <Link href="/signup" className="font-medium text-primary hover:text-brand-secondary">
-            Need a shop? Sign up
-          </Link>
-        )}
-        <DemoAccountButton label="Try the desk" />
       </div>
     </div>
   );

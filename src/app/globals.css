@@ -61,8 +61,184 @@
 }
 
 .pin-map .leaflet-control-attribution {
-  font-size: 10px;
+  font-size: 12px;
   background: transparent;
+}
+
+/*
+ * Public demo surfaces only. Seller desk keeps the Untitled purple ramp on :root.
+ * Values come from design-system/wassalha/MASTER.md (trust blue, orange CTA, slate text).
+ * Semantic aliases are restated here so they resolve against this ramp; inherited
+ * :root values are already computed and would stay purple.
+ */
+.wassalha-public {
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-2xl: 3rem;
+  --space-3xl: 4rem;
+
+  --font-sans: var(--font-jakarta), -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-body: var(--font-jakarta), -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-display: var(--font-jakarta), -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.5;
+  color: #1e293b;
+  background-color: #f8fafc;
+  background-image:
+    radial-gradient(ellipse 70% 45% at 0% -10%, rgb(37 99 235 / 0.16), transparent 58%),
+    radial-gradient(ellipse 50% 36% at 100% 0%, rgb(234 88 12 / 0.12), transparent 52%);
+
+  --color-brand-50: #eff6ff;
+  --color-brand-100: #dbeafe;
+  --color-brand-200: #bfdbfe;
+  --color-brand-300: #93c5fd;
+  --color-brand-400: #60a5fa;
+  --color-brand-500: #3b82f6;
+  --color-brand-600: #2563eb;
+  --color-brand-700: #1d4ed8;
+  --color-brand-800: #1e40af;
+  --color-brand-900: #1e3a8a;
+  --color-brand-950: #172554;
+
+  --color-utility-brand-50: var(--color-brand-50);
+  --color-utility-brand-50_alt: var(--color-brand-50);
+  --color-utility-brand-100: var(--color-brand-100);
+  --color-utility-brand-100_alt: var(--color-brand-100);
+  --color-utility-brand-200: var(--color-brand-200);
+  --color-utility-brand-200_alt: var(--color-brand-200);
+  --color-utility-brand-300: var(--color-brand-300);
+  --color-utility-brand-300_alt: var(--color-brand-300);
+  --color-utility-brand-400: var(--color-brand-400);
+  --color-utility-brand-400_alt: var(--color-brand-400);
+  --color-utility-brand-500: var(--color-brand-500);
+  --color-utility-brand-500_alt: var(--color-brand-500);
+  --color-utility-brand-600: var(--color-brand-600);
+  --color-utility-brand-600_alt: var(--color-brand-600);
+  --color-utility-brand-700: var(--color-brand-700);
+  --color-utility-brand-700_alt: var(--color-brand-700);
+  --color-utility-brand-800: var(--color-brand-800);
+  --color-utility-brand-800_alt: var(--color-brand-800);
+  --color-utility-brand-900: var(--color-brand-900);
+  --color-utility-brand-900_alt: var(--color-brand-900);
+
+  --color-text-primary: #1e293b;
+  --color-text-secondary: #334155;
+  --color-text-tertiary: #475569;
+  --text-color-primary: var(--color-text-primary);
+  --text-color-secondary: var(--color-text-secondary);
+  --text-color-tertiary: var(--color-text-tertiary);
+
+  --color-text-brand-primary: var(--color-brand-900);
+  --color-text-brand-secondary: var(--color-brand-700);
+  --color-text-brand-secondary_hover: var(--color-brand-800);
+  --color-text-brand-tertiary: var(--color-brand-600);
+  --color-text-brand-tertiary_alt: var(--color-brand-600);
+  --text-color-brand-primary: var(--color-text-brand-primary);
+  --text-color-brand-secondary: var(--color-text-brand-secondary);
+  --text-color-brand-secondary_hover: var(--color-text-brand-secondary_hover);
+  --text-color-brand-tertiary: var(--color-text-brand-tertiary);
+  --text-color-brand-tertiary_alt: var(--color-text-brand-tertiary_alt);
+
+  --color-fg-brand-primary: var(--color-brand-600);
+  --color-fg-brand-secondary: var(--color-brand-500);
+  --color-fg-brand-primary_alt: var(--color-fg-brand-primary);
+  --color-fg-brand-secondary_alt: var(--color-fg-brand-secondary);
+  --color-fg-brand-secondary_hover: var(--color-brand-600);
+
+  --color-bg-primary: #ffffff;
+  --color-bg-secondary: #f8fafc;
+  --color-bg-tertiary: #e9eff8;
+  --color-bg-brand-primary: var(--color-brand-50);
+  --color-bg-brand-primary_alt: var(--color-brand-50);
+  --color-bg-brand-secondary: var(--color-brand-100);
+  --color-bg-brand-solid: var(--color-brand-600);
+  --color-bg-brand-solid_hover: var(--color-brand-700);
+  --color-bg-brand-section: var(--color-brand-800);
+  --color-bg-brand-section_subtle: var(--color-brand-700);
+  --background-color-primary: var(--color-bg-primary);
+  --background-color-secondary: var(--color-bg-secondary);
+  --background-color-tertiary: var(--color-bg-tertiary);
+  --background-color-brand-primary: var(--color-bg-brand-primary);
+  --background-color-brand-primary_alt: var(--color-bg-brand-primary_alt);
+  --background-color-brand-secondary: var(--color-bg-brand-secondary);
+  --background-color-brand-solid: var(--color-bg-brand-solid);
+  --background-color-brand-solid_hover: var(--color-bg-brand-solid_hover);
+  --background-color-brand-section: var(--color-bg-brand-section);
+  --background-color-brand-section_subtle: var(--color-bg-brand-section_subtle);
+
+  --color-border-secondary: #e2e8f0;
+  --color-border-brand: var(--color-brand-500);
+  --color-border-brand_alt: var(--color-brand-600);
+  --border-color-secondary: var(--color-border-secondary);
+  --border-color-brand: var(--color-border-brand);
+  --border-color-brand_alt: var(--color-border-brand_alt);
+  --border-color-brand-solid: var(--color-bg-brand-solid);
+  --border-color-brand-solid_hover: var(--color-bg-brand-solid_hover);
+  --ring-color-secondary: var(--color-border-secondary);
+  --ring-color-brand: var(--color-border-brand);
+  --ring-color-brand_alt: var(--color-border-brand_alt);
+  --ring-color-brand-solid: var(--color-bg-brand-solid);
+  --ring-color-brand-solid_hover: var(--color-bg-brand-solid_hover);
+  --outline-color-brand: var(--color-border-brand);
+  --outline-color-brand_alt: var(--color-border-brand_alt);
+  --outline-color-brand-solid: var(--color-bg-brand-solid);
+  --outline-color-brand-solid_hover: var(--color-bg-brand-solid_hover);
+  --color-focus-ring: var(--color-brand-500);
+}
+
+.wassalha-public ::selection {
+  background-color: #dbeafe;
+  color: #1e3a8a;
+}
+
+.wassalha-glass {
+  background-color: rgb(255 255 255 / 0.78);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgb(255 255 255 / 0.7);
+  box-shadow: 0 12px 32px rgb(15 23 42 / 0.06);
+}
+
+.wassalha-feature {
+  background-color: #fafafa;
+}
+
+.wassalha-muted {
+  background-color: #e9eff8;
+}
+
+.wassalha-cta {
+  display: inline-flex;
+  min-height: 44px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  background-color: #ea580c;
+  padding: 0.75rem 1.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  color: #000;
+  transition: background-color 200ms ease, box-shadow 200ms ease;
+}
+
+.wassalha-cta:hover {
+  background-color: #f97316;
+}
+
+.wassalha-cta:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.wassalha-cta:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 @media (prefers-reduced-motion: reduce) {

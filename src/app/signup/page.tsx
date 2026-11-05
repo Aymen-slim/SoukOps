@@ -3,7 +3,7 @@ import { AuthForm } from "@/components/auth-form";
 
 export default function SignupPage() {
   return (
-    <main className="min-h-screen bg-dot-grid">
+    <main className="wassalha-public min-h-screen">
       <SiteBar />
       <AuthForm mode="signup" />
     </main>

@@ -59,7 +59,7 @@ async function StatusSection() {
     },
   ];
   return (
-    <section className="mt-16 grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
+    <section className="mt-6 grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
       <Card>
         <CardHeader className="border-b border-secondary/70">
           <div className="flex items-center justify-between gap-2">
@@ -100,27 +100,27 @@ async function StatusSection() {
         </CardHeader>
         <CardContent className="flex flex-1 flex-col justify-between gap-6">
           <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-xl border border-secondary/80 bg-tertiary/45 p-3">
-              <p className="text-[10px] font-semibold tracking-wider text-tertiary uppercase">LLM Provider</p>
+            <div className="rounded-xl border border-secondary/80 bg-primary p-3">
+              <p className="text-xs font-semibold tracking-wide text-tertiary uppercase">LLM Provider</p>
               <p className="mt-1 font-mono text-sm font-semibold text-primary">{status.llmProvider}</p>
             </div>
-            <div className="rounded-xl border border-secondary/80 bg-tertiary/45 p-3">
-              <p className="text-[10px] font-semibold tracking-wider text-tertiary uppercase">ASR Engine</p>
+            <div className="rounded-xl border border-secondary/80 bg-primary p-3">
+              <p className="text-xs font-semibold tracking-wide text-tertiary uppercase">ASR Engine</p>
               <p className="mt-1 font-mono text-sm font-semibold text-primary">{status.asrProvider}</p>
             </div>
-            <div className="rounded-xl border border-secondary/80 bg-tertiary/45 p-3">
-              <p className="text-[10px] font-semibold tracking-wider text-tertiary uppercase">Catalog Matcher</p>
+            <div className="rounded-xl border border-secondary/80 bg-primary p-3">
+              <p className="text-xs font-semibold tracking-wide text-tertiary uppercase">Catalog Matcher</p>
               <p className="mt-1 font-mono text-sm font-semibold text-primary">{status.matcher}</p>
             </div>
-            <div className="rounded-xl border border-secondary/80 bg-tertiary/45 p-3">
-              <p className="text-[10px] font-semibold tracking-wider text-tertiary uppercase">AI Mode</p>
+            <div className="rounded-xl border border-secondary/80 bg-primary p-3">
+              <p className="text-xs font-semibold tracking-wide text-tertiary uppercase">AI Mode</p>
               <p className="mt-1 font-mono text-sm font-semibold text-brand-secondary">{status.aiMode}</p>
             </div>
           </div>
 
-          <div className="rounded-xl bg-primary-solid p-3.5 text-xs text-white/85">
-            <p className="font-medium text-brand-200">Model proposes, code decides</p>
-            <p className="mt-1 leading-relaxed text-white/70">
+          <div className="wassalha-muted rounded-xl p-3.5 text-sm text-primary">
+            <p className="font-semibold text-brand-secondary">Model proposes, code decides</p>
+            <p className="mt-1 leading-relaxed text-tertiary">
               All millime calculations, floor clamping, risk badges, and order mutations execute in deterministic
               TypeScript.
             </p>
@@ -137,7 +137,7 @@ const CHANNELS = [
     name: "WhatsApp Business",
     href: "/demo?platform=whatsapp",
     badge: "Voice + Pin Link",
-    accentBg: "bg-[#25D366]",
+    accentBg: "bg-[#25D366] text-black",
     icon: WhatsAppIcon,
     desc: "Buyers send Derja voice notes & product screenshots, bargain down to your floor, tap native buttons, and confirm their door GPS pin.",
   },
@@ -146,7 +146,7 @@ const CHANNELS = [
     name: "Instagram Stories & DM",
     href: "/demo?platform=instagram",
     badge: "Story Match",
-    accentBg: "bg-gradient-to-tr from-[#FEDA75] via-[#D62976] to-[#4F5BD5]",
+    accentBg: "bg-gradient-to-tr from-[#FEDA75] via-[#D62976] to-[#4F5BD5] text-black",
     icon: InstagramIcon,
     desc: "Buyers reply directly to your Instagram Stories. SAM 3.1 cuts out the garment, PE-Core matches your catalog, and DM quick pills close the COD order.",
   },
@@ -155,7 +155,7 @@ const CHANNELS = [
     name: "Facebook Messenger",
     href: "/demo?platform=messenger",
     badge: "Page Shop",
-    accentBg: "bg-[#0084FF]",
+    accentBg: "bg-[#0084FF] text-white",
     icon: MessengerIcon,
     desc: "Answers Facebook Page shoppers in Tunisian Derja 24/7 with unified stock, risk scoring, and First Delivery waybills.",
   },
@@ -215,15 +215,29 @@ const PIPELINE_STEPS = [
   },
 ];
 
+const VALUE_PROPS = [
+  {
+    title: "Matched catalog product",
+    body: "An Instagram Story screenshot or a WhatsApp Derja voice note comes back as a product from your shop.",
+  },
+  {
+    title: "Floor stays put",
+    body: "The price never drops under your floor. Every reply passes the price firewall.",
+  },
+  {
+    title: "Door pin, then waybill",
+    body: "A landmark description snaps to a GPS door pin. You approve the waybill.",
+  },
+] as const;
+
 export default function Home() {
   return (
-    <main className="min-h-screen bg-dot-grid">
+    <main className="wassalha-public min-h-screen">
       <SiteBar />
-      <div className="mx-auto w-full max-w-6xl px-4 py-12 sm:px-6 sm:py-20">
-        {/* Hero Section */}
+      <div className="mx-auto w-full max-w-[1200px] px-4 py-12 sm:px-6 sm:py-20">
         <div className="grid items-center gap-10 lg:grid-cols-[1.15fr_0.85fr]">
           <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-secondary bg-primary px-3 py-1 text-xs font-medium text-primary shadow-2xs">
+            <div className="inline-flex items-center gap-2 rounded-full border border-secondary bg-primary/80 px-3 py-1 text-xs font-medium text-primary shadow-xs">
               <span className="size-2 rounded-full bg-brand-solid" />
               <span>Tunisian Social Commerce · WhatsApp + Instagram + Messenger</span>
             </div>
@@ -239,28 +253,23 @@ export default function Home() {
             </p>
 
             <div className="mt-8 flex flex-wrap items-center gap-3">
-              <Link
-                href="/demo"
-                className="inline-flex h-11 items-center gap-2 rounded-full bg-brand-solid px-6 text-sm font-semibold text-white shadow-xs-skeuomorphic transition-[transform,background-color] duration-150 ease-linear hover:bg-brand-solid_hover active:scale-[0.97]"
-              >
+              <Link href="/demo" className="wassalha-cta">
                 <span>Open live demo</span>
-                <ArrowRight className="size-4 text-white/85" />
+                <ArrowRight className="size-4" aria-hidden="true" />
               </Link>
               <Link
-                href="/demo?platform=instagram"
-                className="inline-flex h-11 items-center gap-2 rounded-full border border-secondary bg-primary px-5 text-sm font-medium text-primary shadow-2xs transition-colors hover:bg-secondary"
+                href="/signup"
+                className="inline-flex min-h-11 items-center rounded-full border border-brand px-5 text-sm font-semibold text-brand-secondary transition-colors duration-200 hover:bg-brand-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
               >
-                <span className="flex size-5 items-center justify-center rounded-md bg-gradient-to-tr from-[#FEDA75] via-[#D62976] to-[#4F5BD5] text-white">
-                  <InstagramIcon className="size-3.5" />
-                </span>
-                <span>Instagram view</span>
+                Sign up
               </Link>
-              <DemoAccountButton label="Enter demo account" />
+            </div>
+            <div className="mt-4">
+              <DemoAccountButton label="Enter demo account" quiet />
             </div>
           </div>
 
-          {/* Interactive Turn Anatomy Card */}
-          <div className="relative rounded-3xl border border-secondary/90 bg-primary p-5 shadow-lg">
+          <div className="wassalha-glass relative rounded-3xl p-5">
             <div className="flex items-center justify-between border-b border-secondary/70 pb-3.5">
               <div className="flex items-center gap-2.5">
                 <div className="flex size-8 items-center justify-center rounded-full bg-primary-solid text-xs font-semibold text-white">
@@ -268,7 +277,7 @@ export default function Home() {
                 </div>
                 <div>
                   <p className="text-xs font-semibold text-primary">Live Turn Pipeline</p>
-                  <p className="text-[11px] text-tertiary">Instagram Story / WhatsApp → Waybill FD</p>
+                  <p className="text-xs text-tertiary">Instagram Story / WhatsApp → Waybill FD</p>
                 </div>
               </div>
               <Badge color="brand" className="font-mono">
@@ -276,13 +285,13 @@ export default function Home() {
               </Badge>
             </div>
 
-            <div className="mt-4 flex flex-col gap-2.5 text-xs">
+            <div className="mt-4 flex flex-col gap-2.5 text-sm">
               <div className="flex items-start gap-3 rounded-xl bg-tertiary/60 p-3">
                 <Mic className="mt-0.5 size-4 shrink-0 text-brand-secondary" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-semibold text-primary">Buyer Voice + Story Screenshot</span>
-                    <span className="font-mono text-[10px] tabular-nums text-tertiary">ASR 1.8s</span>
+                    <span className="font-mono text-xs tabular-nums text-tertiary">ASR 1.8s</span>
                   </div>
                   <p className="mt-0.5 text-tertiary" dir="auto">
                     &ldquo;n7eb el sweat el jaune taille L, noskon fi Ennasr wra 9ahwet Cosmitto&rdquo;
@@ -323,26 +332,78 @@ export default function Home() {
                   <CheckCircle2 className="size-4 text-utility-green-400" />
                   <span className="font-medium">Buyer tapped Akked → Waybill Ready</span>
                 </div>
-                <span className="font-mono text-[11px] tabular-nums text-white/80">FD0000000123</span>
+                <span className="font-mono text-xs tabular-nums text-white/80">FD0000000123</span>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Omnichannel Demo Preview Cards */}
+        <section className="mt-16">
+          <p className="text-xs font-semibold tracking-wide text-brand-secondary uppercase">What it holds</p>
+          <h2 className="mt-1 text-2xl font-semibold tracking-tight text-primary">Three promises on every order</h2>
+          <div className="mt-6 grid gap-4 md:grid-cols-3">
+            {VALUE_PROPS.map((item) => (
+              <div key={item.title} className="wassalha-feature rounded-2xl border border-secondary p-5">
+                <h3 className="text-base font-semibold text-primary">{item.title}</h3>
+                <p className="mt-2 text-base leading-relaxed text-tertiary">{item.body}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
         <section className="mt-16">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
-              <p className="text-[11px] font-semibold tracking-[0.16em] text-brand-secondary uppercase">
-                Omnichannel Demo
-              </p>
+              <p className="text-xs font-semibold tracking-wide text-brand-secondary uppercase">System architecture</p>
+              <h2 className="mt-1 text-2xl font-semibold tracking-tight text-primary">
+                Four guardrails between a DM and a courier truck
+              </h2>
+            </div>
+            <p className="text-sm text-tertiary">
+              Zero hallucinated prices · Zero unpinned addresses · Zero unverified waybills
+            </p>
+          </div>
+
+          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {PIPELINE_STEPS.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Card key={item.step} className="wassalha-feature justify-between shadow-none">
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <span className="flex size-11 items-center justify-center rounded-xl bg-brand-primary text-brand-secondary ring-1 ring-secondary">
+                        <Icon className="size-4" aria-hidden="true" />
+                      </span>
+                      <span className="font-mono text-xs font-semibold tabular-nums text-tertiary">{item.step}</span>
+                    </div>
+                    <CardTitle className="mt-3 text-base">{item.title}</CardTitle>
+                    <CardDescription className="mt-1 text-sm leading-relaxed">{item.desc}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Badge color="gray" className="font-mono text-xs">
+                      {item.tag}
+                    </Badge>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="mt-16">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold tracking-wide text-brand-secondary uppercase">Omnichannel demo</p>
               <h2 className="mt-1 text-2xl font-semibold tracking-tight text-primary">
                 Test the buyer experience on every Tunisian social inbox
               </h2>
             </div>
-            <Link href="/demo" className="inline-flex items-center gap-1 text-sm font-semibold text-brand-secondary">
+            <Link
+              href="/demo"
+              className="inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-brand-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+            >
               <span>Switch live inside the simulator</span>
-              <ArrowUpRight className="size-4" />
+              <ArrowUpRight className="size-4" aria-hidden="true" />
             </Link>
           </div>
 
@@ -353,11 +414,11 @@ export default function Home() {
                 <Link
                   key={ch.id}
                   href={ch.href}
-                  className="group flex flex-col justify-between rounded-2xl border border-secondary bg-primary p-5 shadow-xs transition-all duration-150 hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-md"
+                  className="group flex flex-col justify-between rounded-2xl border border-secondary p-5 shadow-xs transition-shadow duration-200 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand wassalha-feature"
                 >
                   <div>
                     <div className="flex items-center justify-between gap-3">
-                      <span className={`flex size-10 items-center justify-center rounded-xl text-white shadow-xs ${ch.accentBg}`}>
+                      <span className={`flex size-11 items-center justify-center rounded-xl shadow-xs ${ch.accentBg}`}>
                         <Icon className="size-5" />
                       </span>
                       <Badge color="gray" size="sm">
@@ -369,9 +430,9 @@ export default function Home() {
                     </h3>
                     <p className="mt-1.5 text-sm leading-relaxed text-tertiary">{ch.desc}</p>
                   </div>
-                  <div className="mt-5 inline-flex items-center gap-1.5 text-xs font-semibold text-brand-secondary">
+                  <div className="mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-brand-secondary">
                     <span>Launch {ch.name} demo</span>
-                    <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
+                    <ArrowRight className="size-3.5" aria-hidden="true" />
                   </div>
                 </Link>
               );
@@ -379,69 +440,61 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 4-Step Architecture Grid */}
         <section className="mt-16">
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <p className="text-[11px] font-semibold tracking-[0.16em] text-brand-secondary uppercase">
-                System Architecture
-              </p>
-              <h2 className="mt-1 text-2xl font-semibold tracking-tight text-primary">
-                Four guardrails between a DM and a courier truck
-              </h2>
-            </div>
-            <p className="text-xs text-tertiary">
-              Zero hallucinated prices · Zero unpinned addresses · Zero unverified waybills
-            </p>
-          </div>
-
-          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {PIPELINE_STEPS.map((item) => {
-              const Icon = item.icon;
-              return (
-                <Card key={item.step} className="justify-between">
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <span className="flex size-9 items-center justify-center rounded-xl bg-tertiary text-primary ring-1 ring-secondary">
-                        <Icon className="size-4 text-brand-secondary" />
-                      </span>
-                      <span className="font-mono text-xs font-semibold tabular-nums text-tertiary">{item.step}</span>
-                    </div>
-                    <CardTitle className="mt-3 text-base">{item.title}</CardTitle>
-                    <CardDescription className="mt-1">{item.desc}</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <Badge color="gray" className="font-mono text-[10px]">
-                      {item.tag}
-                    </Badge>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="mt-16">
-          <p className="text-[11px] font-semibold tracking-[0.16em] text-brand-secondary uppercase">Meta AI Stack</p>
+          <p className="text-xs font-semibold tracking-wide text-brand-secondary uppercase">Meta AI stack</p>
           <h2 className="mt-1 text-2xl font-semibold tracking-tight text-primary">The models behind the agent</h2>
           <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {MODELS.map((model) => (
-              <Card key={model.name}>
+              <Card key={model.name} className="wassalha-feature shadow-none">
                 <CardHeader>
-                  <Badge color="brand" className="w-fit font-mono text-[10px]">
+                  <Badge color="brand" className="w-fit font-mono text-xs">
                     {model.role}
                   </Badge>
                   <CardTitle className="mt-3 text-base">{model.name}</CardTitle>
-                  <CardDescription className="mt-1">{model.desc}</CardDescription>
+                  <CardDescription className="mt-1 text-sm leading-relaxed">{model.desc}</CardDescription>
                 </CardHeader>
               </Card>
             ))}
           </div>
         </section>
 
-        <Suspense fallback={<p className="mt-16 text-sm text-tertiary">Loading provider telemetry…</p>}>
-          <StatusSection />
-        </Suspense>
+        <section className="wassalha-glass mt-16 rounded-3xl px-6 py-10 sm:px-10">
+          <p className="text-xs font-semibold tracking-wide text-brand-secondary uppercase">Try the buyer path</p>
+          <h2 className="mt-2 max-w-xl text-3xl font-semibold tracking-tight text-primary">
+            Open the live demo and send a Derja note.
+          </h2>
+          <p className="mt-3 max-w-xl text-base leading-relaxed text-tertiary">
+            Switch WhatsApp, Instagram, and Messenger in the same shop. Prices stay on the floor. The pin link is the
+            door.
+          </p>
+          <Link href="/demo" className="wassalha-cta mt-6">
+            <span>Open live demo</span>
+            <ArrowRight className="size-4" aria-hidden="true" />
+          </Link>
+        </section>
+
+        <section className="mt-16">
+          <p className="text-xs font-semibold tracking-wide text-tertiary uppercase">Provider status</p>
+          <h2 className="mt-1 text-xl font-semibold tracking-tight text-primary">What this environment can reach</h2>
+          <Suspense fallback={<p className="mt-6 text-base text-tertiary">Loading provider telemetry…</p>}>
+            <StatusSection />
+          </Suspense>
+        </section>
+
+        <footer className="mt-16 flex flex-wrap items-center justify-between gap-4 border-t border-secondary py-8 text-sm text-tertiary">
+          <p>Wassalha · Tunisian social commerce</p>
+          <nav aria-label="Footer" className="flex flex-wrap gap-x-5 gap-y-2">
+            <Link href="/demo" className="font-medium text-primary hover:text-brand-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">
+              Live demo
+            </Link>
+            <Link href="/login" className="font-medium text-primary hover:text-brand-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">
+              Log in
+            </Link>
+            <Link href="/signup" className="font-medium text-primary hover:text-brand-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">
+              Sign up
+            </Link>
+          </nav>
+        </footer>
       </div>
     </main>
   );

@@ -698,7 +698,7 @@ export default function SimulatorClient({
       : null;
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
+    <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
       {/* Top Omnichannel Header & Live Platform Switcher */}
       <div className="flex flex-col justify-between gap-4 rounded-2xl border border-secondary bg-primary p-4 shadow-xs lg:flex-row lg:items-center sm:px-5">
         <div className="min-w-0">
@@ -711,27 +711,27 @@ export default function SimulatorClient({
           <h1 className="mt-1 text-xl font-semibold tracking-tight text-primary sm:text-2xl">
             {meta.shortTitle} Simulator
           </h1>
-          <p className="mt-0.5 text-xs text-tertiary sm:text-sm">{meta.capabilityLine}</p>
+          <p className="mt-1 text-sm leading-relaxed text-tertiary">{meta.capabilityLine}</p>
         </div>
 
         {/* Platform Switcher Tabs */}
         <div
           role="tablist"
           aria-label="Messaging platform"
-          className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-secondary bg-secondary p-1"
+          className="inline-flex max-w-full shrink-0 flex-wrap items-center gap-2 rounded-xl border border-secondary bg-secondary p-1"
         >
           <button
             type="button"
             role="tab"
             aria-selected={platform === "whatsapp"}
             onClick={() => setPlatform("whatsapp")}
-            className={`inline-flex cursor-pointer items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold transition-all sm:text-sm ${
+            className={`inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-lg px-3.5 text-sm font-semibold transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
               platform === "whatsapp"
-                ? "bg-[#00A884] text-white shadow-xs"
+                ? "bg-[#00A884] text-black shadow-xs"
                 : "text-tertiary hover:text-primary"
             }`}
           >
-            <span className="flex size-5 items-center justify-center rounded-md bg-[#25D366] text-white">
+            <span className="flex size-5 items-center justify-center rounded-md bg-[#25D366] text-black">
               <WhatsAppIcon className="size-3.5" />
             </span>
             WhatsApp
@@ -742,13 +742,13 @@ export default function SimulatorClient({
             role="tab"
             aria-selected={platform === "instagram"}
             onClick={() => setPlatform("instagram")}
-            className={`inline-flex cursor-pointer items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold transition-all sm:text-sm ${
+            className={`inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-lg px-3.5 text-sm font-semibold transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
               platform === "instagram"
-                ? "bg-gradient-to-r from-[#833AB4] via-[#D62976] to-[#F77737] text-white shadow-xs"
+                ? "bg-[#833AB4] text-white shadow-xs"
                 : "text-tertiary hover:text-primary"
             }`}
           >
-            <span className="flex size-5 items-center justify-center rounded-md bg-gradient-to-tr from-[#FEDA75] via-[#D62976] to-[#4F5BD5] text-white">
+            <span className="flex size-5 items-center justify-center rounded-md bg-gradient-to-tr from-[#FEDA75] via-[#D62976] to-[#4F5BD5] text-black">
               <InstagramIcon className="size-3.5" />
             </span>
             Instagram
@@ -759,9 +759,9 @@ export default function SimulatorClient({
             role="tab"
             aria-selected={platform === "messenger"}
             onClick={() => setPlatform("messenger")}
-            className={`inline-flex cursor-pointer items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold transition-all sm:text-sm ${
+            className={`inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-lg px-3.5 text-sm font-semibold transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
               platform === "messenger"
-                ? "bg-[#0084FF] text-white shadow-xs"
+                ? "bg-[#0084FF] text-black shadow-xs"
                 : "text-tertiary hover:text-primary"
             }`}
           >
@@ -779,7 +779,7 @@ export default function SimulatorClient({
         <aside className="order-2 flex flex-col gap-3 xl:order-1 xl:max-h-[calc(100dvh-9rem)] xl:overflow-y-auto xl:pr-1">
           <div className="flex items-baseline justify-between">
             <div>
-              <p className="text-[11px] font-semibold tracking-[0.16em] text-brand-secondary uppercase">Catalog</p>
+              <p className="text-xs font-semibold tracking-wide text-brand-secondary uppercase">Catalog</p>
               <h2 className="mt-0.5 text-base font-semibold tracking-tight text-primary">Shop items</h2>
             </div>
             <span className="font-mono text-xs tabular-nums text-tertiary">{products.length} items</span>
@@ -800,7 +800,7 @@ export default function SimulatorClient({
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={product.imageUrl}
-                        alt=""
+                        alt={product.name}
                         loading="lazy"
                         decoding="async"
                         className="size-14 shrink-0 rounded-lg bg-tertiary object-cover ring-1 ring-secondary"
@@ -815,8 +815,8 @@ export default function SimulatorClient({
                         <span className="font-mono text-xs font-semibold tabular-nums text-primary">
                           {formatPrice(product.priceMillimes)}
                         </span>
-                        <span className={`inline-flex items-center gap-1 text-[10px] font-medium ${product.stock > 0 ? "text-[#067647]" : "text-[#B42318]"}`}>
-                          <span className={`size-1.5 rounded-full ${product.stock > 0 ? "bg-[#12B76A]" : "bg-[#F04438]"}`} />
+                        <span className={`inline-flex items-center gap-1 text-xs font-medium ${product.stock > 0 ? "text-success-primary" : "text-error-primary"}`}>
+                          <span className={`size-1.5 rounded-full ${product.stock > 0 ? "bg-success-solid" : "bg-error-solid"}`} />
                           {product.stock > 0 ? `${product.stock} left` : "Out of stock"}
                         </span>
                       </div>
@@ -826,12 +826,12 @@ export default function SimulatorClient({
                     type="button"
                     disabled={!conversationId || awaiting}
                     onClick={() => void askAboutProduct(product)}
-                    className={`w-full cursor-pointer rounded-full px-2.5 py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50 ${
+                    className={`min-h-11 w-full cursor-pointer rounded-full px-3 text-sm font-semibold transition-opacity duration-200 hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:opacity-50 ${
                       platform === "whatsapp"
-                        ? "bg-[#00A884]"
+                        ? "bg-[#00A884] text-black"
                         : platform === "instagram"
-                          ? "bg-gradient-to-r from-[#833AB4] via-[#D62976] to-[#F77737]"
-                          : "bg-[#0084FF]"
+                          ? "bg-[#833AB4] text-white"
+                          : "bg-[#0084FF] text-black"
                     }`}
                   >
                     {meta.askCta}
@@ -847,7 +847,7 @@ export default function SimulatorClient({
           {/* Persona Switcher */}
           <div className="flex w-full max-w-[398px] flex-wrap justify-center gap-1.5">
             {slug ? (
-              <Button size="xs" color="primary" onClick={() => void startConversation("new")}>
+              <Button size="xs" color="primary" className="min-h-11" onClick={() => void startConversation("new")}>
                 New chat
               </Button>
             ) : (
@@ -856,6 +856,7 @@ export default function SimulatorClient({
                   key={p.id}
                   size="xs"
                   color={persona === p.id ? "primary" : "secondary"}
+                  className="min-h-11"
                   onClick={() => void startConversation(p.id)}
                 >
                   {p.labelEn}
@@ -869,7 +870,7 @@ export default function SimulatorClient({
               <UserCheck className="size-3.5 text-brand-secondary" />
               {shownName}
             </span>
-            <span className="font-mono text-[11px] tabular-nums text-tertiary">{shownPhone}</span>
+            <span className="font-mono text-xs tabular-nums text-tertiary">{shownPhone}</span>
           </div>
 
           {/* Mobile Device Mockup */}
@@ -1219,18 +1220,18 @@ export default function SimulatorClient({
 
           {/* Quick-Try Derja Scenario Chips */}
           <div className="flex w-full max-w-[398px] flex-col gap-1.5 rounded-2xl border border-secondary bg-primary p-3 shadow-2xs">
-            <p className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wider text-tertiary uppercase">
+            <p className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-tertiary uppercase">
               <Sparkles className="size-3.5 text-brand-secondary" />
               Try in 1 click (Bargaining &amp; AI Location)
             </p>
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-2">
               {QUICK_SCENARIOS.map((item) => (
                 <button
                   key={item.label}
                   type="button"
                   disabled={!conversationId || awaiting}
                   onClick={() => void send({ kind: "text", body: item.prompt })}
-                  className="cursor-pointer rounded-full border border-secondary bg-secondary/70 px-2.5 py-1 text-left text-xs font-medium text-secondary transition-colors hover:border-brand/40 hover:bg-brand-primary/50 hover:text-brand-secondary disabled:opacity-50"
+                  className="min-h-11 cursor-pointer rounded-full border border-secondary bg-secondary/70 px-3 text-left text-sm font-medium text-secondary transition-colors duration-200 hover:border-brand/40 hover:bg-brand-primary/50 hover:text-brand-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {item.label}
                 </button>
@@ -1264,13 +1265,13 @@ export default function SimulatorClient({
           <CardContent className="flex flex-col gap-4">
             {visibleSlots.length > 0 ? (
               <div className="rounded-xl border border-secondary/80 bg-tertiary/45 p-3">
-                <p className="mb-2 text-[11px] font-semibold tracking-wider text-tertiary uppercase">{t.slots}</p>
+                <p className="mb-2 text-xs font-semibold tracking-wide text-tertiary uppercase">{t.slots}</p>
                 {draftSummary ? (
-                  <p className="mb-2 font-mono text-[11px] text-secondary">Draft: {draftSummary}</p>
+                  <p className="mb-2 font-mono text-xs text-secondary">Draft: {draftSummary}</p>
                 ) : null}
                 <div className="flex flex-wrap gap-1.5">
                   {visibleSlots.map(([k, v]) => (
-                    <Badge key={k} color="gray" className="bg-primary font-mono text-[11px]">
+                    <Badge key={k} color="gray" className="bg-primary font-mono text-xs">
                       {k}: {String(v)}
                     </Badge>
                   ))}
@@ -1287,8 +1288,8 @@ export default function SimulatorClient({
               {events.map((event) => (
                 <div
                   key={event.id}
-                  className={`rounded-xl border px-3.5 py-2.5 text-xs shadow-2xs ${
-                    event.ok ? "border-secondary/80 bg-primary" : "border-[#FECDCA] bg-[#FFFBEB]"
+                  className={`rounded-xl border px-3.5 py-2.5 text-sm shadow-2xs ${
+                    event.ok ? "border-secondary/80 bg-primary" : "border-error_subtle bg-warning-primary"
                   }`}
                 >
                   <div className="flex flex-wrap items-center gap-2">
@@ -1296,16 +1297,16 @@ export default function SimulatorClient({
                       {event.kind}
                     </Badge>
                     {event.provider ? (
-                      <span className="font-mono text-[11px] font-medium text-primary">
+                      <span className="font-mono text-xs font-medium text-primary">
                         {event.provider}/{event.model}
                       </span>
                     ) : null}
                     {event.latency_ms !== null ? (
-                      <span className="rounded bg-tertiary px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-tertiary">
+                      <span className="rounded bg-tertiary px-1.5 py-0.5 font-mono text-xs tabular-nums text-tertiary">
                         {event.latency_ms}ms
                       </span>
                     ) : null}
-                    <span className="ml-auto font-mono text-[10px] tabular-nums text-tertiary">
+                    <span className="ml-auto font-mono text-xs tabular-nums text-tertiary">
                       {new Date(event.created_at).toLocaleTimeString([], {
                         hour: "2-digit",
                         minute: "2-digit",
@@ -1319,17 +1320,17 @@ export default function SimulatorClient({
                     </p>
                   ) : null}
                   {event.kind === "understand" ? (
-                    <pre className="mt-2 max-h-44 overflow-auto rounded-lg bg-tertiary/65 p-2.5 font-mono text-[10px] leading-relaxed">
+                    <pre className="mt-2 max-h-44 overflow-auto rounded-lg bg-tertiary/65 p-2.5 font-mono text-xs leading-relaxed">
                       {JSON.stringify((event.detail as { understanding?: unknown }).understanding, null, 2)}
                     </pre>
                   ) : null}
                   {event.kind.startsWith("vision.") && event.kind !== "vision.pending" ? (
-                    <pre className="mt-2 max-h-44 overflow-auto rounded-lg bg-tertiary/65 p-2.5 font-mono text-[10px] leading-relaxed">
+                    <pre className="mt-2 max-h-44 overflow-auto rounded-lg bg-tertiary/65 p-2.5 font-mono text-xs leading-relaxed">
                       {JSON.stringify(event.detail, null, 2)}
                     </pre>
                   ) : null}
                   {event.kind.startsWith("address.") ? (
-                    <pre className="mt-2 max-h-36 overflow-auto rounded-lg bg-tertiary/65 p-2 font-mono text-[10px] leading-relaxed">
+                    <pre className="mt-2 max-h-36 overflow-auto rounded-lg bg-tertiary/65 p-2 font-mono text-xs leading-relaxed">
                       {JSON.stringify(event.detail, null, 2)}
                     </pre>
                   ) : null}

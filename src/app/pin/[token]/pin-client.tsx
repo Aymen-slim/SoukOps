@@ -466,12 +466,12 @@ export default function PinClient({
 
   if (state === "done") {
     return (
-      <div className="grid h-dvh place-items-center bg-dot-grid px-6">
+      <div className="wassalha-public grid h-dvh place-items-center px-6">
         <div className="max-w-sm rounded-3xl border border-secondary bg-primary p-8 text-center shadow-lg">
           <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-success-primary text-success-primary ring-1 ring-utility-green-200">
-            <CheckCircle2 className="size-6" />
+            <CheckCircle2 className="size-6" aria-hidden="true" />
           </div>
-          <p className="mt-4 text-[11px] font-semibold tracking-[0.18em] text-tertiary uppercase">
+          <p className="mt-4 text-xs font-semibold tracking-wide text-tertiary uppercase">
             Wassalha
           </p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-primary">
@@ -487,7 +487,7 @@ export default function PinClient({
           <button
             type="button"
             onClick={backToChat}
-            className="mt-5 h-11 w-full cursor-pointer rounded-full bg-brand-solid text-sm font-semibold text-white transition-[transform,filter] duration-150 ease-linear hover:brightness-95 active:scale-[0.98]"
+            className="wassalha-cta mt-5 w-full"
           >
             Return to the chat
           </button>
@@ -499,7 +499,7 @@ export default function PinClient({
   const badge = sourceBadgeMeta(activeSource);
 
   return (
-    <div className="relative h-dvh w-full overflow-hidden bg-secondary">
+    <div className="wassalha-public relative h-dvh w-full overflow-hidden">
       {mapFailed ? (
         <div className="grid h-full place-items-center px-6 text-center text-sm text-secondary">
           The map didn&apos;t open. You can still confirm the landmark, or reload the page.
@@ -510,13 +510,13 @@ export default function PinClient({
 
       {/* Top Floating HUD + AI Location Description Search */}
       <div className="pointer-events-none absolute inset-x-0 top-3 z-[500] flex flex-col items-center gap-2 px-3 sm:px-4">
-        <div className="flex items-center gap-2.5 rounded-full border border-secondary bg-primary/95 px-3.5 py-1 shadow-sm backdrop-blur-md">
-          <span className="flex size-5 items-center justify-center rounded-full bg-primary-solid text-[10px] font-bold text-white">
+        <div className="flex min-h-11 items-center gap-2.5 rounded-full border border-secondary bg-primary/95 px-3.5 shadow-sm backdrop-blur-md">
+          <span className="flex size-6 items-center justify-center rounded-full bg-primary-solid text-xs font-bold text-white">
             W
           </span>
-          <span className="text-xs font-semibold text-primary">Wassalha Pin</span>
+          <span className="text-sm font-semibold text-primary">Wassalha Pin</span>
           {mapProvider === "google" ? (
-            <span className="text-[11px] font-medium text-tertiary">Google Maps</span>
+            <span className="text-xs font-medium text-tertiary">Google Maps</span>
           ) : null}
           <span className="font-mono text-xs tabular-nums text-tertiary">
             {coords.lat.toFixed(4)}, {coords.lng.toFixed(4)}
@@ -527,8 +527,8 @@ export default function PinClient({
           onSubmit={(e) => void runDescriptionSearch(e)}
           className="pointer-events-auto flex w-full max-w-lg items-center gap-1.5 rounded-2xl border border-secondary bg-primary/95 p-1.5 shadow-md backdrop-blur-md"
         >
-          <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-brand-primary text-brand-secondary">
-            <Sparkles className={`size-4 ${searching ? "animate-spin" : ""}`} />
+          <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-brand-primary text-brand-secondary">
+            <Sparkles className={`size-4 ${searching ? "animate-spin" : ""}`} aria-hidden="true" />
           </div>
           <input
             type="text"
@@ -537,7 +537,7 @@ export default function PinClient({
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Describe your spot (Derja, French, Arabic)…"
             aria-label="Describe your spot"
-            className="min-w-0 flex-1 bg-transparent px-1.5 text-sm text-primary placeholder:text-tertiary focus:outline-none"
+            className="min-h-11 min-w-0 flex-1 bg-transparent px-1.5 text-base text-primary placeholder:text-tertiary focus:outline-none"
           />
           {searchQuery ? (
             <button
@@ -548,7 +548,7 @@ export default function PinClient({
                 setSearchMessage(null);
               }}
               aria-label="Clear search"
-              className="grid size-7 shrink-0 cursor-pointer place-items-center rounded-lg text-tertiary hover:bg-tertiary hover:text-primary"
+              className="grid size-11 shrink-0 cursor-pointer place-items-center rounded-lg text-tertiary transition-colors duration-200 hover:bg-tertiary hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
             >
               <XClose className="size-4" />
             </button>
@@ -557,7 +557,7 @@ export default function PinClient({
             type="submit"
             disabled={searching || searchQuery.trim().length < 2}
             aria-label="Find location"
-            className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-xl bg-brand-solid px-3 text-xs font-semibold text-white transition-opacity hover:opacity-95 disabled:opacity-45"
+            className="inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-xl bg-brand-solid px-4 text-sm font-semibold text-white transition-colors duration-200 hover:bg-brand-solid_hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:opacity-45"
           >
             <SearchLg className="size-3.5" />
             <span>{searching ? "Finding…" : "Find"}</span>
@@ -565,7 +565,7 @@ export default function PinClient({
         </form>
 
         {searchResults.length > 1 ? (
-          <div className="pointer-events-auto flex w-full max-w-lg gap-1.5 overflow-x-auto pb-1">
+          <div className="pointer-events-auto flex w-full max-w-lg gap-2 overflow-x-auto pb-1">
             {searchResults.map((c) => {
               const active = selectedCandidateId === c.id;
               return (
@@ -573,7 +573,7 @@ export default function PinClient({
                   key={c.id}
                   type="button"
                   onClick={() => pickCandidate(c)}
-                  className={`inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium shadow-xs backdrop-blur-md transition-colors ${
+                  className={`inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-3 text-sm font-medium shadow-xs backdrop-blur-md transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
                     active
                       ? "border-brand bg-brand-solid text-white"
                       : "border-secondary bg-primary/95 text-secondary hover:bg-tertiary"
@@ -621,7 +621,7 @@ export default function PinClient({
         onClick={locateMe}
         disabled={locating || mapFailed}
         aria-label="Use my location"
-        className="absolute right-4 bottom-[256px] z-[500] grid size-12 cursor-pointer place-items-center rounded-full bg-primary text-primary shadow-lg ring-1 ring-secondary transition-transform duration-150 ease-linear hover:bg-tertiary active:scale-[0.96] disabled:opacity-50"
+        className="absolute right-4 bottom-[256px] z-[500] grid size-12 cursor-pointer place-items-center rounded-full bg-primary text-primary shadow-lg ring-1 ring-secondary transition-colors duration-200 hover:bg-tertiary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:opacity-50"
       >
         <LocateFixed className={`size-5 ${locating ? "animate-pulse text-brand-secondary" : ""}`} />
       </button>
@@ -632,7 +632,7 @@ export default function PinClient({
           <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-quaternary" />
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <p className="text-[11px] font-semibold tracking-wider text-brand-secondary uppercase">
+              <p className="text-xs font-semibold tracking-wide text-brand-secondary uppercase">
                 Deliver here
               </p>
               <Badge color={badge.color} size="sm">
@@ -653,15 +653,25 @@ export default function PinClient({
             Drag the map until the pin sits directly on your door, or search by landmark above.
           </p>
 
-          {geoMessage ? <p className="mt-2 text-xs font-medium text-warning-primary">{geoMessage}</p> : null}
-          {!pinOk ? <p className="mt-2 text-xs font-medium text-error-primary">Keep the pin inside Tunisia.</p> : null}
+          {geoMessage ? (
+            <p className="mt-2 text-sm font-medium text-warning-primary" role="status">
+              {geoMessage}
+            </p>
+          ) : null}
+          {!pinOk ? (
+            <p className="mt-2 text-sm font-medium text-error-primary" role="alert">
+              Keep the pin inside Tunisia.
+            </p>
+          ) : null}
           {state === "error" && errorDetail ? (
-            <p className="mt-2 text-xs font-medium text-error-primary">{errorDetail}</p>
+            <p className="mt-2 text-sm font-medium text-error-primary" role="alert">
+              {errorDetail}
+            </p>
           ) : null}
 
           <button
             type="button"
-            className="mt-3 inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-tertiary transition-colors hover:text-primary"
+            className="mt-3 inline-flex min-h-11 cursor-pointer items-center gap-1 text-sm font-medium text-tertiary transition-colors duration-200 hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
             onClick={() => setDetails((open) => !open)}
           >
             <span>{details ? "Hide details" : "Floor or a note for the driver"}</span>
@@ -671,16 +681,18 @@ export default function PinClient({
           {details ? (
             <div className="mt-2.5 flex flex-col gap-2">
               <Input
+                label="Floor"
                 value={floor}
                 onChange={setFloor}
-                placeholder="Floor / apartment"
-                inputClassName="h-10"
+                placeholder="Apartment"
+                inputClassName="min-h-11 text-base"
               />
               <Input
+                label="Note for the driver"
                 value={driverNote}
                 onChange={setDriverNote}
                 placeholder="Blue door, call when you arrive"
-                inputClassName="h-10"
+                inputClassName="min-h-11 text-base"
               />
             </div>
           ) : null}
@@ -689,7 +701,7 @@ export default function PinClient({
             type="button"
             onClick={() => void confirm()}
             disabled={state === "sending" || !pinOk}
-            className="mt-4 h-12 w-full cursor-pointer rounded-full bg-brand-solid text-sm font-semibold text-white shadow-[0_2px_8px_rgba(28,25,23,0.14)] transition-[transform,filter] duration-150 ease-linear hover:brightness-95 active:scale-[0.98] disabled:opacity-50"
+            className="wassalha-cta mt-4 w-full disabled:opacity-50"
           >
             {state === "sending" ? "Saving…" : "Confirm this spot"}
           </button>

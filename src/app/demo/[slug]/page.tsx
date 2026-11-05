@@ -54,16 +54,24 @@ export default function ShopDemoPage({
 }) {
   if (!simulatorIsPublic()) {
     return (
-      <main className="min-h-screen bg-dot-grid">
+      <main className="wassalha-public min-h-screen">
         <SiteBar />
-        <p className="mx-auto w-full max-w-6xl px-4 py-10 text-sm text-tertiary">The demo is closed for now.</p>
+        <p className="mx-auto min-h-[70vh] w-full max-w-[1200px] px-4 py-10 text-base text-tertiary sm:px-6">
+          The demo is closed for now.
+        </p>
       </main>
     );
   }
   return (
-    <main className="min-h-screen bg-dot-grid">
+    <main className="wassalha-public min-h-screen">
       <SiteBar />
-      <Suspense fallback={<p className="p-6 text-sm text-tertiary">Loading the shop…</p>}>
+      <Suspense
+        fallback={
+          <p className="mx-auto min-h-[70vh] w-full max-w-[1200px] px-4 py-10 text-base text-tertiary sm:px-6">
+            Loading the shop…
+          </p>
+        }
+      >
         <ShopDemoLoader params={params} searchParams={searchParams} />
       </Suspense>
     </main>

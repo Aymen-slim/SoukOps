@@ -24,60 +24,61 @@ function SiteBarFrame({ path }: { path: string }) {
   const onDemo = path === "/demo" || path.startsWith("/demo/") || path === "/simulator";
 
   return (
-    <header className="sticky top-0 z-40 border-b border-secondary bg-primary/90 backdrop-blur-xl">
-      <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
-        <Link href="/" className="group flex shrink-0 items-center gap-2.5">
-          <span className="relative flex size-8 items-center justify-center rounded-lg bg-brand-solid text-white shadow-xs-skeuomorphic transition-transform duration-100 ease-linear group-hover:scale-105">
-            <MarkerPin01 className="size-4 stroke-[2.2]" />
+    <header className="sticky top-0 z-40 border-b border-white/70 bg-white/75 backdrop-blur-xl">
+      <div className="mx-auto flex h-16 w-full max-w-[1200px] items-center justify-between gap-3 px-4 sm:px-6">
+        <Link href="/" className="group flex shrink-0 items-center gap-2.5 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">
+          <span className="relative flex size-8 items-center justify-center rounded-lg bg-brand-solid text-white shadow-xs">
+            <MarkerPin01 className="size-4 stroke-[2.2]" aria-hidden="true" />
           </span>
-          <div className="flex flex-col">
+          <span className="flex flex-col">
             <span className="text-sm leading-none font-semibold tracking-tight text-primary">Wassalha</span>
-            <span className="mt-0.5 text-[10px] font-medium tracking-wider text-tertiary uppercase">
+            <span className="mt-0.5 hidden text-xs font-medium tracking-wide text-tertiary uppercase sm:block">
               Tunis · AI Dispatch
             </span>
-          </div>
+          </span>
         </Link>
-
-        <nav aria-label="Primary navigation" className="flex items-center gap-1.5">
-          <Button
-            href="/demo"
-            size="sm"
-            color={onDemo ? "primary" : "tertiary"}
-            aria-current={onDemo ? "page" : undefined}
-            iconLeading={<Play data-icon className="size-3.5" />}
-          >
-            Live Demo
-          </Button>
-          {session?.authenticated && session.kind === "sandbox" ? (
-            <Button href="/dashboard" size="sm" color="secondary">
-              Demo desk
-            </Button>
-          ) : null}
-        </nav>
 
         <div className="flex items-center gap-2">
           {session?.authenticated && session.kind === "seller" ? (
-            <Button href="/dashboard" size="sm">
+            <Button href="/dashboard" size="sm" color="secondary" className="min-h-11">
               Seller desk
+            </Button>
+          ) : session?.authenticated && session.kind === "sandbox" ? (
+            <Button href="/dashboard" size="sm" color="secondary" className="min-h-11">
+              Demo desk
             </Button>
           ) : (
             <>
-              <DemoAccountButton />
-              <Button href="/login" size="sm" color="tertiary" className="hidden sm:inline-flex">
+              <Button href="/login" size="sm" color="tertiary" className="hidden min-h-11 sm:inline-flex">
                 Log in
               </Button>
-              <Button href="/signup" size="sm">
+              <Button href="/signup" size="sm" color="secondary" className="min-h-11">
                 Sign up
               </Button>
             </>
           )}
+          <Link
+            href="/demo"
+            aria-current={onDemo ? "page" : undefined}
+            className="wassalha-cta px-3.5 sm:px-5"
+          >
+            <Play className="size-3.5" aria-hidden="true" />
+            <span className="sm:hidden">Demo</span>
+            <span className="hidden sm:inline">Live demo</span>
+          </Link>
         </div>
       </div>
     </header>
   );
 }
 
-export function DemoAccountButton({ label = "Enter demo account" }: { label?: string }) {
+export function DemoAccountButton({
+  label = "Enter demo account",
+  quiet = false,
+}: {
+  label?: string;
+  quiet?: boolean;
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -99,10 +100,22 @@ export function DemoAccountButton({ label = "Enter demo account" }: { label?: st
 
   return (
     <span className="flex flex-col items-end gap-1">
-      <Button size="sm" color="secondary" isDisabled={busy} onClick={() => void enter()}>
+      <Button
+        size="sm"
+        color={quiet ? "tertiary" : "secondary"}
+        className="min-h-11"
+        isDisabled={busy}
+        isLoading={busy}
+        showTextWhileLoading
+        onClick={() => void enter()}
+      >
         {busy ? "Opening…" : label}
       </Button>
-      {error ? <span className="max-w-48 text-right text-[10px] text-error-primary">{error}</span> : null}
+      {error ? (
+        <span role="alert" className="max-w-48 text-right text-xs text-error-primary">
+          {error}
+        </span>
+      ) : null}
     </span>
   );
 }

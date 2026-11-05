@@ -17,12 +17,12 @@ async function PinContent({ params }: { params: Promise<{ token: string }> }) {
     return <PinClient token={token} pending={session.pending} mapsKey={mapsKey} />;
   }
   return (
-    <main className="grid h-dvh place-items-center bg-dot-grid px-6">
+    <main className="wassalha-public grid h-dvh place-items-center px-6">
       <div className="max-w-sm rounded-3xl border border-secondary bg-primary p-8 text-center shadow-lg">
         <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-warning-primary text-warning-primary ring-1 ring-utility-yellow-200">
-          <AlertCircle className="size-6" />
+          <AlertCircle className="size-6" aria-hidden="true" />
         </div>
-        <p className="mt-4 text-[11px] font-semibold tracking-[0.18em] text-tertiary uppercase">
+        <p className="mt-4 text-xs font-semibold tracking-wide text-tertiary uppercase">
           Wassalha · Delivery Pin
         </p>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-primary">
@@ -42,7 +42,7 @@ export default function PinPage({ params }: PageProps<"/pin/[token]">) {
   return (
     <Suspense
       fallback={
-        <div className="grid h-dvh place-items-center bg-secondary text-sm text-tertiary">
+        <div className="wassalha-public grid h-dvh place-items-center text-base text-tertiary">
           <div className="flex items-center gap-2">
             <MapPin className="size-4 animate-bounce text-brand-secondary" />
             <span>Opening the map…</span>
