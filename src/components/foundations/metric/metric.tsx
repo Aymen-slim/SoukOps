@@ -17,11 +17,11 @@ export function Metric({
   className?: string;
 }) {
   return (
-    <div className={cx("flex items-center gap-2.5 rounded-xl bg-primary px-3.5 py-3 shadow-xs ring-1 ring-secondary", className)}>
+    <div className={cx("flex items-center gap-3 rounded-none bg-primary px-4 py-3.5 ring-1 ring-secondary", className)}>
       {Icon ? <Icon className={cx("size-4 shrink-0 text-brand-secondary", iconClassName)} aria-hidden="true" /> : null}
       <div className="min-w-0">
-        <p className="font-mono text-sm font-semibold tabular-nums leading-none text-primary">{value}</p>
-        <p className="mt-1 text-[10px] text-tertiary">{label}</p>
+        <p className="font-mono text-base font-medium tabular-nums leading-none text-primary">{value}</p>
+        <p className="mt-1.5 font-mono text-[11px] uppercase tracking-[0.06em] text-tertiary">{label}</p>
         {children}
       </div>
     </div>

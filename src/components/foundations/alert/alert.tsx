@@ -26,7 +26,7 @@ export function Alert({
 }) {
   const { root, icon: Icon } = styles[color];
   return (
-    <div role="alert" className={cx("flex items-start gap-2.5 rounded-xl border px-4 py-3 text-sm", root, className)}>
+    <div role="alert" className={cx("flex items-start gap-2.5 rounded-none border px-4 py-3 text-sm", root, className)}>
       <Icon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
       <div className="min-w-0 flex-1">
         {title ? <p className="font-semibold">{title}</p> : null}

@@ -3,9 +3,8 @@ import { defineConfig } from "@playwright/test";
 /**
  * Day 7 replay mode: the dev server runs with AI_MODE=replay, so every AI
  * call is served from .ai-cassettes/ and no provider key is needed.
- * Record first with `npm run test:e2e:record` (live providers), then this
- * suite must pass offline. Stop any running `npm run dev` first — the
- * replay server owns port 3000 so AI_MODE cannot leak from a live server.
+ * Legacy Meta/PE switches are pinned here so recorded Meta cassettes stay valid
+ * even when production keys (Gemini/ElevenLabs/OpenAI/Anthropic) exist in .env.local.
  */
 export default defineConfig({
   testDir: "tests/e2e",
@@ -16,6 +15,16 @@ export default defineConfig({
     url: "http://localhost:3000",
     reuseExistingServer: false,
     timeout: 120_000,
-    env: { AI_MODE: "replay" },
+    env: {
+      AI_MODE: "replay",
+      FAST_LLM_PROVIDER: "meta",
+      REASONING_LLM_PROVIDER: "meta",
+      STYLE_LLM_PROVIDER: "meta",
+      LLM_PROVIDER: "meta",
+      ASR_PROVIDER: "transcribe",
+      EMBED_PROVIDER: "pe",
+      IMAGE_PROVIDER: "meta",
+      VISION_SEGMENT_MODE: "always",
+    },
   },
 });

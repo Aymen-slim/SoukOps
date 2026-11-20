@@ -4,7 +4,7 @@ import { Truck01 as Truck } from "@untitledui/icons";
 export default function CourierLayout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-secondary text-primary">
-      <header className="border-b border-sky-950/20 bg-brand-solid text-white shadow-xs">
+      <header className="border-b border-sky-950/20 bg-[#0C4A6E] text-white">
         <div className="mx-auto flex w-full max-w-3xl items-center justify-between px-4 py-3.5">
           <div className="flex items-center gap-2.5">
             <span className="flex size-8 items-center justify-center rounded-lg bg-sky-400/15 text-sky-300 ring-1 ring-sky-300/30">

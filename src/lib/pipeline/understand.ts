@@ -1,6 +1,13 @@
 import { z } from "zod";
 import { sparkJson } from "@/lib/ai/spark";
+import {
+  buildAiControlPromptDirectives,
+  DEFAULT_AI_CONTROLS,
+  type WorkspaceAiControls,
+} from "@/lib/context/ai-controls";
 import type { BusinessContext } from "@/lib/domain/business";
+import type { BuyerLanguage, TextScript } from "@/lib/domain/language";
+import { formatMillimesForChat } from "@/lib/domain/pricing";
 import {
   detectAssistanceIntent,
   extractBuildingDetails,
@@ -71,6 +78,13 @@ export const understandSchema = z.object({
 });
 
 export type Understanding = z.infer<typeof understandSchema>;
+
+export const understandAndReplySchema = understandSchema.extend({
+  matchedCatalogProductName: z.string().nullable(),
+  replyText: z.string().nullable(),
+});
+
+export type UnifiedUnderstanding = z.infer<typeof understandAndReplySchema>;
 
 const nullableString = { type: ["string", "null"] };
 const understandJsonSchema: Record<string, unknown> = {
@@ -281,6 +295,117 @@ const EMPTY_UNDERSTANDING: Understanding = {
   counterOfferMillimes: null,
   flags: { offTopic: false, insult: false, wantsHuman: false },
 };
+
+const understandAndReplyJsonSchema: Record<string, unknown> = {
+  ...understandJsonSchema,
+  required: [
+    ...(understandJsonSchema.required as string[]),
+    "matchedCatalogProductName",
+    "replyText",
+  ],
+  properties: {
+    ...(understandJsonSchema.properties as Record<string, unknown>),
+    matchedCatalogProductName: nullableString,
+    replyText: nullableString,
+  },
+};
+
+const UNIFIED_LANGUAGE_LINE: Record<BuyerLanguage, string> = {
+  derja: "Write replyText in natural Tunisian Derja (Arabizi, mixing everyday French loanwords the way Tunisians text on WhatsApp/Instagram).",
+  fr: "Write replyText in natural, warm, clear French.",
+  ar: "Write replyText in clear, polite Modern Standard Arabic.",
+  en: "Write replyText in natural, friendly English.",
+};
+
+/**
+ * Single unified Gemini call for normal E-Commerce text messages:
+ * extracts structured order slots, identifies any exact catalog product name,
+ * AND writes a warm, human-sounding reply grounded in the shop's full knowledge
+ * and conversation history — avoiding separate extract + phrase LLM calls.
+ */
+export async function understandAndReply(req: {
+  text: string;
+  expectingSize?: boolean;
+  conversationId?: string;
+  context?: string;
+  business?: BusinessContext;
+  shopContext?: string;
+  conversationHistory?: string;
+  language: BuyerLanguage;
+  script: TextScript | null;
+  controls?: WorkspaceAiControls;
+  nextStepHint?: string;
+  allowedMillimes?: number[];
+}): Promise<{
+  understanding: Understanding;
+  matchedCatalogProductName: string | null;
+  replyText: string | null;
+}> {
+  const allowSize = req.business?.profile.extractSize ?? true;
+  const controls = req.controls ?? DEFAULT_AI_CONTROLS;
+  const languageDirective =
+    req.language === "derja" && req.script === "arabic"
+      ? "Write replyText in natural Tunisian Derja written in Arabic script (not formal MSA, not Arabizi)."
+      : UNIFIED_LANGUAGE_LINE[req.language];
+  const controlDirectives = buildAiControlPromptDirectives(controls, req.language);
+
+  const allowedFormatted =
+    req.allowedMillimes && req.allowedMillimes.length > 0
+      ? req.allowedMillimes.map((m) => formatMillimesForChat(m)).join(", ")
+      : "None (do NOT invent or write any price)";
+
+  const system = [
+    SYSTEM,
+    req.business ? `- ${req.business.promptLine}` : null,
+    "",
+    "ADDITIONAL UNIFIED FIELDS:",
+    "- matchedCatalogProductName: If the buyer clearly refers to a specific product from the Active Product Catalog below (by name, color, or clear match), copy its EXACT catalog name here; otherwise null.",
+    "- replyText: Write a genuine, human-sounding reply (no markdown headings or bullet templates) as this shop's owner texting on WhatsApp/Instagram:",
+    `  * ${languageDirective}`,
+    `  * ${controlDirectives.replace(/\n/g, "\n  * ")}`,
+    "  * Answer what the buyer ACTUALLY asked first using the Shop Knowledge & Live Owner Context (products, prices, stock, variants, delivery fees, free delivery threshold, hours, policies, promos, calendar schedule).",
+    "  * Remember the Recent Conversation so you never repeat greetings or re-ask details already given.",
+    "  * Gently ask for at most ONE next missing order detail only if the buyer is ordering (do not interrogate a casual browser).",
+    `  * MONEY FIREWALL: Only write money amounts from this verified list: ${allowedFormatted}. NEVER invent prices, delivery fees, or unauthorized discounts.`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const user = [
+    req.shopContext ? `Shop Knowledge & Live Owner Context:\n${req.shopContext}` : null,
+    req.conversationHistory ? `Recent Conversation:\n${req.conversationHistory}` : null,
+    req.context ? `Current order draft (already recorded): ${req.context}` : null,
+    req.nextStepHint ? `Next missing order step (if ordering): ${req.nextStepHint}` : null,
+    `Buyer message: ${req.text}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  try {
+    const raw = await sparkJson({
+      schema: understandAndReplySchema,
+      jsonSchema: understandAndReplyJsonSchema,
+      schemaName: "understand_and_reply",
+      system,
+      user,
+      conversationId: req.conversationId,
+      tier: "fast_multimodal",
+      languageHint: req.language,
+    });
+    const { matchedCatalogProductName, replyText, ...extracted } = raw;
+    return {
+      understanding: applyDeterministicFallbacks(req.text, extracted, req.expectingSize, allowSize),
+      matchedCatalogProductName: matchedCatalogProductName?.trim() || null,
+      replyText: replyText?.trim() || null,
+    };
+  } catch {
+    return {
+      understanding: applyDeterministicFallbacks(req.text, EMPTY_UNDERSTANDING, req.expectingSize, allowSize),
+      matchedCatalogProductName: null,
+      replyText: null,
+    };
+  }
+}
 
 export async function understand(req: {
   text: string;

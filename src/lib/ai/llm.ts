@@ -4,9 +4,11 @@ import { getBasetenLlmClient } from "./baseten";
 import { getMetaClient } from "./meta";
 import type { AiProvider } from "./trace";
 
+export { resolveAiRoute, resolveAiRoutes, type AiTaskTier, type ResolvedModelRoute } from "./router";
+
 /**
- * Provider switch for Spark calls. LLM_PROVIDER=meta uses Muse Spark on the
- * Meta Model API; =baseten uses Muse Spark Open on Baseten as fallback.
+ * Legacy OpenAI-compatible client switch (Meta Muse Spark / Baseten Spark Open).
+ * Task-routed multi-provider calls go through `src/lib/ai/router.ts` and `spark.ts`.
  */
 export function getLlmClient(): { client: OpenAI; model: string; provider: AiProvider } {
   const env = getServerEnv();

@@ -1,8 +1,20 @@
 import { sparkText } from "@/lib/ai/spark";
+import {
+  buildAiControlPromptDirectives,
+  hasCustomStyleControls,
+  maxReplyCharsForLength,
+  type WorkspaceAiControls,
+} from "@/lib/context/ai-controls";
 import { extractAmountsMillimes, passesPriceFirewall } from "@/lib/domain/firewall";
 import { firewallChecked, formatMillimesForChat } from "@/lib/domain/pricing";
 import type { NextAction } from "@/lib/domain/slots";
-import { buyerScriptBound, effectiveReplyLanguage, sellerVoiceFor, type ReplyLanguage } from "./seller-voice";
+import {
+  effectiveReplyLanguage,
+  effectiveReplyScript,
+  sellerControlsFor,
+  sellerVoiceFor,
+  type ReplyLanguage,
+} from "./seller-voice";
 
 /**
  * Spark phrasing for negotiation and conversational seller replies:
@@ -19,11 +31,16 @@ export interface NegotiationFacts {
   listPriceMillimes: number;
   acceptedCounter: boolean;
   isFinal: boolean;
+  buyerText?: string;
+  shopContext?: string;
+  conversationHistory?: string;
+  controls?: WorkspaceAiControls;
+  deadlineMs?: number;
 }
 
-const PHRASE_DEADLINE_MS = 900;
+const PHRASE_DEADLINE_MS = 8_000;
 
-/** Uses Spark when it answers quickly. A slow first token falls back to the template so the buyer isn't left waiting. */
+/** Uses Gemini/Spark under a generous deadline so natural replies complete without timing out into templates. */
 function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -56,36 +73,55 @@ const LANGUAGE_LINE: Record<ReplyLanguage, string> = {
   fr: "Reply in clear French.",
 };
 
-/** Spark text under the phrasing deadline, with the provider request actually cancelled on timeout. */
+/** Model text under the phrasing deadline, with the provider request cancelled on timeout. */
 async function sparkTextWithDeadline(req: {
   system?: string;
   user: string;
   conversationId?: string;
+  languageHint?: ReplyLanguage;
+  deadlineMs?: number;
 }): Promise<string> {
+  const timeoutMs = req.deadlineMs ?? PHRASE_DEADLINE_MS;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), PHRASE_DEADLINE_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await withDeadline(
-      sparkText({ ...req, signal: controller.signal }),
-      PHRASE_DEADLINE_MS,
+      sparkText({
+        system: req.system,
+        user: req.user,
+        conversationId: req.conversationId,
+        tier: "style_writer",
+        languageHint: req.languageHint,
+        signal: controller.signal,
+      }),
+      timeoutMs,
     );
   } finally {
     clearTimeout(timer);
   }
 }
 
-/** Default Derja prompts stay byte-for-byte so cassette keys do not move. */
-function applyVoice(system: string, conversationId?: string): string {
+/** Applies language, Derja script, custom tone note, and AI reply controls (length/style/emojis). */
+function applyVoice(system: string, conversationId?: string, explicitControls?: WorkspaceAiControls): string {
   const voice = sellerVoiceFor(conversationId);
+  const controls = explicitControls ?? sellerControlsFor(conversationId);
   const language = effectiveReplyLanguage(conversationId);
-  const script = buyerScriptBound(conversationId);
-  if (language === "derja" && script !== "arabic" && !voice.instructions.trim()) return system;
-  const note = voice.instructions.trim().slice(0, 400).replace(/\s+/g, " ");
+  const script = effectiveReplyScript(conversationId);
+  const hasControls = hasCustomStyleControls(controls);
+  if (language === "derja" && script !== "arabic" && !voice.instructions.trim() && !hasControls) return system;
+  const note = voice.instructions.trim().slice(0, 2000).replace(/\s+/g, " ");
   const languageLine =
     language === "derja" && script === "arabic"
       ? "Reply in natural Tunisian Derja written in Arabic script (not Modern Standard Arabic, not Arabizi)."
       : LANGUAGE_LINE[language];
-  return `${system}\n${languageLine}${note ? ` Seller note about tone only, never a price: ${note}` : ""}`;
+  const parts = [system, languageLine];
+  if (hasControls) {
+    parts.push(buildAiControlPromptDirectives(controls, language));
+  }
+  if (note) {
+    parts.push(`Seller note about tone only, never a price: ${note}`);
+  }
+  return parts.join("\n");
 }
 
 function localizedNegotiation(facts: NegotiationFacts, language: ReplyLanguage): string {
@@ -134,23 +170,29 @@ export async function phraseNegotiationReply(
   facts: NegotiationFacts,
   conversationId?: string,
 ): Promise<{ text: string; source: "spark" | "template" }> {
+  const controls = facts.controls ?? sellerControlsFor(conversationId);
   const language = effectiveReplyLanguage(conversationId);
+  const script = effectiveReplyScript(conversationId);
   const fallback =
     language === "derja"
-      ? buyerScriptBound(conversationId) === "arabic"
+      ? script === "arabic"
         ? negotiationTemplateArabicScript(facts)
         : negotiationTemplate(facts)
       : localizedNegotiation(facts, language);
   const offer = formatMillimesForChat(facts.offerMillimes);
+  const maxChars = maxReplyCharsForLength(controls.replyLength, "negotiation");
   try {
     const raw = await sparkTextWithDeadline({
       system: applyVoice(
-        "You are a warm, playful, easygoing Tunisian shop seller chatting on WhatsApp in natural Tunisian Derja (Arabizi). " +
+        "You are a warm, genuine, easygoing Tunisian shop seller texting on WhatsApp/Instagram in natural Tunisian Derja (Arabizi). " +
         "Use ONLY the facts given. Never invent or change an amount: the only prices you may write are the offer " +
-        "and the list price, exactly as formatted. Sound like a friend who runs the shop (light, kind, a little playful — '3la rasi', 'yesss', '3aychek', 'mrigel'), never a form. One or two short sentences. No markdown.",
+        "and the list price, exactly as formatted. Sound like a real human shop owner chatting naturally ('3la rasi', '3aychek', 'mrigel'), never a template or robot. No markdown.",
         conversationId,
+        controls,
       ),
       user: [
+        facts.conversationHistory ? `Recent conversation:\n${facts.conversationHistory}` : null,
+        facts.buyerText ? `Buyer just said: ${facts.buyerText}` : null,
         `Product: ${facts.productName}`,
         `List price: ${formatMillimesForChat(facts.listPriceMillimes)}`,
         `Offer to state: ${offer}`,
@@ -159,15 +201,19 @@ export async function phraseNegotiationReply(
           : facts.isFinal
             ? "This is the final offer (akher soum): the seller cannot go lower. Say so politely and warmly, and ask if they still want to order."
             : "Make this counter-offer warmly like a Tunisian seller and ask if it suits them to continue the order.",
-      ].join("\n"),
+      ]
+        .filter(Boolean)
+        .join("\n"),
       conversationId,
+      languageHint: language,
+      deadlineMs: facts.deadlineMs,
     });
     const candidate = raw.trim();
     const allowed = [facts.offerMillimes, facts.listPriceMillimes];
     const statesOffer = extractAmountsMillimes(candidate).includes(facts.offerMillimes);
     if (
       candidate.length > 0 &&
-      candidate.length <= 400 &&
+      candidate.length <= maxChars &&
       statesOffer &&
       passesPriceFirewall(candidate, new Set(allowed)) &&
       firewallChecked(candidate, allowed) !== null
@@ -238,7 +284,17 @@ export function assistanceReply(
 }
 
 export interface SellerReplyFacts {
-  situation: "matched" | "collect_slot" | "price_answer" | "stock_answer";
+  situation:
+    | "matched"
+    | "collect_slot"
+    | "price_answer"
+    | "stock_answer"
+    | "greeting"
+    | "general_qa"
+    | "delivery_policy"
+    | "draft_change"
+    | "out_of_stock"
+    | "unmatched";
   buyerText: string;
   productName?: string | null;
   priceMillimes?: number | null;
@@ -255,6 +311,18 @@ export interface SellerReplyFacts {
   askHint?: string | null;
   /** Vertical-aware size instruction ("shoe size / pointure..."), replacing the clothing default. */
   sizeAsk?: string | null;
+  /** Full deterministic shop context (catalog, delivery fees, policies, owner live notes). */
+  shopContext?: string;
+  /** Recent prior conversation lines (`Client:` / `You:`) with zero timestamps/IDs. */
+  conversationHistory?: string;
+  /** Extra verified non-floor amounts (catalog list prices, delivery fees, free delivery threshold). */
+  allowedExtraMillimes?: number[];
+  /** Human-readable description of a deterministic draft change applied this turn. */
+  draftChangeNote?: string | null;
+  /** Workspace reply controls (length, style, emoji level, language mode). */
+  controls?: WorkspaceAiControls;
+  /** Optional custom deadline override (defaults to PHRASE_DEADLINE_MS). */
+  deadlineMs?: number;
   fallbackText: string;
 }
 
@@ -308,20 +376,90 @@ export function replyViolatesDiscipline(
   return false;
 }
 
+function normalizeReplyThousands(reply: string, allowedSet: Set<number>): string {
+  return reply.replace(
+    /\b(\d{1,3})[,\s](\d{3})\s*(dt|dinar|dinars|دينار)\b/gi,
+    (full, head: string, tail: string) => {
+      const asThousands = (Number(head) * 1000 + Number(tail)) * 1000;
+      const asDecimal = Number(head) * 1000 + Number(tail);
+      if (allowedSet.has(asThousands) && !allowedSet.has(asDecimal)) {
+        return formatMillimesForChat(asThousands);
+      }
+      return full;
+    },
+  );
+}
+
 /**
- * Generates a natural, human-sounding Tunisian Derja reply for product matches,
- * slot collection, and price/stock answers while strictly enforcing:
- * 1. Price firewall (no invented numbers; required price must appear when answering price).
- * 2. Never re-asking a slot (like size or governorate) that is already known.
- * 3. Instant fallback to `fallbackText` on any error or firewall violation.
+ * Shared validator for both unified 1-call replies and `phraseSellerReply`:
+ * enforces price firewall (catalog prices & delivery fees only — never invented/floor amounts),
+ * required price presence when answering a price ask, and no-repeat-question discipline.
+ */
+export function validateSellerCandidateReply(
+  rawCandidate: string,
+  facts: SellerReplyFacts,
+): string | null {
+  const trimmed = rawCandidate.trim();
+  const maxChars = maxReplyCharsForLength(facts.controls?.replyLength ?? "medium", "ecommerce");
+  if (!trimmed || trimmed.length > maxChars) return null;
+
+  const allowedSet = new Set<number>();
+  if (typeof facts.priceMillimes === "number" && facts.priceMillimes > 0) {
+    allowedSet.add(facts.priceMillimes);
+  }
+  for (const extra of facts.allowedExtraMillimes ?? []) {
+    if (typeof extra === "number" && Number.isInteger(extra) && extra > 0) {
+      allowedSet.add(extra);
+    }
+  }
+  const allowed = [...allowedSet];
+  const candidate = normalizeReplyThousands(trimmed, allowedSet);
+
+  // Never allow the model to re-ask for size or name when already known.
+  if (facts.size && /(?:chnowa|chnia|a3tini|aatini|9olli).*\b(?:taille|size)\b/i.test(candidate)) {
+    return null;
+  }
+  if (facts.hasName && /(?:chnowa|chnia|a3tini|aatini|9olli).{0,40}\besmek\b/i.test(candidate)) {
+    return null;
+  }
+  if (replyViolatesDiscipline(candidate, facts)) {
+    return null;
+  }
+
+  // Price firewall check
+  if (!passesPriceFirewall(candidate, allowedSet) || firewallChecked(candidate, allowed) === null) {
+    return null;
+  }
+
+  // If answering a direct price question, the exact product price must be stated.
+  if (
+    facts.situation === "price_answer" &&
+    typeof facts.priceMillimes === "number" &&
+    !extractAmountsMillimes(candidate).includes(facts.priceMillimes)
+  ) {
+    return null;
+  }
+
+  return candidate;
+}
+
+/**
+ * Generates a natural, human-sounding Tunisian seller reply for product matches,
+ * slot collection, price/stock answers, greetings, delivery/policy Q&A, and general questions
+ * while strictly enforcing the price firewall and slot-discipline rules.
  */
 export async function phraseSellerReply(
   facts: SellerReplyFacts,
   conversationId?: string,
 ): Promise<{ text: string; source: "spark" | "template" }> {
-  const allowed: number[] = [];
+  const allowedSet = new Set<number>();
   if (typeof facts.priceMillimes === "number" && facts.priceMillimes > 0) {
-    allowed.push(facts.priceMillimes);
+    allowedSet.add(facts.priceMillimes);
+  }
+  for (const extra of facts.allowedExtraMillimes ?? []) {
+    if (typeof extra === "number" && Number.isInteger(extra) && extra > 0) {
+      allowedSet.add(extra);
+    }
   }
   const formattedPrice =
     typeof facts.priceMillimes === "number" && facts.priceMillimes > 0
@@ -337,70 +475,80 @@ export async function phraseSellerReply(
   if (facts.landmark) knownParts.push(`Landmark already recorded: ${facts.landmark}`);
   if (facts.hasName) knownParts.push("Name already recorded (DO NOT ask for the name again)");
   if (facts.hasPhone) knownParts.push("Phone number: already given (DO NOT ask for phone)");
+  if (facts.draftChangeNote) knownParts.push(`Order update just applied: ${facts.draftChangeNote}`);
 
   const askLead =
     facts.situation === "price_answer"
       ? "Answer their price question first, stating the exact catalog price."
       : facts.situation === "stock_answer"
         ? "Answer their stock question first."
-        : null;
-  const askInstruction = [askLead, nextStepInstruction(facts.nextAction, Boolean(facts.size), facts.askHint, facts.askBundle, facts.sizeAsk)].filter(Boolean).join(" ");
+        : facts.situation === "greeting"
+          ? "Greet them warmly and naturally like a real Tunisian shop owner, and invite them to tell you what they are looking for or ask any question."
+          : facts.situation === "delivery_policy" || facts.situation === "general_qa"
+            ? "Answer their exact question directly and helpfully using the Shop Knowledge & Live Owner Context below."
+            : facts.situation === "draft_change"
+              ? "Confirm the exact order change naturally."
+              : null;
+  const shouldIncludeNextStep =
+    facts.situation !== "greeting" &&
+    !(facts.situation === "general_qa" && !facts.productName);
+  const askInstruction = [
+    askLead,
+    shouldIncludeNextStep
+      ? nextStepInstruction(facts.nextAction, Boolean(facts.size), facts.askHint, facts.askBundle, facts.sizeAsk)
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const allowedListText =
+    allowedSet.size > 0
+      ? [...allowedSet].map((m) => formatMillimesForChat(m)).join(", ")
+      : "None (do NOT write any price or money amount)";
+
+  const controls = facts.controls ?? sellerControlsFor(conversationId);
+  const effectiveLang = effectiveReplyLanguage(conversationId);
+  const lengthAndStyleBlock = buildAiControlPromptDirectives(controls, effectiveLang);
+  const factsWithControls: SellerReplyFacts = { ...facts, controls };
 
   try {
     const raw = await sparkTextWithDeadline({
       system: applyVoice(
-        "You are a warm, playful, easygoing Tunisian shop seller chatting on WhatsApp in natural Tunisian Derja (Arabizi). " +
-        "Sound like a friend who runs the shop (light, kind, a little playful — 'Ahla bik', 'yesss', '3aychek', 'mrigel', '3la rasi'), NEVER like a bot or a form. " +
+        "You are a real, warm, friendly Tunisian shop owner texting directly on WhatsApp/Instagram in natural Tunisian Derja (Arabizi). " +
+        "Talk like a real human running your own boutique — NEVER like a fixed template, script, or form. " +
         "CRITICAL RULES:\n" +
-        "1. Acknowledge any new info the buyer just gave (for example if they gave their size or city, confirm you noted it!) and NEVER ask again for information marked as already recorded.\n" +
-        "2. Ask ONLY for the next needed step described in 'Next step to ask' (it may bundle two details like name + phone in one question). Never add another question.\n" +
-        "3. Money firewall: NEVER invent or alter any price. If an Exact catalog price is provided and relevant, write it EXACTLY as formatted (e.g. 110DT). If no price is provided, do NOT write any price or money amount.\n" +
-        "4. Keep it concise: 1 to 2 natural WhatsApp sentences, no bullet lists, no markdown.",
+        "1. Answer what the buyer ACTUALLY asked first using the Shop Knowledge & Live Owner Context (products, stock, delivery fees, policies, hours, promos, calendar schedule). Never ignore their question!\n" +
+        "2. Acknowledge any new detail they just gave and NEVER re-ask information marked as already recorded or already answered in Recent Conversation.\n" +
+        "3. Vary your phrasing naturally across turns — do not repeat identical greetings if you already greeted them.\n" +
+        "4. If an order is in progress, gently weave in ONLY the next needed detail in 'Next step to ask' (at most 1-2 question marks total).\n" +
+        `5. Money firewall: NEVER invent or alter any price or delivery fee. Only amounts you may write: ${allowedListText}. Write prices cleanly like 110DT or 7DT.\n` +
+        `6. ${lengthAndStyleBlock}\n` +
+        "7. No markdown headings or bullet templates.",
         conversationId,
+        controls,
       ),
       user: [
+        facts.shopContext ? `Shop Knowledge & Live Owner Context:\n${facts.shopContext}` : null,
+        facts.conversationHistory ? `Recent Conversation:\n${facts.conversationHistory}` : null,
         `Situation: ${facts.situation}`,
         `Buyer just said: ${facts.buyerText || "(sent product image)"}`,
         `Known order info:\n${knownParts.join("\n") || "None yet"}`,
         typeof facts.stock === "number" ? `Stock count: ${facts.stock}` : null,
-        `Next step to ask: ${askInstruction}`,
+        `Next step to ask: ${askInstruction || "Reply helpfully and naturally."}`,
       ]
         .filter(Boolean)
-        .join("\n"),
+        .join("\n\n"),
       conversationId,
+      languageHint: effectiveLang,
+      deadlineMs: facts.deadlineMs,
     });
 
-    const candidate = raw.trim();
-    if (!candidate || candidate.length > 420) {
+    const validated = validateSellerCandidateReply(raw, factsWithControls);
+    if (!validated) {
       return { text: facts.fallbackText, source: "template" };
     }
 
-    // Never allow the model to re-ask for size when we already have size!
-    if (facts.size && /(?:chnowa|chnia|a3tini|aatini|9olli).*\b(?:taille|size)\b/i.test(candidate)) {
-      return { text: facts.fallbackText, source: "template" };
-    }
-    if (facts.hasName && /(?:chnowa|chnia|a3tini|aatini|9olli).{0,40}\besmek\b/i.test(candidate)) {
-      return { text: facts.fallbackText, source: "template" };
-    }
-    if (replyViolatesDiscipline(candidate, facts)) {
-      return { text: facts.fallbackText, source: "template" };
-    }
-
-    // Price firewall check
-    if (!passesPriceFirewall(candidate, new Set(allowed)) || firewallChecked(candidate, allowed) === null) {
-      return { text: facts.fallbackText, source: "template" };
-    }
-
-    // If answering a price question, the exact price must be stated
-    if (
-      facts.situation === "price_answer" &&
-      typeof facts.priceMillimes === "number" &&
-      !extractAmountsMillimes(candidate).includes(facts.priceMillimes)
-    ) {
-      return { text: facts.fallbackText, source: "template" };
-    }
-
-    return { text: candidate, source: "spark" };
+    return { text: validated, source: "spark" };
   } catch {
     return { text: facts.fallbackText, source: "template" };
   }

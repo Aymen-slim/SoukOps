@@ -11,8 +11,8 @@ import "./load-env";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { embedImages } from "../src/lib/ai/embeddings";
-import { segmentImage } from "../src/lib/ai/sam";
+import { embedConfigured, embedImages } from "../src/lib/ai/embeddings";
+import { samConfigured, segmentImage } from "../src/lib/ai/sam";
 import { cropToBox, expandBox, imageSize } from "../src/lib/media/crop";
 import { createAdminClient, hasAdminConfig } from "../src/lib/supabase/admin";
 import { getServerEnv } from "../src/lib/env";
@@ -31,8 +31,10 @@ const catalogSchema = z.array(
 async function main(): Promise<void> {
   const env = getServerEnv();
   const missing: string[] = [];
-  if (!env.MODEL_API_KEY) missing.push("MODEL_API_KEY");
-  if (!env.peEmbedUrl) missing.push("PE_EMBED_URL (deploy modal/pe_embed.py first)");
+  if (env.VISION_SEGMENT_MODE !== "never" && !samConfigured()) {
+    missing.push("MODEL_API_KEY or FAL_KEY (or set VISION_SEGMENT_MODE=never)");
+  }
+  if (!embedConfigured()) missing.push("GEMINI_API_KEY, VOYAGE_API_KEY, or PE_EMBED_URL");
   if (!hasAdminConfig()) missing.push("Supabase URL + SUPABASE_SECRET_KEY (and migration applied)");
 
   let catalog: z.infer<typeof catalogSchema> = [];
@@ -84,13 +86,16 @@ async function main(): Promise<void> {
     const bytes = await readFile(photoPath);
     const dataUrl = `data:image/jpeg;base64,${bytes.toString("base64")}`;
 
-    // SAM receives the short category phrase, never the brand-like product name.
-    const sam = await segmentImage({ imageDataUrl: dataUrl, nounPhrase: item.categoryPhrase });
-    // Box crop keeps the model in frame (no mask cut-out), matching the buyer side.
+    let samObjects = 0;
     let crop: Buffer = bytes;
-    if (sam.objects[0]) {
-      const size = await imageSize(bytes);
-      crop = await cropToBox(bytes, expandBox(sam.objects[0].box, size.width, size.height));
+    if (env.VISION_SEGMENT_MODE !== "never" && samConfigured()) {
+      // SAM receives the short category phrase, never the brand-like product name.
+      const sam = await segmentImage({ imageDataUrl: dataUrl, nounPhrase: item.categoryPhrase });
+      samObjects = sam.objects.length;
+      if (sam.objects[0]) {
+        const size = await imageSize(bytes);
+        crop = await cropToBox(bytes, expandBox(sam.objects[0].box, size.width, size.height));
+      }
     }
     const [embedding] = await embedImages([crop.toString("base64")]);
 
@@ -123,7 +128,7 @@ async function main(): Promise<void> {
     });
     if (imageError) throw new Error(`product_image insert failed for ${item.file}: ${imageError.message}`);
     seeded++;
-    console.log(`seeded ${item.name} (SAM objects: ${sam.objects.length})`);
+    console.log(`seeded ${item.name} (SAM objects: ${samObjects})`);
   }
   console.log(`Done: ${seeded}/${catalog.length} products cropped + embedded for merchant ${merchant.id}.`);
 }

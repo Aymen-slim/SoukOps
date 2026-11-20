@@ -1,6 +1,9 @@
 import { randomBytes } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getDemoMerchant, mapMerchant, SHOP_COLUMNS, type DemoMerchant } from "@/lib/dashboard/merchant";
+import { getDemoMerchant, mapMerchant, PRE_PRO_COLUMNS, SHOP_COLUMNS, type DemoMerchant } from "@/lib/dashboard/merchant";
+import { getProPreset } from "@/lib/pro/presets";
+import { seedProWorkspace } from "@/lib/pro/seed";
+import type { ProCategory, WorkspaceMode } from "@/lib/pro/types";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -39,27 +42,81 @@ export async function sweepOldSandboxes(supabase: Admin): Promise<void> {
   await supabase.from("merchants").delete().eq("is_sandbox", true).lt("created_at", cutoff);
 }
 
-export async function createSandboxShop(): Promise<DemoMerchant> {
+export async function createSandboxShop(opts?: {
+  mode?: WorkspaceMode;
+  preset?: ProCategory;
+}): Promise<DemoMerchant> {
+  const mode: WorkspaceMode = opts?.mode ?? "ecommerce";
+  const presetCategory: ProCategory = opts?.preset ?? "creator";
   const supabase = createAdminClient();
   await sweepOldSandboxes(supabase);
+
+  if (mode === "pro") {
+    const preset = getProPreset(presetCategory);
+    const slug = await uniqueSlug(supabase, `pro-${preset.id}-${slugToken()}`);
+    const { data: created, error } = await supabase
+      .from("merchants")
+      .insert({
+        name: `${preset.defaultDisplayName} (Demo)`,
+        slug,
+        is_sandbox: true,
+        reply_language: "derja",
+        ai_instructions: preset.styleRules.slice(0, 380),
+        workspace_mode: "pro",
+        pro_category: preset.id,
+      })
+      .select(SHOP_COLUMNS)
+      .single();
+
+    if (error || !created) {
+      const hint = /workspace_mode|pro_category|column|schema/i.test(error?.message ?? "")
+        ? " Apply supabase/migrations/0007_pro_workspace_and_ai_upgrade.sql."
+        : "";
+      throw new Error(`${error?.message ?? "Could not open a Creator/Pro demo account"}${hint}`);
+    }
+
+    const shop = mapMerchant(created as Record<string, unknown>);
+    const seeded = await seedProWorkspace(supabase, shop.id, preset.id, preset.defaultDisplayName);
+    if (!seeded.seeded && seeded.missingSchema) {
+      throw new Error(
+        `Creator/Pro tables missing (${seeded.error ?? "pro_profiles"}). Apply supabase/migrations/0007_pro_workspace_and_ai_upgrade.sql.`,
+      );
+    }
+    return shop;
+  }
+
   const source = await getDemoMerchant(supabase);
   const slug = await uniqueSlug(supabase, `try-${slugToken()}`);
-  const { data: created, error } = await supabase
+  const basePayload = {
+    name: "Demo shop",
+    slug,
+    is_sandbox: true,
+    reply_language: "derja",
+    ai_instructions: "",
+    courier_mode: source?.courier_mode ?? "mock_api",
+    payment_link: source?.payment_link ?? null,
+    free_delivery_threshold_millimes: source?.free_delivery_threshold_millimes ?? null,
+  };
+
+  let createdRow: Record<string, unknown> | null = null;
+  let createErr: { message: string } | null = null;
+  const withMode = await supabase
     .from("merchants")
-    .insert({
-      name: "Demo shop",
-      slug,
-      is_sandbox: true,
-      reply_language: "derja",
-      ai_instructions: "",
-      courier_mode: source?.courier_mode ?? "mock_api",
-      payment_link: source?.payment_link ?? null,
-      free_delivery_threshold_millimes: source?.free_delivery_threshold_millimes ?? null,
-    })
+    .insert({ ...basePayload, workspace_mode: "ecommerce" })
     .select(SHOP_COLUMNS)
     .single();
-  if (error || !created) throw new Error(error?.message ?? "Could not open a demo account");
-  const shop = mapMerchant(created as Record<string, unknown>);
+  if (!withMode.error && withMode.data) {
+    createdRow = withMode.data as Record<string, unknown>;
+  } else if (/workspace_mode|pro_category|column|schema/i.test(withMode.error?.message ?? "")) {
+    const legacy = await supabase.from("merchants").insert(basePayload).select(PRE_PRO_COLUMNS).single();
+    createdRow = (legacy.data as Record<string, unknown> | null) ?? null;
+    createErr = legacy.error;
+  } else {
+    createErr = withMode.error;
+  }
+
+  if (createErr || !createdRow) throw new Error(createErr?.message ?? "Could not open a demo account");
+  const shop = mapMerchant(createdRow);
   await copyCatalog(supabase, source?.id ?? null, shop.id);
   await seedSampleDesk(supabase, shop.id);
   return shop;
@@ -71,8 +128,9 @@ async function copyCatalog(supabase: Admin, sourceId: string | null, merchantId:
   const rich =
     "id, name, category_phrase, category, product_type, description, size_policy, price_millimes, floor_millimes, stock, active, ai_enabled";
   const plain = "id, name, category_phrase, category, price_millimes, floor_millimes, stock, active, ai_enabled";
-  let { data: products, error: listError } = await supabase.from("products").select(rich).eq("merchant_id", sourceId);
-  if (listError && /product_type|size_policy|description/i.test(listError.message)) {
+  const richRes = await supabase.from("products").select(rich).eq("merchant_id", sourceId);
+  let products = richRes.data;
+  if (richRes.error && /product_type|size_policy|description/i.test(richRes.error.message)) {
     const retry = await supabase.from("products").select(plain).eq("merchant_id", sourceId);
     products = retry.data as typeof products;
   }
@@ -204,6 +262,17 @@ async function seedSampleDesk(supabase: Admin, merchantId: string): Promise<void
 
 export async function resetSandboxShop(currentId: string): Promise<DemoMerchant> {
   const supabase = createAdminClient();
+  const { data: prev } = await supabase
+    .from("merchants")
+    .select("workspace_mode, pro_category")
+    .eq("id", currentId)
+    .eq("is_sandbox", true)
+    .maybeSingle();
+  const prevMode: WorkspaceMode = prev?.workspace_mode === "pro" ? "pro" : "ecommerce";
+  const prevPreset: ProCategory =
+    prev?.pro_category === "doctor" || prev?.pro_category === "cameraman" || prev?.pro_category === "creator" || prev?.pro_category === "custom"
+      ? prev.pro_category
+      : "creator";
   await supabase.from("merchants").delete().eq("id", currentId).eq("is_sandbox", true);
-  return createSandboxShop();
+  return createSandboxShop({ mode: prevMode, preset: prevPreset });
 }

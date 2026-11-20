@@ -17,18 +17,18 @@ async function PinContent({ params }: { params: Promise<{ token: string }> }) {
     return <PinClient token={token} pending={session.pending} mapsKey={mapsKey} />;
   }
   return (
-    <main className="wassalha-public grid h-dvh place-items-center px-6">
-      <div className="max-w-sm rounded-3xl border border-secondary bg-primary p-8 text-center shadow-lg">
-        <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-warning-primary text-warning-primary ring-1 ring-utility-yellow-200">
+    <main className="wassalha-public grid h-dvh place-items-center bg-[#FAFAF9] px-6">
+      <div className="max-w-sm border border-[#E4E4E7] bg-white p-8 text-center">
+        <div className="mx-auto flex size-12 items-center justify-center border border-utility-yellow-200 bg-warning-primary text-warning-primary">
           <AlertCircle className="size-6" aria-hidden="true" />
         </div>
-        <p className="mt-4 text-xs font-semibold tracking-wide text-tertiary uppercase">
+        <p className="mt-4 font-mono text-[11px] font-medium tracking-[0.08em] text-[#71717A] uppercase">
           Wassalha · Delivery Pin
         </p>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-primary">
+        <h1 className="mt-2 text-2xl font-medium tracking-[-0.03em] text-[#09090B]">
           {session.status === "expired" ? "Link expired" : "Link not found"}
         </h1>
-        <p className="mt-2.5 text-sm leading-relaxed text-tertiary">
+        <p className="mt-2.5 text-sm leading-relaxed text-[#52525B]">
           {session.status === "expired"
             ? "This confirmation link expired (24 h) or was already used. Go back to the chat and ask for a new one."
             : "This confirmation link doesn't exist. Check the link you got in the chat."}

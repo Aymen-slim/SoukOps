@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import { buildObjectPrompt, decodeMaskToRaster, parseImageStream, recordsOfKind } from "@meta-sam/parser";
+import { z } from "zod";
 import { getServerEnv } from "@/lib/env";
 import { withCassette } from "./cassette";
-import { getMetaClient } from "./meta";
+import { getMetaClient, metaConfigured } from "./meta";
 import { traced } from "./trace";
 
 export interface SamBox {
@@ -26,9 +27,62 @@ export interface SamResult {
   diagnostics: Array<{ severity: string; code: string; message: string }>;
 }
 
+export function samConfigured(): boolean {
+  return metaConfigured() || Boolean(getServerEnv().FAL_KEY);
+}
+
 /** Content hash for cassette keys (CODE_MAP gap: byte length alone collides). */
 export function contentHash(dataUrlOrBase64: string): string {
   return createHash("sha256").update(dataUrlOrBase64.slice(0, 512_000)).digest("hex").slice(0, 16);
+}
+
+const falSamResponseSchema = z.object({
+  boxes: z.array(z.array(z.number())).optional(),
+  scores: z.array(z.number()).optional(),
+});
+
+async function runFalSam(req: {
+  imageDataUrl: string;
+  promptText: string;
+  conversationId?: string;
+}): Promise<SamResult> {
+  const env = getServerEnv();
+  if (!env.FAL_KEY) throw new Error("Missing FAL_KEY for SAM fallback");
+  return traced(
+    { kind: "sam.segment", model: "fal-ai/sam-3/image", provider: "fal", conversationId: req.conversationId },
+    async () => {
+      const res = await fetch("https://fal.run/fal-ai/sam-3/image", {
+        method: "POST",
+        signal: AbortSignal.timeout(60_000),
+        headers: {
+          Authorization: `Key ${env.FAL_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          image_url: req.imageDataUrl,
+          prompt: req.promptText,
+          return_multiple_masks: true,
+          max_masks: 6,
+          include_scores: true,
+          include_boxes: true,
+        }),
+      });
+      if (!res.ok) throw new Error(`fal SAM failed: ${res.status} ${await res.text()}`);
+      const parsed = falSamResponseSchema.parse(await res.json());
+      const boxes = parsed.boxes ?? [];
+      const scores = parsed.scores ?? [];
+      const objects: SamObject[] = boxes
+        .filter((b) => b.length >= 4)
+        .map((b, i) => ({
+          objectId: `fal_${i}`,
+          box: { left: b[0]!, top: b[1]!, right: b[2]!, bottom: b[3]! },
+          confidence: scores[i],
+          mask: { width: 0, height: 0, encoding: "none", payload: "" },
+          rasterBase64: "",
+        }));
+      return { objects, diagnostics: [] };
+    },
+  );
 }
 
 async function runSamPrompt(req: {
@@ -38,69 +92,89 @@ async function runSamPrompt(req: {
   cassetteInput: Record<string, unknown>;
   kind: string;
   conversationId?: string;
+  allowFalFallback?: boolean;
 }): Promise<SamResult> {
   const env = getServerEnv();
   const model = env.SAM_MODEL;
-  return withCassette(req.cassetteNamespace, req.cassetteInput, () =>
-    traced({ kind: req.kind, model, provider: "meta", conversationId: req.conversationId }, async () => {
-      const client = getMetaClient();
-      const events = await client.responses.create({
-        model,
-        stream: true,
-        input: [
-          {
-            type: "message",
-            role: "user",
-            content: [
-              { type: "input_text", text: req.promptText },
-              { type: "input_image", image_url: req.imageDataUrl, detail: "auto" },
+  return withCassette(req.cassetteNamespace, req.cassetteInput, async () => {
+    if (!metaConfigured() && req.allowFalFallback && env.FAL_KEY && env.AI_MODE !== "replay") {
+      return runFalSam({
+        imageDataUrl: req.imageDataUrl,
+        promptText: req.promptText,
+        conversationId: req.conversationId,
+      });
+    }
+    try {
+      return await traced(
+        { kind: req.kind, model, provider: "meta", conversationId: req.conversationId },
+        async () => {
+          const client = getMetaClient();
+          const events = await client.responses.create({
+            model,
+            stream: true,
+            input: [
+              {
+                type: "message",
+                role: "user",
+                content: [
+                  { type: "input_text", text: req.promptText },
+                  { type: "input_image", image_url: req.imageDataUrl, detail: "auto" },
+                ],
+              },
             ],
-          },
-        ],
-        metadata: { include_confidence: "true", mask_encoding: "one_bit", score_threshold: "0.5" },
-      });
+            metadata: { include_confidence: "true", mask_encoding: "one_bit", score_threshold: "0.5" },
+          });
 
-      const parsed = parseImageStream(events as AsyncIterable<{ type: string }>);
-      // Drain the stream so finalResult resolves.
-      for await (const _event of parsed) {
-        void _event;
+          const parsed = parseImageStream(events as AsyncIterable<{ type: string }>);
+          for await (const _event of parsed) {
+            void _event;
+          }
+          const { records, diagnostics } = await parsed.finalResult;
+
+          const masks = recordsOfKind(records, "mask");
+          const objects: SamObject[] = masks.map((record) => {
+            const raster = decodeMaskToRaster(record.mask);
+            return {
+              objectId: record.objectId,
+              box: {
+                left: record.bounds.left,
+                top: record.bounds.top,
+                right: record.bounds.right,
+                bottom: record.bounds.bottom,
+              },
+              confidence: record.confidence,
+              mask: {
+                width: record.mask.width,
+                height: record.mask.height,
+                encoding: record.mask.encoding,
+                payload: record.mask.payload,
+              },
+              rasterBase64: Buffer.from(raster).toString("base64"),
+            };
+          });
+
+          return {
+            objects,
+            diagnostics: diagnostics.map((d) => ({ severity: d.severity, code: d.code, message: d.message })),
+          };
+        },
+      );
+    } catch (err) {
+      if (req.allowFalFallback && env.FAL_KEY && env.AI_MODE !== "replay") {
+        return runFalSam({
+          imageDataUrl: req.imageDataUrl,
+          promptText: req.promptText,
+          conversationId: req.conversationId,
+        });
       }
-      const { records, diagnostics } = await parsed.finalResult;
-
-      const masks = recordsOfKind(records, "mask");
-      const objects: SamObject[] = masks.map((record) => {
-        const raster = decodeMaskToRaster(record.mask);
-        return {
-          objectId: record.objectId,
-          box: {
-            left: record.bounds.left,
-            top: record.bounds.top,
-            right: record.bounds.right,
-            bottom: record.bounds.bottom,
-          },
-          confidence: record.confidence,
-          mask: {
-            width: record.mask.width,
-            height: record.mask.height,
-            encoding: record.mask.encoding,
-            payload: record.mask.payload,
-          },
-          rasterBase64: Buffer.from(raster).toString("base64"),
-        };
-      });
-
-      return {
-        objects,
-        diagnostics: diagnostics.map((d) => ({ severity: d.severity, code: d.code, message: d.message })),
-      };
-    }),
-  );
+      throw err;
+    }
+  });
 }
 
 /**
- * SAM 3.1 segmentation via Responses API streaming + @meta-sam/parser.
- * `nounPhrase` must be a short English category phrase ("dress"), not a
- * brand-like product name. Zero matches returns an empty objects list.
+ * SAM 3.1 segmentation via Responses API streaming + @meta-sam/parser
+ * (with optional fal.ai SAM 3 fallback).
  */
 export async function segmentImage(req: {
   imageDataUrl: string;
@@ -115,16 +189,13 @@ export async function segmentImage(req: {
     cassetteInput: { model: env.SAM_MODEL, nounPhrase: req.nounPhrase, imageHash: contentHash(req.imageDataUrl) },
     kind: "sam.segment",
     conversationId: req.conversationId,
+    allowFalFallback: true,
   });
 }
 
 /**
  * SAM point prompt (disambiguation ladder step d): segment the garment the
- * buyer tapped/chose. A point alone often segments a garment *part* (e.g.
- * the chest print), so when the tapped crop's box is known it is sent with
- * the point to constrain the result to that garment. Coordinates are
- * original-image pixels; the object-prompt text is built with
- * @meta-sam/parser's buildObjectPrompt.
+ * buyer tapped/chose.
  */
 export async function segmentImageAtPoint(req: {
   imageDataUrl: string;

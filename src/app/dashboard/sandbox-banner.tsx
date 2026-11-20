@@ -26,7 +26,7 @@ export function SandboxBanner() {
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-utility-yellow-200 bg-warning-primary px-4 py-3 text-sm text-warning-primary">
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-none border border-utility-yellow-200 bg-warning-primary px-4 py-3 text-sm text-warning-primary">
       <p>This is a demo account. Edit products, orders, and chats here. The public catalog stays untouched.</p>
       <div className="flex items-center gap-2">
         <Button size="sm" color="secondary" isDisabled={busy} onClick={() => void reset()}>

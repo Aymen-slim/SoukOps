@@ -1,4 +1,5 @@
 import { isBusinessType, type BusinessType } from "@/lib/domain/business";
+import { isProCategory, isWorkspaceMode, type ProCategory, type WorkspaceMode } from "@/lib/pro/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isReplyLanguage, type ReplyLanguage } from "@/lib/pipeline/seller-voice";
 
@@ -15,10 +16,15 @@ export interface DemoMerchant {
   ai_instructions: string;
   business_type: BusinessType;
   business_description: string;
+  workspace_mode: WorkspaceMode;
+  pro_category: ProCategory | null;
   is_sandbox: boolean;
 }
 
 export const SHOP_COLUMNS =
+  "id, name, slug, payment_link, free_delivery_threshold_millimes, courier_mode, reply_language, ai_instructions, business_type, business_description, workspace_mode, pro_category, is_sandbox";
+
+export const PRE_PRO_COLUMNS =
   "id, name, slug, payment_link, free_delivery_threshold_millimes, courier_mode, reply_language, ai_instructions, business_type, business_description, is_sandbox";
 
 export const LEGACY_COLUMNS = "id, name, payment_link, free_delivery_threshold_millimes, courier_mode";
@@ -36,23 +42,30 @@ export function mapMerchant(row: Record<string, unknown>): DemoMerchant {
     ai_instructions: typeof row.ai_instructions === "string" ? row.ai_instructions : "",
     business_type: isBusinessType(row.business_type) ? row.business_type : "general",
     business_description: typeof row.business_description === "string" ? row.business_description : "",
+    workspace_mode: isWorkspaceMode(row.workspace_mode) ? row.workspace_mode : "ecommerce",
+    pro_category: isProCategory(row.pro_category) ? row.pro_category : null,
     is_sandbox: Boolean(row.is_sandbox),
   };
 }
 
+/** Selects one merchant row with fallback across schema migration levels (0007 -> 0006 -> 0001). */
+export async function selectMerchantRow(
+  build: (columns: string) => PromiseLike<{ data: unknown; error: { message: string } | null }>,
+): Promise<DemoMerchant | null> {
+  for (const cols of [SHOP_COLUMNS, PRE_PRO_COLUMNS, LEGACY_COLUMNS]) {
+    const res = await build(cols);
+    if (!res.error && res.data) return mapMerchant(res.data as Record<string, unknown>);
+    if (!res.error) return null;
+  }
+  return null;
+}
+
 async function oldestShop(supabase: Admin, sandbox: "exclude" | "any"): Promise<DemoMerchant | null> {
-  let query = supabase.from("merchants").select(SHOP_COLUMNS).order("created_at", { ascending: true }).limit(1);
-  if (sandbox === "exclude") query = query.eq("is_sandbox", false);
-  const { data, error } = await query.maybeSingle();
-  if (!error && data) return mapMerchant(data as Record<string, unknown>);
-  const legacy = await supabase
-    .from("merchants")
-    .select(LEGACY_COLUMNS)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (legacy.error || !legacy.data) return null;
-  return mapMerchant(legacy.data as Record<string, unknown>);
+  return selectMerchantRow((cols) => {
+    let query = supabase.from("merchants").select(cols).order("created_at", { ascending: true }).limit(1);
+    if (sandbox === "exclude") query = query.eq("is_sandbox", false);
+    return query.maybeSingle();
+  });
 }
 
 /** Oldest real shop — the one `npm run seed:catalog` already uses. Sandboxes are skipped. */
@@ -61,9 +74,7 @@ export async function getDemoMerchant(supabase: Admin): Promise<DemoMerchant | n
 }
 
 export async function getShopBySlug(supabase: Admin, slug: string): Promise<DemoMerchant | null> {
-  const { data, error } = await supabase.from("merchants").select(SHOP_COLUMNS).eq("slug", slug).maybeSingle();
-  if (error || !data) return null;
-  return mapMerchant(data as Record<string, unknown>);
+  return selectMerchantRow((cols) => supabase.from("merchants").select(cols).eq("slug", slug).maybeSingle());
 }
 
 function safeId(value: string): boolean {
@@ -72,9 +83,9 @@ function safeId(value: string): boolean {
 
 async function shopByColumn(supabase: Admin, column: string, value: string): Promise<DemoMerchant | null> {
   if (!safeId(value)) return null;
-  const { data, error } = await supabase.from("merchants").select(SHOP_COLUMNS).eq(column, value).limit(1).maybeSingle();
-  if (error || !data) return null;
-  return mapMerchant(data as Record<string, unknown>);
+  return selectMerchantRow((cols) =>
+    supabase.from("merchants").select(cols).eq(column, value).limit(1).maybeSingle(),
+  );
 }
 
 export async function merchantForWhatsAppPhone(supabase: Admin, phoneNumberId: string | null): Promise<DemoMerchant | null> {

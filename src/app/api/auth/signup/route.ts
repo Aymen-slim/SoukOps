@@ -1,13 +1,20 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { shopNameFromEmail, slugFromEmail } from "@/lib/auth/sandbox";
-import { clearMerchantSessionCache } from "@/lib/auth/session";
+import { clearMerchantSessionCache, WORKSPACE_MODE_COOKIE, workspaceModeCookieOptions } from "@/lib/auth/session";
+import { workspaceHomePath } from "@/lib/auth/workspace-routing";
+import { getProPreset } from "@/lib/pro/presets";
+import { seedProWorkspace } from "@/lib/pro/seed";
+import { PRO_CATEGORIES, WORKSPACE_MODES } from "@/lib/pro/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 const bodySchema = z.object({
   email: z.string().trim().email().max(160),
   password: z.string().min(8).max(72),
+  workspaceMode: z.enum(WORKSPACE_MODES).default("ecommerce"),
+  proCategory: z.enum(PRO_CATEGORIES).optional(),
+  displayName: z.string().trim().max(80).optional(),
 });
 
 export async function POST(request: Request) {
@@ -17,6 +24,8 @@ export async function POST(request: Request) {
   }
   const email = parsed.data.email.toLowerCase();
   const password = parsed.data.password;
+  const workspaceMode = parsed.data.workspaceMode;
+  const proCategory = workspaceMode === "pro" ? (parsed.data.proCategory ?? "creator") : null;
 
   let admin: ReturnType<typeof createAdminClient>;
   try {
@@ -37,20 +46,69 @@ export async function POST(request: Request) {
   const userId = created.data.user.id;
 
   const slug = await slugFromEmail(admin, email);
-  const { error: shopError } = await admin.from("merchants").insert({
-    name: await shopNameFromEmail(email),
-    slug,
-    owner_user_id: userId,
-    is_sandbox: false,
-    reply_language: "derja",
-    ai_instructions: "",
-  });
-  if (shopError) {
+  const preset = proCategory ? getProPreset(proCategory) : null;
+  const defaultName =
+    parsed.data.displayName || (preset ? preset.defaultDisplayName : await shopNameFromEmail(email));
+
+  let merchantId: string | null = null;
+  let shopError: { message: string } | null = null;
+  const withMode = await admin
+    .from("merchants")
+    .insert({
+      name: defaultName,
+      slug,
+      owner_user_id: userId,
+      is_sandbox: false,
+      reply_language: "derja",
+      ai_instructions: preset ? preset.styleRules.slice(0, 380) : "",
+      workspace_mode: workspaceMode,
+      pro_category: proCategory,
+    })
+    .select("id")
+    .single();
+
+  if (!withMode.error && withMode.data) {
+    merchantId = withMode.data.id as string;
+  } else if (workspaceMode === "ecommerce" && /workspace_mode|pro_category/i.test(withMode.error?.message ?? "")) {
+    const legacy = await admin
+      .from("merchants")
+      .insert({
+        name: defaultName,
+        slug,
+        owner_user_id: userId,
+        is_sandbox: false,
+        reply_language: "derja",
+        ai_instructions: "",
+      })
+      .select("id")
+      .single();
+    merchantId = (legacy.data?.id as string | undefined) ?? null;
+    shopError = legacy.error;
+  } else {
+    shopError = withMode.error;
+  }
+
+  if (shopError || !merchantId) {
     await admin.auth.admin.deleteUser(userId);
-    const hint = /column|schema/i.test(shopError.message)
-      ? " Apply supabase/migrations/0004_seller_accounts.sql."
-      : "";
-    return NextResponse.json({ error: `${shopError.message}.${hint}` }, { status: 500 });
+    const msg = shopError?.message ?? "Could not create workspace";
+    const hint = /workspace_mode|pro_category/i.test(msg)
+      ? " Apply supabase/migrations/0007_pro_workspace_and_ai_upgrade.sql."
+      : /column|schema/i.test(msg)
+        ? " Apply supabase/migrations/0004_seller_accounts.sql."
+        : "";
+    return NextResponse.json({ error: `${msg}.${hint}` }, { status: 500 });
+  }
+
+  if (workspaceMode === "pro" && proCategory) {
+    const seeded = await seedProWorkspace(admin, merchantId, proCategory, defaultName);
+    if (!seeded.seeded && seeded.missingSchema) {
+      await admin.from("merchants").delete().eq("id", merchantId);
+      await admin.auth.admin.deleteUser(userId);
+      return NextResponse.json(
+        { error: "Creator/Pro tables are not migrated yet. Apply supabase/migrations/0007_pro_workspace_and_ai_upgrade.sql." },
+        { status: 500 },
+      );
+    }
   }
 
   try {
@@ -63,5 +121,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Could not start the session" }, { status: 500 });
   }
   clearMerchantSessionCache();
-  return NextResponse.json({ ok: true });
+  const redirectTo = workspaceHomePath(workspaceMode);
+  const response = NextResponse.json({ ok: true, workspaceMode, proCategory, redirectTo });
+  response.cookies.set(WORKSPACE_MODE_COOKIE, workspaceMode, workspaceModeCookieOptions());
+  return response;
 }

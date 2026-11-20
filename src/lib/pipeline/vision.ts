@@ -3,7 +3,8 @@ import { z } from "zod";
 import { embedImages, embedTexts } from "@/lib/ai/embeddings";
 import { segmentImage, segmentImageAtPoint, type SamBox } from "@/lib/ai/sam";
 import { sparkJson } from "@/lib/ai/spark";
-import { getServerEnv } from "@/lib/env";
+import { trace } from "@/lib/ai/trace";
+import { getServerEnv, resolveEmbedProviderName } from "@/lib/env";
 import { clampBox, cropToBox, drawNumberedBoxes, expandBox, imageSize } from "@/lib/media/crop";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -396,14 +397,22 @@ export async function matchProduct(req: {
   if (candidates.length === 0) {
     return { decision: "unmatched", chosen: null, top: [], candidates: [], score: 0, scoreSource: "vector", alternative: null };
   }
-  const rerank = await rerankWithSpark({
-    supabase: req.supabase,
-    candidates,
-    cropPng: req.cropPng,
-    descriptionEn: req.descriptionEn,
-    conversationId: req.conversationId,
-  });
-  const chosen = rerank?.candidate ?? candidates[0];
+  const top = candidates[0];
+  const second = candidates[1];
+  const decisiveVector =
+    (candidates.length === 1 && top.similarity >= GATE_PROPOSE) ||
+    (top.similarity >= 0.9 && (!second || top.similarity - second.similarity >= 0.08));
+
+  const rerank = decisiveVector
+    ? null
+    : await rerankWithSpark({
+        supabase: req.supabase,
+        candidates,
+        cropPng: req.cropPng,
+        descriptionEn: req.descriptionEn,
+        conversationId: req.conversationId,
+      });
+  const chosen = rerank?.candidate ?? top;
   const score = rerank?.confidence ?? chosen.similarity;
   const decision = gateForScore(score);
   return {
@@ -577,11 +586,60 @@ export function parseChoice(text: string, optionCount: number): number | null {
   return value - 1;
 }
 
+const MULTI_ITEM_HINT = /\b(left|right|gauche|droite|yasar|ymin|yamin|middle|centre|milieu|both|two|deux|2|zouj|el\s+tani|el\s+awel|يسار|يمين|الزوج|اثنين)\b/i;
+
+async function matchFullImageDirect(req: {
+  supabase: AdminClient;
+  merchantId: string;
+  image: Buffer;
+  size: { width: number; height: number };
+  conversationId?: string;
+}): Promise<ScreenshotOutcome | null> {
+  try {
+    const [fullEmbedding] = await embedImages([req.image.toString("base64")], req.conversationId);
+    if (!fullEmbedding || fullEmbedding.length === 0) return null;
+    const match = await matchProduct({
+      supabase: req.supabase,
+      merchantId: req.merchantId,
+      embedding: fullEmbedding,
+      cropPng: req.image,
+      conversationId: req.conversationId,
+    });
+    const fullOption: CropOption = {
+      index: 0,
+      objectId: "full",
+      box: { left: 0, top: 0, right: req.size.width, bottom: req.size.height },
+      cropPng: req.image,
+      embedding: fullEmbedding,
+      best: match.chosen,
+      bestSimilarity: match.score,
+    };
+    if (match.decision !== "unmatched") {
+      return { status: "matched", option: fullOption, match };
+    }
+    return { status: "unmatched", option: fullOption, match, embedding: fullEmbedding };
+  } catch {
+    return null;
+  }
+}
+
+function logSamSkipped(reason: string, conversationId?: string, extra?: Record<string, unknown>): void {
+  const env = getServerEnv();
+  const embedProvider = resolveEmbedProviderName(env);
+  void trace({
+    kind: "vision.sam_skipped",
+    model: embedProvider === "gemini" ? env.GEMINI_EMBED_MODEL : embedProvider === "voyage" ? env.VOYAGE_EMBED_MODEL : "PE-Core-L14-336",
+    provider: embedProvider === "gemini" ? "gemini" : embedProvider === "voyage" ? "voyage" : "baseten",
+    latencyMs: 0,
+    ok: true,
+    conversationId,
+    detail: { reason, segmentMode: env.VISION_SEGMENT_MODE, ...extra },
+  });
+}
+
 /**
- * Screenshot resolution: SAM -> crops -> per-crop catalog probe -> ladder.
- * (a) only one crop matches the catalog, (b) buyer's words pick one,
- * (c) otherwise numbered options for reply buttons, (d) point prompt on tap
- * (see resolvePointSelection).
+ * Screenshot resolution: supports `VISION_SEGMENT_MODE=always|auto|never` so
+ * SAM 3.1 + embedding can be compared against direct multimodal embedding.
  */
 export async function resolveScreenshot(req: {
   supabase: AdminClient;
@@ -594,6 +652,27 @@ export async function resolveScreenshot(req: {
   color?: string | null;
   conversationId?: string;
 }): Promise<ScreenshotOutcome> {
+  const env = getServerEnv();
+  const size = await imageSize(req.image);
+
+  if (env.VISION_SEGMENT_MODE === "never") {
+    const direct = await matchFullImageDirect({ ...req, size });
+    logSamSkipped("mode_never", req.conversationId, { status: direct?.status ?? "no_garment", score: direct && "match" in direct ? direct.match.score : null });
+    return direct ?? { status: "no_garment", objects: 0 };
+  }
+
+  if (
+    env.VISION_SEGMENT_MODE === "auto" &&
+    !req.spatialHint &&
+    !MULTI_ITEM_HINT.test(req.buyerText ?? "")
+  ) {
+    const direct = await matchFullImageDirect({ ...req, size });
+    if (direct?.status === "matched" && direct.match.decision === "propose") {
+      logSamSkipped("auto_confident_direct", req.conversationId, { score: direct.match.score });
+      return direct;
+    }
+  }
+
   const dataUrl = `data:${req.mime};base64,${req.image.toString("base64")}`;
   let sam = await segmentImage({
     imageDataUrl: dataUrl,
@@ -608,7 +687,6 @@ export async function resolveScreenshot(req: {
     });
   }
 
-  const size = await imageSize(req.image);
   const clamped = sam.objects
     .map((object) => ({ object, box: clampBox(object.box, size.width, size.height) }))
     .filter((entry): entry is { object: (typeof sam.objects)[number]; box: SamBox } => entry.box !== null)
@@ -639,33 +717,8 @@ export async function resolveScreenshot(req: {
   // Fallback when SAM finds no mask: embed the full image directly so clean
   // catalog/product photos still match instead of returning no_garment.
   if (options.length === 0) {
-    try {
-      const [fullEmbedding] = await embedImages([req.image.toString("base64")], req.conversationId);
-      if (fullEmbedding && fullEmbedding.length > 0) {
-        const match = await matchProduct({
-          supabase: req.supabase,
-          merchantId: req.merchantId,
-          embedding: fullEmbedding,
-          cropPng: req.image,
-          conversationId: req.conversationId,
-        });
-        const fullOption: CropOption = {
-          index: 0,
-          objectId: "full",
-          box: { left: 0, top: 0, right: size.width, bottom: size.height },
-          cropPng: req.image,
-          embedding: fullEmbedding,
-          best: match.chosen,
-          bestSimilarity: match.score,
-        };
-        if (match.decision !== "unmatched") {
-          return { status: "matched", option: fullOption, match };
-        }
-        return { status: "unmatched", option: fullOption, match, embedding: fullEmbedding };
-      }
-    } catch {
-      // Fall through to no_garment if direct embedding also fails.
-    }
+    const direct = await matchFullImageDirect({ ...req, size });
+    if (direct) return direct;
     return { status: "no_garment", objects: sam.objects.length };
   }
 

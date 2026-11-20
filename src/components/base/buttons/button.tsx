@@ -24,32 +24,32 @@ export const styles = sortCx({
     sizes: {
         xs: {
             root: [
-                "gap-1 rounded-lg px-2.5 py-1.5 text-sm font-semibold before:rounded-[7px] data-icon-only:p-2",
+                "gap-1.5 rounded-none px-2.5 py-1.5 text-sm font-medium data-icon-only:p-2",
                 "in-data-input-wrapper:px-3.5 in-data-input-wrapper:py-2.5 in-data-input-wrapper:data-icon-only:p-2.5",
-                "*:data-icon:size-4 *:data-icon:stroke-[2.25px]",
+                "*:data-icon:size-4 *:data-icon:stroke-[2px]",
             ].join(" "),
             linkRoot: "gap-1 *:data-text:underline-offset-3",
         },
         sm: {
             root: [
-                "gap-1 rounded-lg px-3 py-2 text-sm font-semibold before:rounded-[7px] data-icon-only:p-2",
+                "gap-1.5 rounded-none px-3.5 py-2 text-sm font-medium data-icon-only:p-2",
                 "in-data-input-wrapper:px-3.5 in-data-input-wrapper:py-2.5 in-data-input-wrapper:data-icon-only:p-2.5",
             ].join(" "),
             linkRoot: "gap-1 *:data-text:underline-offset-3",
         },
         md: {
             root: [
-                "gap-1 rounded-lg px-3.5 py-2.5 text-sm font-semibold before:rounded-[7px] data-icon-only:p-2.5",
+                "gap-1.5 rounded-none px-4 py-2.5 text-sm font-medium data-icon-only:p-2.5",
                 "in-data-input-wrapper:gap-1.5 in-data-input-wrapper:px-4 in-data-input-wrapper:text-md in-data-input-wrapper:data-icon-only:p-3",
             ].join(" "),
             linkRoot: "gap-1 *:data-text:underline-offset-4",
         },
         lg: {
-            root: "gap-1.5 rounded-lg px-4 py-2.5 text-md font-semibold before:rounded-[7px] data-icon-only:p-3",
+            root: "gap-2 rounded-none px-5 py-2.5 text-md font-medium data-icon-only:p-3",
             linkRoot: "gap-1.5 *:data-text:underline-offset-4",
         },
         xl: {
-            root: "gap-1.5 rounded-lg px-4.5 py-3 text-md font-semibold before:rounded-[7px] data-icon-only:p-3.5",
+            root: "gap-2 rounded-none px-6 py-3 text-md font-medium data-icon-only:p-3.5",
             linkRoot: "gap-1.5 *:data-text:underline-offset-4",
         },
     },
@@ -57,30 +57,28 @@ export const styles = sortCx({
     colors: {
         primary: {
             root: [
-                "bg-brand-solid text-white shadow-xs-skeuomorphic ring-1 ring-transparent ring-inset hover:bg-brand-solid_hover data-loading:bg-brand-solid_hover",
-                // Inner border gradient
-                "before:absolute before:inset-px before:border before:border-white/12 before:mask-b-from-0%",
+                "bg-[#1D1E1A] text-white ring-1 ring-[#1D1E1A] ring-inset hover:bg-[#27272A] hover:ring-[#27272A] data-loading:bg-[#27272A]",
                 // Icon styles
-                "*:data-icon:text-white/60 hover:*:data-icon:text-white/70",
+                "*:data-icon:text-white/75 hover:*:data-icon:text-white",
             ].join(" "),
         },
         secondary: {
             root: [
-                "bg-primary text-secondary shadow-xs-skeuomorphic ring-1 ring-primary ring-inset hover:bg-primary_hover hover:text-secondary_hover data-loading:bg-primary_hover",
+                "bg-white text-primary ring-1 ring-[#D4D4D8] ring-inset hover:bg-[#FAFAF9] hover:ring-[#09090B] data-loading:bg-[#FAFAF9]",
                 // Icon styles
-                "*:data-icon:text-fg-quaternary hover:*:data-icon:text-fg-quaternary_hover",
+                "*:data-icon:text-fg-tertiary hover:*:data-icon:text-fg-primary",
             ].join(" "),
         },
         tertiary: {
             root: [
-                "text-tertiary hover:bg-primary_hover hover:text-tertiary_hover data-loading:bg-primary_hover",
+                "text-tertiary hover:bg-[#F4F4F5] hover:text-primary data-loading:bg-[#F4F4F5]",
                 // Icon styles
-                "*:data-icon:text-fg-quaternary hover:*:data-icon:text-fg-quaternary_hover",
+                "*:data-icon:text-fg-quaternary hover:*:data-icon:text-fg-primary",
             ].join(" "),
         },
         "link-color": {
             root: [
-                "justify-normal rounded p-0! text-brand-secondary hover:text-brand-secondary_hover",
+                "justify-normal rounded-none p-0! text-brand-secondary hover:text-brand-secondary_hover",
                 // Inner text underline
                 "*:data-text:underline *:data-text:decoration-transparent hover:*:data-text:decoration-fg-brand-secondary_alt",
                 // Icon styles
@@ -89,25 +87,23 @@ export const styles = sortCx({
         },
         "link-gray": {
             root: [
-                "justify-normal rounded p-0! text-tertiary hover:text-tertiary_hover",
+                "justify-normal rounded-none p-0! text-tertiary hover:text-primary",
                 // Inner text underline
                 "*:data-text:underline *:data-text:decoration-transparent hover:*:data-text:decoration-fg-quaternary",
                 // Icon styles
-                "*:data-icon:text-fg-quaternary hover:*:data-icon:text-fg-quaternary_hover",
+                "*:data-icon:text-fg-quaternary hover:*:data-icon:text-fg-primary",
             ].join(" "),
         },
         "primary-destructive": {
             root: [
-                "bg-error-solid text-white shadow-xs-skeuomorphic ring-1 ring-transparent outline-error ring-inset hover:bg-error-solid_hover data-loading:bg-error-solid_hover",
-                // Inner border gradient
-                "before:absolute before:inset-px before:border before:border-white/12 before:mask-b-from-0%",
+                "bg-error-solid text-white ring-1 ring-error-solid outline-error ring-inset hover:bg-error-solid_hover data-loading:bg-error-solid_hover",
                 // Icon styles
-                "*:data-icon:text-white/60 hover:*:data-icon:text-white/70",
+                "*:data-icon:text-white/75 hover:*:data-icon:text-white",
             ].join(" "),
         },
         "secondary-destructive": {
             root: [
-                "bg-primary text-error-primary shadow-xs-skeuomorphic ring-1 ring-error_subtle outline-error ring-inset hover:bg-error-primary hover:text-error-primary_hover data-loading:bg-error-primary",
+                "bg-white text-error-primary ring-1 ring-error_subtle outline-error ring-inset hover:bg-error-primary hover:text-error-primary_hover data-loading:bg-error-primary",
                 // Icon styles
                 "*:data-icon:text-fg-error-secondary hover:*:data-icon:text-fg-error-primary",
             ].join(" "),
@@ -121,7 +117,7 @@ export const styles = sortCx({
         },
         "link-destructive": {
             root: [
-                "justify-normal rounded p-0! text-error-primary outline-error hover:text-error-primary_hover",
+                "justify-normal rounded-none p-0! text-error-primary outline-error hover:text-error-primary_hover",
                 // Inner text underline
                 "*:data-text:underline *:data-text:decoration-transparent *:data-text:underline-offset-2 hover:*:data-text:decoration-current",
                 // Icon styles

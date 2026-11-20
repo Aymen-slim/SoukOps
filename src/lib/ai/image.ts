@@ -1,15 +1,40 @@
-import { getServerEnv } from "@/lib/env";
+import { getServerEnv, resolveImageProviderName } from "@/lib/env";
 import { withCassette } from "./cassette";
 import { getMetaClient } from "./meta";
+import { geminiGenerateImage } from "./providers/gemini";
+import { openaiGenerateImage } from "./providers/openai";
 import { traced } from "./trace";
 
 /**
- * Muse Image generation. P2 only (out-of-stock poster): generate the background
- * only and composite the real SAM crop on top with sharp — never let the image
- * model redraw the product.
+ * Image generation routed via `IMAGE_PROVIDER` (`openai` gpt-image-2.6, `gemini`
+ * Nano Banana 2.1, or `meta` muse-image-1.0). For product/service overlays,
+ * generate backgrounds/cards only and composite real photos with sharp.
  */
-export async function generateImage(req: { prompt: string; conversationId?: string }): Promise<{ b64Json?: string; url?: string }> {
+export async function generateImage(req: {
+  prompt: string;
+  conversationId?: string;
+}): Promise<{ b64Json?: string; url?: string }> {
   const env = getServerEnv();
+  const provider = resolveImageProviderName(env);
+
+  if (provider === "openai") {
+    const model = env.OPENAI_IMAGE_MODEL;
+    return withCassette("image.generate", { provider, model, prompt: req.prompt }, () =>
+      traced({ kind: "image.generate", model, provider: "openai", conversationId: req.conversationId }, () =>
+        openaiGenerateImage({ model, prompt: req.prompt }),
+      ),
+    );
+  }
+
+  if (provider === "gemini") {
+    const model = env.GEMINI_IMAGE_MODEL;
+    return withCassette("image.generate", { provider, model, prompt: req.prompt }, () =>
+      traced({ kind: "image.generate", model, provider: "gemini", conversationId: req.conversationId }, () =>
+        geminiGenerateImage({ model, prompt: req.prompt }),
+      ),
+    );
+  }
+
   const model = env.IMAGE_MODEL;
   return withCassette("image.generate", { model, prompt: req.prompt }, () =>
     traced({ kind: "image.generate", model, provider: "meta", conversationId: req.conversationId }, async () => {

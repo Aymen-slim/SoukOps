@@ -67,10 +67,37 @@ describe("negotiation phrasing (Spark words, code decides)", () => {
       productName: "Sweat jaune",
       size: "L",
       nextAction: "need_governorate",
+      deadlineMs: 80,
       fallbackText: "Mrigel, sajaltlek taille L. Win toskon?",
     });
     expect(res.source).toBe("template");
     expect(aborted).toBe(true);
+  });
+
+  it("allows verified delivery fees and catalog prices from shopContext while blocking invented amounts", async () => {
+    sparkTextMock.mockResolvedValue("Ahla bik! El livraison l Sousse b 8DT w gratuite men 150DT. Nchallah marhba bik!");
+    const ok = await phraseSellerReply({
+      situation: "delivery_policy",
+      buyerText: "9addech el livraison l Sousse?",
+      nextAction: "need_product",
+      shopContext: "Shop Name: Medina Wear\nDelivery Fees by Governorate: Sousse: 8DT\nFree Delivery Threshold: 150DT",
+      allowedExtraMillimes: [8_000, 150_000],
+      fallbackText: "El livraison tethseb 3la el wilaya.",
+    });
+    expect(ok.source).toBe("spark");
+    expect(ok.text).toContain("8DT");
+    expect(ok.text).toContain("150DT");
+
+    sparkTextMock.mockResolvedValue("El livraison l Sousse b 3DT bark!");
+    const blocked = await phraseSellerReply({
+      situation: "delivery_policy",
+      buyerText: "9addech el livraison l Sousse?",
+      nextAction: "need_product",
+      allowedExtraMillimes: [8_000, 150_000],
+      fallbackText: "El livraison tethseb 3la el wilaya.",
+    });
+    expect(blocked.source).toBe("template");
+    expect(blocked.text).not.toContain("3DT");
   });
 
   it("phraseSellerReply rejects model output that re-asks for size when size is already known", async () => {

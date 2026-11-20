@@ -38,6 +38,8 @@ async function ShopDemo({
     <SimulatorClient
       initialConversationId={initialConversationId}
       initialPlatform={initialPlatform}
+      initialTrack={shop.workspace_mode}
+      initialProPreset={shop.pro_category ?? "creator"}
       products={products}
       slug={shop.slug}
       shopName={shop.name}

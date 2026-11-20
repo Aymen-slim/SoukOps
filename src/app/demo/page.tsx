@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { SiteBar } from "@/components/site-bar";
 import { getDemoMerchant } from "@/lib/dashboard/merchant";
 import { loadPublicCatalog, type PublicProduct } from "@/lib/demo/public-catalog";
+import { isProCategory, type ProCategory, type WorkspaceMode } from "@/lib/pro/types";
 import { simulatorIsPublic } from "@/lib/security/simulatorGuard";
 import { createAdminClient } from "@/lib/supabase/admin";
 import SimulatorClient, { type DemoPlatform } from "../simulator/simulator-client";
@@ -13,15 +14,33 @@ function parsePlatform(raw: string | string[] | undefined): DemoPlatform {
   return "whatsapp";
 }
 
+function parseTrack(raw: string | string[] | undefined): WorkspaceMode {
+  const val = typeof raw === "string" ? raw.toLowerCase() : "";
+  return val === "pro" || val === "creator" ? "pro" : "ecommerce";
+}
+
+function parseProPreset(raw: string | string[] | undefined): ProCategory {
+  const val = typeof raw === "string" ? raw.toLowerCase() : "";
+  return isProCategory(val) ? val : "creator";
+}
+
 async function DemoWithQuery({
   searchParams,
 }: {
-  searchParams: Promise<{ conversation?: string | string[]; platform?: string | string[] }>;
+  searchParams: Promise<{
+    conversation?: string | string[];
+    platform?: string | string[];
+    track?: string | string[];
+    preset?: string | string[];
+  }>;
 }) {
   const sp = await searchParams;
   const raw = sp.conversation;
   const initialConversationId = typeof raw === "string" ? raw : null;
   const initialPlatform = parsePlatform(sp.platform);
+  const initialTrack = parseTrack(sp.track);
+  const initialProPreset = parseProPreset(sp.preset);
+
   let products: PublicProduct[] = [];
   try {
     const supabase = createAdminClient();
@@ -34,6 +53,8 @@ async function DemoWithQuery({
     <SimulatorClient
       initialConversationId={initialConversationId}
       initialPlatform={initialPlatform}
+      initialTrack={initialTrack}
+      initialProPreset={initialProPreset}
       products={products}
     />
   );
@@ -42,7 +63,12 @@ async function DemoWithQuery({
 export default function DemoPage({
   searchParams,
 }: {
-  searchParams: Promise<{ conversation?: string | string[]; platform?: string | string[] }>;
+  searchParams: Promise<{
+    conversation?: string | string[];
+    platform?: string | string[];
+    track?: string | string[];
+    preset?: string | string[];
+  }>;
 }) {
   if (!simulatorIsPublic()) {
     return (

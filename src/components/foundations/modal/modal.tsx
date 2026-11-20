@@ -31,7 +31,7 @@ export function Modal({
       className="fixed inset-0 z-50 flex items-end justify-center bg-overlay/60 p-4 backdrop-blur-sm sm:items-center"
     >
       <AriaModal className={cx("w-full max-w-md outline-none", className)}>
-        <AriaDialog className="rounded-2xl bg-primary p-6 shadow-xl ring-1 ring-secondary outline-none">
+        <AriaDialog className="rounded-none bg-primary p-6 shadow-xl ring-1 ring-secondary outline-none">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="text-lg font-semibold text-primary">{title}</h2>

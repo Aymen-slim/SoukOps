@@ -60,7 +60,7 @@ const TableCardRoot = ({
 }) => {
     return (
         <TableContext.Provider value={{ size }}>
-            <div {...props} className={cx("overflow-hidden rounded-xl bg-primary shadow-xs ring-1 ring-secondary", className)}>
+            <div {...props} className={cx("overflow-hidden rounded-none bg-primary ring-1 ring-secondary", className)}>
                 {children}
             </div>
         </TableContext.Provider>

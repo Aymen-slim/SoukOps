@@ -11,18 +11,42 @@ import { captureOptionAnswer, optionAskHint, optionAskText } from "@/lib/domain/
 import { buyerLanguageOf, buyerScriptOf, detectTextScript, resolveBuyerLanguage } from "@/lib/domain/language";
 import { nextAction, nextAskBundle, nextDraftAction } from "@/lib/domain/slots";
 import { ensureProductPolicy } from "@/lib/pipeline/product-policy";
+import { runProTurn } from "@/lib/pro/turn";
+import { isProCategory } from "@/lib/pro/types";
 import { localityPoint } from "@/lib/geo/tunisia";
 import { transcribe } from "@/lib/ai/asr";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { findConfirmedAddress, resolveAndSendPin, sendPinForCandidate } from "./address";
 import { logEvent } from "./events";
+import {
+  DEFAULT_AI_CONTROLS,
+  resolveControlledReplyLanguage,
+  type WorkspaceAiControls,
+} from "@/lib/context/ai-controls";
+import {
+  loadEcommerceKnowledgePacket,
+  loadRecentConversationHistory,
+  matchCatalogProductDirect,
+} from "@/lib/context/workspace-context";
 import { createOrderFromAkked, handleBeddel, persistEnteredBuyer, sendSummary } from "./order";
-import { assistanceReply, phraseNegotiationReply, phraseSellerReply } from "./phrasing";
+import {
+  assistanceReply,
+  phraseNegotiationReply,
+  phraseSellerReply,
+  validateSellerCandidateReply,
+  type SellerReplyFacts,
+} from "./phrasing";
 import { loadBusinessContext } from "./business";
 import { asrBias, bindBuyerLanguage, bindBuyerScript, bindSellerVoice, clearSellerVoice, loadSellerVoice, sellerVoiceFor } from "./seller-voice";
 import { parseDispatchReconfirm, parseDispatchReconfirmReply } from "@/lib/domain/reconfirm";
 import { applyDispatchReconfirmReply } from "./reconfirm";
-import { applyDeterministicFallbacks, fastPathUnderstanding, understand, type Understanding } from "./understand";
+import {
+  applyDeterministicFallbacks,
+  fastPathUnderstanding,
+  understand,
+  understandAndReply,
+  type Understanding,
+} from "./understand";
 import {
   catalogPhotoPath,
   matchByDescription,
@@ -555,31 +579,44 @@ async function phraseMatchCaption(
   priceMillimes: number | undefined,
   buyerText: string,
   conversationId: string,
+  ctx?: {
+    shopContext?: string;
+    conversationHistory?: string;
+    allowedExtraMillimes?: number[];
+    precomputedReply?: string | null;
+    controls?: WorkspaceAiControls;
+  },
 ): Promise<string> {
   const withMatch = {
     ...slots,
     matchedProductId: typeof slots.matchedProductId === "string" ? slots.matchedProductId : "matched",
     matchedProductName: name,
   };
-  const phrased = await phraseSellerReply(
-    {
-      situation: slots.primaryIntent === "ask_price" ? "price_answer" : "matched",
-      buyerText,
-      productName: name,
-      priceMillimes: priceMillimes ?? null,
-      size: typeof slots.size === "string" ? slots.size : null,
-      quantity: typeof slots.quantity === "number" ? slots.quantity : null,
-      governorate: typeof slots.governorate === "string" ? slots.governorate : null,
-      hasPhone: typeof slots.phone === "string",
-      hasName: typeof slots.customerName === "string",
-      nextAction: nextAction(withMatch),
-      askBundle: nextAskBundle(withMatch),
-      askHint: optionAskHint(withMatch),
-      sizeAsk: sizeAskFor(withMatch),
-      fallbackText: matchedText(name, withMatch, priceMillimes),
-    },
-    conversationId,
-  );
+  const facts: SellerReplyFacts = {
+    situation: slots.primaryIntent === "ask_price" ? "price_answer" : "matched",
+    buyerText,
+    productName: name,
+    priceMillimes: priceMillimes ?? null,
+    size: typeof slots.size === "string" ? slots.size : null,
+    quantity: typeof slots.quantity === "number" ? slots.quantity : null,
+    governorate: typeof slots.governorate === "string" ? slots.governorate : null,
+    hasPhone: typeof slots.phone === "string",
+    hasName: typeof slots.customerName === "string",
+    nextAction: nextAction(withMatch),
+    askBundle: nextAskBundle(withMatch),
+    askHint: optionAskHint(withMatch),
+    sizeAsk: sizeAskFor(withMatch),
+    shopContext: ctx?.shopContext,
+    conversationHistory: ctx?.conversationHistory,
+    allowedExtraMillimes: ctx?.allowedExtraMillimes,
+    controls: ctx?.controls,
+    fallbackText: matchedText(name, withMatch, priceMillimes),
+  };
+  if (ctx?.precomputedReply) {
+    const validated = validateSellerCandidateReply(ctx.precomputedReply, facts);
+    if (validated) return validated;
+  }
+  const phrased = await phraseSellerReply(facts, conversationId);
   return phrased.text;
 }
 
@@ -612,9 +649,16 @@ export async function runTurn(conversationId: string): Promise<void> {
       .single();
     if (convError || !conversation) throw new Error(`conversation not found: ${convError?.message}`);
     const merchantId = conversation.merchant_id as string;
-    // Seller voice and the burst fetch are independent: run them together.
-    const [sellerVoice, messagesResult] = await Promise.all([
+    // Seller voice, workspace mode check, and burst fetch are independent: run them together.
+    const [sellerVoice, merchantModeRes, messagesResult] = await Promise.all([
       loadSellerVoice(supabase, merchantId),
+      Promise.resolve(
+        supabase
+          .from("merchants")
+          .select("name, workspace_mode, pro_category")
+          .eq("id", merchantId)
+          .maybeSingle(),
+      ).catch(() => ({ data: null })),
       supabase
         .from("messages")
         .select("id, kind, body, media_path, created_at")
@@ -623,6 +667,31 @@ export async function runTurn(conversationId: string): Promise<void> {
         .gt("created_at", conversation.updated_at)
         .order("created_at", { ascending: true }),
     ]);
+    const merchantMeta = (merchantModeRes?.data ?? null) as {
+      name?: unknown;
+      workspace_mode?: unknown;
+      pro_category?: unknown;
+    } | null;
+    if (merchantMeta?.workspace_mode === "pro") {
+      const { data: proMessages, error: proMsgError } = messagesResult;
+      if (proMsgError) throw new Error(`messages fetch failed: ${proMsgError.message}`);
+      await runProTurn(conversationId, {
+        supabase,
+        conversation: conversation as {
+          id: string;
+          merchant_id: string;
+          customer_id: string | null;
+          slots: Record<string, unknown> | null;
+          negotiation: Record<string, unknown> | null;
+          ai_paused: boolean | null;
+          updated_at: string;
+        },
+        messages: (proMessages ?? []) as MessageRow[],
+        proCategory: isProCategory(merchantMeta.pro_category) ? merchantMeta.pro_category : null,
+        merchantName: typeof merchantMeta.name === "string" ? merchantMeta.name : undefined,
+      });
+      return;
+    }
     bindSellerVoice(conversationId, sellerVoice);
     const { data: messages, error: msgError } = messagesResult;
     if (msgError) throw new Error(`messages fetch failed: ${msgError.message}`);
@@ -718,8 +787,12 @@ export async function runTurn(conversationId: string): Promise<void> {
     ];
     // What the shop sells (seller-confirmed, catalog-suggested) for this turn.
     const business = await loadBusinessContext(supabase, merchantId, productTypes);
+    const activeControls = sellerVoice.controls ?? DEFAULT_AI_CONTROLS;
     const priorSlots = (conversation.slots ?? {}) as Record<string, unknown>;
-    const asrLanguage = buyerLanguageOf(priorSlots) ?? sellerVoiceFor(conversationId).language;
+    const asrLanguage = resolveControlledReplyLanguage({
+      controls: activeControls,
+      priorLanguage: buyerLanguageOf(priorSlots),
+    }).language;
 
     const textParts: string[] = [];
     const imageDataUrls: string[] = [];
@@ -764,6 +837,11 @@ export async function runTurn(conversationId: string): Promise<void> {
     }
 
     const currentSlots = (conversation.slots ?? {}) as Record<string, unknown>;
+    const [ecommerceKnowledge, conversationHistory] = await Promise.all([
+      loadEcommerceKnowledgePacket(supabase, merchantId),
+      loadRecentConversationHistory(supabase, conversationId, { beforeIso: burst[0]?.created_at, limit: 10 }),
+    ]);
+
     const pendingBeforeUnderstand = readPendingChoice(currentSlots);
     const pendingLmBeforeUnderstand = Array.isArray(currentSlots.pendingLandmarkChoice)
       ? currentSlots.pendingLandmarkChoice
@@ -783,57 +861,103 @@ export async function runTurn(conversationId: string): Promise<void> {
         ? fastPathUnderstanding(combinedText, expectingSize)
         : null;
 
-    const result = isButtonChoiceTap
-      ? applyDeterministicFallbacks(
-          combinedText,
-          {
-            primaryIntent: "order",
-            change: null,
-            samNounPhrase: null,
-            productDescriptionEn: null,
-            spatialHint: null,
-            size: null,
-            color: null,
-            quantity: null,
-            customerName: null,
-            phone: null,
-            governorate: null,
-            delegation: null,
-            landmarks: [],
-            floor: null,
-            driverNote: null,
-            discountAskPercent: null,
-            counterOfferMillimes: null,
-            flags: { offTopic: false, insult: false, wantsHuman: false },
-          },
-          expectingSize,
-        )
-      : (fast ??
-          (await understand({
-            text: combinedText || "(image only, no text)",
-            imageCount,
-            images: imageDataUrls,
-            expectingSize,
-            conversationId,
-            context: draftContext(currentSlots),
-            business,
-          })));
-    await logEvent(conversationId, "understand", { understanding: result });
+    const previewDetectedLanguage = resolveBuyerLanguage(currentSlots.buyerLanguage, combinedText, {
+      fromAudio: hadAudio,
+    });
+    const previewDetectedScript = detectTextScript(combinedText);
+    const previewResolved = resolveControlledReplyLanguage({
+      controls: activeControls,
+      detectedLanguage: previewDetectedLanguage,
+      priorLanguage: buyerLanguageOf(currentSlots),
+      detectedScript: previewDetectedScript,
+      priorScript: buyerScriptOf(currentSlots),
+    });
+    const previewLanguage = previewResolved.language;
+    const previewScript = previewResolved.script;
+
+    let unifiedReplyText: string | null = null;
+    let unifiedMatchedProductName: string | null = null;
+
+    let result: Understanding;
+    if (isButtonChoiceTap) {
+      result = applyDeterministicFallbacks(
+        combinedText,
+        {
+          primaryIntent: "order",
+          change: null,
+          samNounPhrase: null,
+          productDescriptionEn: null,
+          spatialHint: null,
+          size: null,
+          color: null,
+          quantity: null,
+          customerName: null,
+          phone: null,
+          governorate: null,
+          delegation: null,
+          landmarks: [],
+          floor: null,
+          driverNote: null,
+          discountAskPercent: null,
+          counterOfferMillimes: null,
+          flags: { offTopic: false, insult: false, wantsHuman: false },
+        },
+        expectingSize,
+      );
+    } else if (fast) {
+      result = fast;
+    } else if (imageCount > 0) {
+      result = await understand({
+        text: combinedText || "(image only, no text)",
+        imageCount,
+        images: imageDataUrls,
+        expectingSize,
+        conversationId,
+        context: draftContext(currentSlots),
+        business,
+      });
+    } else {
+      // Single unified Gemini call: extracts structured slots + crafts a human contextual reply.
+      const unified = await understandAndReply({
+        text: combinedText,
+        expectingSize,
+        conversationId,
+        context: draftContext(currentSlots),
+        business,
+        shopContext: ecommerceKnowledge.promptBlock,
+        conversationHistory,
+        language: previewLanguage,
+        script: previewScript,
+        controls: activeControls,
+        nextStepHint: nextQuestion(currentSlots),
+        allowedMillimes: ecommerceKnowledge.allowedCatalogMillimes,
+      });
+      result = unified.understanding;
+      unifiedReplyText = unified.replyText;
+      unifiedMatchedProductName = unified.matchedCatalogProductName;
+    }
+    await logEvent(conversationId, "understand", {
+      understanding: result,
+      unifiedReplyProduced: Boolean(unifiedReplyText),
+    });
 
     let slots = mergeSlots(currentSlots, result, imageCount > 0);
-    // Buyer language mirrors the buyer's messages (first message sets it, a
-    // clear switch changes it); what the shop sells is stored alongside so
-    // every deterministic reply uses the right words.
+    // Language & Derja script honor the owner's Language Controls (`auto` vs `fixed`, allowed languages, script pref).
     const detectedLanguage = resolveBuyerLanguage(currentSlots.buyerLanguage, combinedText, {
       fromAudio: hadAudio,
     });
-    if (detectedLanguage) slots.buyerLanguage = detectedLanguage;
     const detectedScript = detectTextScript(combinedText);
-    if (detectedScript) slots.buyerScript = detectedScript;
-    const activeLanguage = buyerLanguageOf(slots);
-    if (activeLanguage) bindBuyerLanguage(conversationId, activeLanguage);
-    const activeScript = buyerScriptOf(slots);
-    if (activeScript) bindBuyerScript(conversationId, activeScript);
+    const resolvedLang = resolveControlledReplyLanguage({
+      controls: activeControls,
+      detectedLanguage,
+      priorLanguage: buyerLanguageOf(currentSlots),
+      detectedScript,
+      priorScript: buyerScriptOf(currentSlots),
+    });
+    slots.buyerLanguage = resolvedLang.language;
+    slots.buyerScript = resolvedLang.script;
+    bindBuyerLanguage(conversationId, resolvedLang.language);
+    bindBuyerScript(conversationId, resolvedLang.script);
     slots.businessType = business.type;
     await ensureProductPolicy(supabase, slots);
     captureOptionAnswer(
@@ -1001,6 +1125,10 @@ export async function runTurn(conversationId: string): Promise<void> {
             listPriceMillimes: listPrice,
             acceptedCounter: step.acceptedCounter,
             isFinal: step.isFinal,
+            buyerText: combinedText,
+            shopContext: ecommerceKnowledge.promptBlock,
+            conversationHistory,
+            controls: activeControls,
           },
           conversationId,
         );
@@ -1171,15 +1299,38 @@ export async function runTurn(conversationId: string): Promise<void> {
         const actionAfter = nextDraftAction(slots);
         const needsCheckout = actionAfter === "need_pin" || actionAfter === "need_summary";
         await supabase.from("conversations").update({ slots, updated_at: burstCursor }).eq("id", conversationId);
-        await channelAdapter.sendText(
-          conversationId,
-          buildChangeConfirmation(reapplied, needsCheckout ? "Nkammlou taw." : nextQuestion(slots)),
-        );
+        const fallbackChange = buildChangeConfirmation(reapplied, needsCheckout ? "Nkammlou taw." : nextQuestion(slots));
+        const changeFacts: SellerReplyFacts = {
+          situation: "draft_change",
+          buyerText: combinedText,
+          productName: typeof slots.matchedProductName === "string" ? slots.matchedProductName : null,
+          size: typeof slots.size === "string" ? slots.size : null,
+          quantity: typeof slots.quantity === "number" ? slots.quantity : null,
+          governorate: typeof slots.governorate === "string" ? slots.governorate : null,
+          hasPhone: typeof slots.phone === "string",
+          hasName: typeof slots.customerName === "string",
+          nextAction: nextAction(slots),
+          askBundle: nextAskBundle(slots),
+          askHint: optionAskHint(slots),
+          sizeAsk: sizeAskFor(slots),
+          shopContext: ecommerceKnowledge.promptBlock,
+          conversationHistory,
+          allowedExtraMillimes: ecommerceKnowledge.allowedCatalogMillimes,
+          controls: activeControls,
+          draftChangeNote: reapplied.diffs.join(", "),
+          fallbackText: fallbackChange,
+        };
+        const phrasedChange = needsCheckout
+          ? { text: fallbackChange, source: "template" as const }
+          : unifiedReplyText && validateSellerCandidateReply(unifiedReplyText, changeFacts)
+            ? { text: validateSellerCandidateReply(unifiedReplyText, changeFacts)!, source: "spark" as const }
+            : await phraseSellerReply(changeFacts, conversationId);
+        await channelAdapter.sendText(conversationId, phrasedChange.text);
         if (needsCheckout) {
           await progressCheckout().catch(() => false);
         }
         await supabase.from("conversations").update({ updated_at: burstCursor }).eq("id", conversationId);
-        await logEvent(conversationId, "reply.sent", { reply: "draft-change", template: "draft-change" });
+        await logEvent(conversationId, "reply.sent", { reply: phrasedChange.text, template: `draft-change-${phrasedChange.source}` });
         return;
       }
     } else if (
@@ -1192,12 +1343,41 @@ export async function runTurn(conversationId: string): Promise<void> {
       await supabase.from("conversations").update({ slots, updated_at: burstCursor }).eq("id", conversationId);
       const hasOrder = Boolean(slots.orderId);
       const tail = hasOrder || intent === "track_order" ? "" : ` ${nextQuestion(slots)}`;
-      await channelAdapter.sendText(
-        conversationId,
-        `${assistanceReply(intent, hasOrder, buyerLanguageOf(slots) ?? "derja")}${tail}`,
-      );
-      await logEvent(conversationId, "assistance.answer", { intent });
-      await logEvent(conversationId, "reply.sent", { reply: "assistance", template: "assistance" });
+      const fallbackAssist = `${assistanceReply(intent, hasOrder, buyerLanguageOf(slots) ?? "derja")}${tail}`;
+      const assistFacts: SellerReplyFacts = {
+        situation: "delivery_policy",
+        buyerText: combinedText,
+        productName: typeof slots.matchedProductName === "string" ? slots.matchedProductName : null,
+        size: typeof slots.size === "string" ? slots.size : null,
+        quantity: typeof slots.quantity === "number" ? slots.quantity : null,
+        governorate: typeof slots.governorate === "string" ? slots.governorate : null,
+        hasPhone: typeof slots.phone === "string",
+        hasName: typeof slots.customerName === "string",
+        nextAction: nextAction(slots),
+        askBundle: nextAskBundle(slots),
+        askHint: optionAskHint(slots),
+        sizeAsk: sizeAskFor(slots),
+        shopContext: ecommerceKnowledge.promptBlock,
+        conversationHistory,
+        allowedExtraMillimes: ecommerceKnowledge.allowedCatalogMillimes,
+        controls: activeControls,
+        draftChangeNote:
+          intent === "track_order"
+            ? hasOrder
+              ? "The buyer has a confirmed order already placed in this conversation."
+              : "No confirmed order exists yet in this conversation."
+            : null,
+        fallbackText: fallbackAssist,
+      };
+      const validUnifiedAssist = unifiedReplyText
+        ? validateSellerCandidateReply(unifiedReplyText, assistFacts)
+        : null;
+      const phrasedAssist = validUnifiedAssist
+        ? { text: validUnifiedAssist, source: "unified" as const }
+        : await phraseSellerReply(assistFacts, conversationId);
+      await channelAdapter.sendText(conversationId, phrasedAssist.text);
+      await logEvent(conversationId, "assistance.answer", { intent, source: phrasedAssist.source });
+      await logEvent(conversationId, "reply.sent", { reply: phrasedAssist.text, template: `assistance-${phrasedAssist.source}` });
       return;
     }
 
@@ -1350,7 +1530,20 @@ export async function runTurn(conversationId: string): Promise<void> {
       }
 
       slots.visionStatus = "matched";
-      const text = await phraseMatchCaption(slots, chosen.name, chosen.priceMillimes, combinedText, conversationId);
+      const text = await phraseMatchCaption(
+        slots,
+        chosen.name,
+        chosen.priceMillimes,
+        combinedText,
+        conversationId,
+        {
+          shopContext: ecommerceKnowledge.promptBlock,
+          conversationHistory,
+          allowedExtraMillimes: ecommerceKnowledge.allowedCatalogMillimes,
+          precomputedReply: firstImage ? null : unifiedReplyText,
+          controls: activeControls,
+        },
+      );
       if (source.cropPng) {
         const cropMediaPath = await uploadPng(supabase, "buyer-media", `vision/${conversationId}`, source.cropPng);
         await channelAdapter.sendImage(conversationId, cropMediaPath, text);
@@ -1417,6 +1610,12 @@ export async function runTurn(conversationId: string): Promise<void> {
                 product.price_millimes as number,
                 combinedText,
                 conversationId,
+                {
+                  shopContext: ecommerceKnowledge.promptBlock,
+                  conversationHistory,
+                  allowedExtraMillimes: ecommerceKnowledge.allowedCatalogMillimes,
+                  controls: activeControls,
+                },
               );
               const photo = catalogPhotoPath(option);
               if (photo) await channelAdapter.sendImage(conversationId, photo, text);
@@ -1524,24 +1723,97 @@ export async function runTurn(conversationId: string): Promise<void> {
           );
         }
         visionHandled = true;
-      } else if (
-        !slots.matchedProductId &&
-        typeof slots.productDescriptionEn === "string" &&
-        slots.productDescriptionEn
-      ) {
-        // Voice-only / text-only: PE text embedding into the same index.
-        const { match, embedding } = await matchByDescription({
-          supabase,
-          merchantId,
-          descriptionEn: slots.productDescriptionEn,
-          conversationId,
-        });
-        await logEvent(conversationId, "vision.textMatch", {
-          description: slots.productDescriptionEn,
-          decision: match.decision,
-        });
-        await applyMatch(match, { embedding });
-        visionHandled = true;
+      } else if (!slots.matchedProductId) {
+        // Direct deterministic catalog match first (0 embedding & 0 rerank calls!).
+        const directCatalogHit = matchCatalogProductDirect(
+          combinedText,
+          ecommerceKnowledge.catalogIndex,
+          unifiedMatchedProductName,
+        );
+        if (directCatalogHit) {
+          await logEvent(conversationId, "vision.directMatch", {
+            productId: directCatalogHit.id,
+            productName: directCatalogHit.name,
+            stock: directCatalogHit.stock,
+          });
+          if (directCatalogHit.stock <= 0) {
+            slots.visionStatus = "out_of_stock";
+            const altItem = ecommerceKnowledge.catalogIndex.find(
+              (c) => c.id !== directCatalogHit.id && c.stock > 0,
+            );
+            const fallbackOos = altItem
+              ? `Samahni, ${directCatalogHit.name} kemmel fel stock taw. Amma 3andna ${altItem.name} (${formatMillimesForChat(altItem.priceMillimes)}) mawjoud, t7eb tchoufou?`
+              : `Samahni, ${directCatalogHit.name} kemmel fel stock taw. T7eb nchouflek produit a5ar?`;
+            const oosFacts: SellerReplyFacts = {
+              situation: "out_of_stock",
+              buyerText: combinedText,
+              productName: directCatalogHit.name,
+              priceMillimes: directCatalogHit.priceMillimes,
+              stock: 0,
+              nextAction: nextAction(slots),
+              shopContext: ecommerceKnowledge.promptBlock,
+              conversationHistory,
+              allowedExtraMillimes: ecommerceKnowledge.allowedCatalogMillimes,
+              controls: activeControls,
+              fallbackText: fallbackOos,
+            };
+            const validOos = unifiedReplyText
+              ? validateSellerCandidateReply(unifiedReplyText, oosFacts)
+              : null;
+            const oosReply = validOos ? validOos : (await phraseSellerReply(oosFacts, conversationId)).text;
+            await channelAdapter.sendText(conversationId, oosReply);
+          } else {
+            slots.matchedProductId = directCatalogHit.id;
+            slots.matchedProductName = directCatalogHit.name;
+            slots.visionStatus = "matched";
+            delete slots.policyProductId;
+            await ensureProductPolicy(supabase, slots);
+            captureOptionAnswer(slots, combinedText);
+            const text = await phraseMatchCaption(
+              slots,
+              directCatalogHit.name,
+              directCatalogHit.priceMillimes,
+              combinedText,
+              conversationId,
+              {
+                shopContext: ecommerceKnowledge.promptBlock,
+                conversationHistory,
+                allowedExtraMillimes: ecommerceKnowledge.allowedCatalogMillimes,
+                precomputedReply: unifiedReplyText,
+                controls: activeControls,
+              },
+            );
+            const { data: primaryImg } = await supabase
+              .from("product_images")
+              .select("source_path, crop_path")
+              .eq("product_id", directCatalogHit.id)
+              .eq("is_primary", true)
+              .maybeSingle();
+            const photo = primaryImg
+              ? catalogPhotoPath({
+                  sourcePath: (primaryImg as { source_path?: string | null }).source_path,
+                  cropPath: (primaryImg as { crop_path?: string | null }).crop_path,
+                })
+              : null;
+            if (photo) await channelAdapter.sendImage(conversationId, photo, text);
+            else await channelAdapter.sendText(conversationId, text);
+          }
+          visionHandled = true;
+        } else if (typeof slots.productDescriptionEn === "string" && slots.productDescriptionEn) {
+          // Fuzzy text-only description: embedding search into catalog index.
+          const { match, embedding } = await matchByDescription({
+            supabase,
+            merchantId,
+            descriptionEn: slots.productDescriptionEn,
+            conversationId,
+          });
+          await logEvent(conversationId, "vision.textMatch", {
+            description: slots.productDescriptionEn,
+            decision: match.decision,
+          });
+          await applyMatch(match, { embedding });
+          visionHandled = true;
+        }
       }
     } catch (err) {
       // Vision must never kill the turn: log and fall back to the Day-2 ack.
@@ -1624,59 +1896,89 @@ export async function runTurn(conversationId: string): Promise<void> {
             ),
             [matchedProduct.price_millimes as number],
           ) ?? `El ${matchedProduct.name as string} mawjoud 3andna. T7eb nkammlou bih?`;
-        const phrased = await phraseSellerReply(
-          {
-            situation: "price_answer",
-            askBundle: nextAskBundle(slots),
-            sizeAsk: sizeAskFor(slots),
-            buyerText: combinedText,
-            productName: matchedProduct.name as string,
-            priceMillimes: matchedProduct.price_millimes as number,
-            stock: matchedProduct.stock as number,
-            size: typeof slots.size === "string" ? slots.size : null,
-            quantity: typeof slots.quantity === "number" ? slots.quantity : null,
-            governorate: typeof slots.governorate === "string" ? slots.governorate : null,
-            hasPhone: typeof slots.phone === "string",
-            hasName: typeof slots.customerName === "string",
-            nextAction: nextAction(slots),
-            askHint: optionAskHint(slots),
-            fallbackText: fallback,
-          },
-          conversationId,
-        );
+        const priceFacts: SellerReplyFacts = {
+          situation: "price_answer",
+          askBundle: nextAskBundle(slots),
+          sizeAsk: sizeAskFor(slots),
+          buyerText: combinedText,
+          productName: matchedProduct.name as string,
+          priceMillimes: matchedProduct.price_millimes as number,
+          stock: matchedProduct.stock as number,
+          size: typeof slots.size === "string" ? slots.size : null,
+          quantity: typeof slots.quantity === "number" ? slots.quantity : null,
+          governorate: typeof slots.governorate === "string" ? slots.governorate : null,
+          hasPhone: typeof slots.phone === "string",
+          hasName: typeof slots.customerName === "string",
+          nextAction: nextAction(slots),
+          askHint: optionAskHint(slots),
+          shopContext: ecommerceKnowledge.promptBlock,
+          conversationHistory,
+          allowedExtraMillimes: ecommerceKnowledge.allowedCatalogMillimes,
+          controls: activeControls,
+          fallbackText: fallback,
+        };
+        const validUnifiedPrice = unifiedReplyText
+          ? validateSellerCandidateReply(unifiedReplyText, priceFacts)
+          : null;
+        const phrased = validUnifiedPrice
+          ? { text: validUnifiedPrice, source: "unified" as const }
+          : await phraseSellerReply(priceFacts, conversationId);
         await channelAdapter.sendText(conversationId, phrased.text);
         await logEvent(conversationId, "reply.sent", { reply: phrased.text, template: `price-${phrased.source}` });
       } else if (matchedProduct) {
         const fallback = buildStockReply(matchedProduct.name as string, matchedProduct.stock as number, slots);
-        const phrased = await phraseSellerReply(
-          {
-            situation: "stock_answer",
-            askBundle: nextAskBundle(slots),
-            sizeAsk: sizeAskFor(slots),
-            buyerText: combinedText,
-            productName: matchedProduct.name as string,
-            priceMillimes: matchedProduct.price_millimes as number,
-            stock: matchedProduct.stock as number,
-            size: typeof slots.size === "string" ? slots.size : null,
-            quantity: typeof slots.quantity === "number" ? slots.quantity : null,
-            governorate: typeof slots.governorate === "string" ? slots.governorate : null,
-            hasPhone: typeof slots.phone === "string",
-            hasName: typeof slots.customerName === "string",
-            nextAction: nextAction(slots),
-            askHint: optionAskHint(slots),
-            fallbackText: fallback,
-          },
-          conversationId,
-        );
+        const stockFacts: SellerReplyFacts = {
+          situation: "stock_answer",
+          askBundle: nextAskBundle(slots),
+          sizeAsk: sizeAskFor(slots),
+          buyerText: combinedText,
+          productName: matchedProduct.name as string,
+          priceMillimes: matchedProduct.price_millimes as number,
+          stock: matchedProduct.stock as number,
+          size: typeof slots.size === "string" ? slots.size : null,
+          quantity: typeof slots.quantity === "number" ? slots.quantity : null,
+          governorate: typeof slots.governorate === "string" ? slots.governorate : null,
+          hasPhone: typeof slots.phone === "string",
+          hasName: typeof slots.customerName === "string",
+          nextAction: nextAction(slots),
+          askHint: optionAskHint(slots),
+          shopContext: ecommerceKnowledge.promptBlock,
+          conversationHistory,
+          allowedExtraMillimes: ecommerceKnowledge.allowedCatalogMillimes,
+          controls: activeControls,
+          fallbackText: fallback,
+        };
+        const validUnifiedStock = unifiedReplyText
+          ? validateSellerCandidateReply(unifiedReplyText, stockFacts)
+          : null;
+        const phrased = validUnifiedStock
+          ? { text: validUnifiedStock, source: "unified" as const }
+          : await phraseSellerReply(stockFacts, conversationId);
         await channelAdapter.sendText(conversationId, phrased.text);
         await logEvent(conversationId, "reply.sent", { reply: phrased.text, template: `stock-${phrased.source}` });
       } else {
-        const reply =
+        const fallbackClarify =
           result.primaryIntent === "ask_stock"
             ? "Marhba bik! Ab3atli taswirt el produit walla ousifhouli, w n9ollek fisa3 ken mawjoud fel stock."
             : "Marhba bik! Bch na3tik el soum el sahih, ab3atli taswirt el produit walla ousifhouli (el loun w el modèle).";
-        await channelAdapter.sendText(conversationId, reply);
-        await logEvent(conversationId, "reply.sent", { reply, template: "question-clarify" });
+        const clarifyFacts: SellerReplyFacts = {
+          situation: "general_qa",
+          buyerText: combinedText,
+          nextAction: nextAction(slots),
+          shopContext: ecommerceKnowledge.promptBlock,
+          conversationHistory,
+          allowedExtraMillimes: ecommerceKnowledge.allowedCatalogMillimes,
+          controls: activeControls,
+          fallbackText: fallbackClarify,
+        };
+        const validUnifiedClarify = unifiedReplyText
+          ? validateSellerCandidateReply(unifiedReplyText, clarifyFacts)
+          : null;
+        const phrased = validUnifiedClarify
+          ? { text: validUnifiedClarify, source: "unified" as const }
+          : await phraseSellerReply(clarifyFacts, conversationId);
+        await channelAdapter.sendText(conversationId, phrased.text);
+        await logEvent(conversationId, "reply.sent", { reply: phrased.text, template: `question-clarify-${phrased.source}` });
       }
       return;
     }
@@ -1687,30 +1989,41 @@ export async function runTurn(conversationId: string): Promise<void> {
       .eq("id", conversationId);
 
     const fallbackAck = buildAck(slots, imageCount > 0, hadAudio);
-    const phrasedAck = fast
-      ? { text: fallbackAck, source: "template" as const }
-      : await phraseSellerReply(
-      {
-        situation: "collect_slot",
-        askBundle: nextAskBundle(slots),
-        sizeAsk: sizeAskFor(slots),
-        buyerText: combinedText,
-        productName:
-          (typeof slots.matchedProductName === "string" ? slots.matchedProductName : null) ??
-          (matchedProduct ? (matchedProduct.name as string) : null),
-        priceMillimes: matchedProduct ? (matchedProduct.price_millimes as number) : null,
-        stock: matchedProduct ? (matchedProduct.stock as number) : null,
-        size: typeof slots.size === "string" ? slots.size : null,
-        quantity: typeof slots.quantity === "number" ? slots.quantity : null,
-        governorate: typeof slots.governorate === "string" ? slots.governorate : null,
-        hasPhone: typeof slots.phone === "string",
-        hasName: typeof slots.customerName === "string",
-        nextAction: nextAction(slots),
-        askHint: optionAskHint(slots),
-        fallbackText: fallbackAck,
-      },
-      conversationId,
-    );
+    const ackSituation: SellerReplyFacts["situation"] =
+      result.primaryIntent === "greeting"
+        ? "greeting"
+        : !slots.matchedProductId && (result.primaryIntent === "other" || result.primaryIntent === "off_topic")
+          ? "general_qa"
+          : "collect_slot";
+    const ackFacts: SellerReplyFacts = {
+      situation: ackSituation,
+      askBundle: nextAskBundle(slots),
+      sizeAsk: sizeAskFor(slots),
+      buyerText: combinedText,
+      productName:
+        (typeof slots.matchedProductName === "string" ? slots.matchedProductName : null) ??
+        (matchedProduct ? (matchedProduct.name as string) : null),
+      priceMillimes: matchedProduct ? (matchedProduct.price_millimes as number) : null,
+      stock: matchedProduct ? (matchedProduct.stock as number) : null,
+      size: typeof slots.size === "string" ? slots.size : null,
+      quantity: typeof slots.quantity === "number" ? slots.quantity : null,
+      governorate: typeof slots.governorate === "string" ? slots.governorate : null,
+      hasPhone: typeof slots.phone === "string",
+      hasName: typeof slots.customerName === "string",
+      nextAction: nextAction(slots),
+      askHint: optionAskHint(slots),
+      shopContext: ecommerceKnowledge.promptBlock,
+      conversationHistory,
+      allowedExtraMillimes: ecommerceKnowledge.allowedCatalogMillimes,
+      controls: activeControls,
+      fallbackText: fallbackAck,
+    };
+    const validUnifiedAck = unifiedReplyText
+      ? validateSellerCandidateReply(unifiedReplyText, ackFacts)
+      : null;
+    const phrasedAck = validUnifiedAck
+      ? { text: validUnifiedAck, source: "unified" as const }
+      : await phraseSellerReply(ackFacts, conversationId);
     await channelAdapter.sendText(conversationId, phrasedAck.text);
     await logEvent(conversationId, "reply.sent", { reply: phrasedAck.text, template: `ack-${phrasedAck.source}` });
   } finally {

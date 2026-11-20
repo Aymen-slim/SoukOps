@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { shopNameFromEmail, slugFromEmail } from "@/lib/auth/sandbox";
-import { clearMerchantSessionCache } from "@/lib/auth/session";
+import { clearMerchantSessionCache, WORKSPACE_MODE_COOKIE, workspaceModeCookieOptions } from "@/lib/auth/session";
+import { workspaceHomePath } from "@/lib/auth/workspace-routing";
+import { selectMerchantRow } from "@/lib/dashboard/merchant";
+import type { WorkspaceMode } from "@/lib/pro/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -27,14 +30,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Those details don't match an account." }, { status: 401 });
   }
 
+  let workspaceMode: WorkspaceMode = "ecommerce";
   try {
     const admin = createAdminClient();
-    const { data: existing } = await admin
-      .from("merchants")
-      .select("id")
-      .eq("owner_user_id", signed.data.user.id)
-      .maybeSingle();
-    if (!existing) {
+    const existing = await selectMerchantRow((cols) =>
+      admin.from("merchants").select(cols).eq("owner_user_id", signed.data.user.id).maybeSingle(),
+    );
+    if (existing) {
+      workspaceMode = existing.workspace_mode;
+    } else {
       const slug = await slugFromEmail(admin, email);
       await admin.from("merchants").insert({
         name: await shopNameFromEmail(email),
@@ -46,8 +50,11 @@ export async function POST(request: Request) {
       });
     }
   } catch {
-    // The session is valid even if the shop row could not be checked.
+    // The session is valid even if the workspace row could not be checked.
   }
   clearMerchantSessionCache();
-  return NextResponse.json({ ok: true });
+  const redirectTo = workspaceHomePath(workspaceMode);
+  const response = NextResponse.json({ ok: true, workspaceMode, redirectTo });
+  response.cookies.set(WORKSPACE_MODE_COOKIE, workspaceMode, workspaceModeCookieOptions());
+  return response;
 }

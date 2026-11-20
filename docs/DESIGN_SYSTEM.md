@@ -1,46 +1,32 @@
-# Wassalha Design System — Untitled UI
+# Wassalha Design System — Swiss Editorial (Gurusup-Aligned)
 
-Wassalha uses the stock [Untitled UI React](https://www.untitledui.com/react) design system (Free / open-source components only). There is no public `/design-system` showcase route; the system lives in tokens and components in the codebase.
+Wassalha uses a single, unified Swiss-editorial design system across public pages (`/`, `/login`, `/signup`, `/demo`, `/pin`) and logged-in workspaces (`/dashboard/*`, `/pro/*`), built on Tailwind CSS v4 + owned React Aria primitives (`src/components/base/`, `src/components/foundations/`, `src/components/application/`).
 
 ## Stack
 
-- Tailwind CSS v4 with the Untitled UI theme in `src/styles/untitledui.css`, imported by `src/app/globals.css`.
-- Components are copied into the codebase with the Untitled UI CLI (`npx untitledui@latest add <component>`) and built on React Aria Components. They are owned and editable — not a runtime dependency.
-- Icons: `@untitledui/icons` (aliased imports keep semantic names, e.g. `MarkerPin01 as MapPin`).
-- Font: Inter via `next/font/google` (`--font-inter` in `src/app/layout.tsx`).
+- **CSS tokens:** `src/styles/untitledui.css` + `src/app/globals.css` (imported in `src/app/layout.tsx`).
+- **Fonts:** `Geist` (`--font-geist-sans`) for display headings and UI text, paired with `Geist Mono` (`--font-geist-mono`) for tabular figures, uppercase micro-actions, buttons, and status metadata via `next/font/google`.
+- **Icons:** `@untitledui/icons` + monochrome geometric `<BrandMark />` (`src/components/brand-mark.tsx`) + channel marks (`WhatsAppIcon`, `InstagramIcon`, `MessengerIcon`).
+- **Editorial Media:** Tunisia-inspired atmospheric photography (`public/brand/hero-tunis.jpg`, `public/brand/cta-tunis.jpg`) layered under `.gs-dot-overlay` halftone dot texture on hero and closing CTA banners.
 
-## Tokens
+## Core Tokens
 
-Use Untitled semantic classes only — never raw color scales (`text-gray-900`, `bg-blue-700`) and never the removed Souk & Signal tokens (`brand-terracotta`, `surface-ink`, `status-*`, `bg-card`, `text-muted-foreground`).
+| Role | Value | Semantic Token / Utility |
+| :--- | :--- | :--- |
+| Primary canvas | `#FFFFFF` | `bg-primary` |
+| Soft stone workspace / band | `#FAFAF9` | `bg-secondary` |
+| Diagram / visual tray | `#F4F4F5` | `bg-tertiary` |
+| Primary ink (headings & solid actions) | `#09090B` / `#1D1E1A` | `text-primary`, `.gs-btn-ink`, `Button color="primary"` |
+| Secondary / muted copy | `#27272A` / `#52525B` | `text-secondary`, `text-tertiary` |
+| Subdued metadata / captions | `#71717A` | `text-quaternary` |
+| Hairline borders | `#E4E4E7` (strong `#D4D4D8`) | `border-secondary`, `ring-secondary`, `border-primary` |
+| Brand Forest Emerald (approvals, live states, focus) | `#1B8A5E` (hover `#15704C`, tint `#F2FBF7`) | `bg-brand-solid`, `text-brand-secondary`, `bg-brand-primary` |
+| Alert / Error | `#D13C2E` (tint `#FBF3F2`) | `text-error-primary`, `bg-error-primary` |
+| Geometry | `0px` square edges | `rounded-none` on buttons, cards, badges, inputs, tables, modals |
 
-| Role | Classes |
-| :--- | :--- |
-| Page canvas / wells | `bg-secondary`, `bg-tertiary` |
-| Card / raised surface | `bg-primary` + `ring-1 ring-secondary shadow-xs` (see `Card` below) |
-| Primary / secondary / tertiary text | `text-primary`, `text-secondary`, `text-tertiary` |
-| Brand (stock Untitled purple, `--color-brand-600: rgb(127 86 217)`) | `bg-brand-solid`, `text-brand-secondary`, `fg-brand-primary`, `ring-brand` |
-| Success / warning / error / info | `bg-success-primary` + `text-success-primary`, `bg-warning-primary`, `bg-error-primary`, `bg-utility-blue-50` + `text-utility-blue-700` |
-| Borders | `border-primary` (inputs), `border-secondary` (cards/dividers), `border-utility-{green,yellow,red,blue}-200` for status |
-| Radius / shadow | `rounded-lg` (inputs/buttons), `rounded-xl` (cards), `shadow-xs` |
+## Layout & Copy Principles
 
-Dark mode tokens ship in the `.dark` block of `src/styles/untitledui.css`; no theme toggle is wired in the UI yet.
-
-## Components
-
-| Need | Use |
-| :--- | :--- |
-| Button | `src/components/base/buttons/button.tsx` — `color="primary\|secondary\|tertiary\|primary-destructive\|link-color…"`, `size="xs\|sm\|md\|lg\|xl"`, `isDisabled`, `isLoading`, `iconLeading/iconTrailing`. It renders a React Aria `Link` when `href` is passed. |
-| Badge | `src/components/base/badges/badges.tsx` — `color="gray\|brand\|success\|warning\|error\|blue…"`, `type="pill-color"` default. |
-| Input | `src/components/base/input/input.tsx` — built-in `label`/`hint`; `onChange` receives the string value, not an event. `isDisabled`, `isRequired`, `isReadOnly`, `inputClassName` styles the inner input. File inputs stay native `<input type="file">` styled with Untitled tokens. |
-| Label | `src/components/base/input/label.tsx` |
-| Select / TextArea / Checkbox / Toggle / Radio / Dropdown / Tooltip / Avatar | `src/components/base/select/`, `textarea/`, `checkbox/` (also auto-inserted by Table selection), `toggle/`, `radio-buttons/`, `dropdown/`, `tooltip/`, `avatar/` — wired in orders (Select/Dropdown), conversations (Toggle/Avatar/Tabs), settings (NativeSelect/RadioGroup) |
-| Table / Tabs / Pagination / EmptyState | `src/components/application/table/` (`Table` + `TableCard`, used for orders, analytics, demand, delivery fees), `application/tabs/` (conversation filters), `application/pagination/` (`PaginationCardMinimal` in orders), `application/empty-state/` (orders + inbox empty views) |
-| Card / Alert / Metric / Modal | Local wrappers on Untitled tokens in `src/components/foundations/{card,alert,metric,modal}/` (Untitled has no free generic Card; its metric/modal/alert equivalents are PRO and must not be copied). `Alert` replaces inline `role="alert"` blocks, `Metric` replaces KPI boxes, `Modal` (React Aria Dialog) confirms demo reset and channel disconnects. |
-
-Numbers (millimes from `src/lib/domain/pricing.ts`, barcodes, coordinates, latencies) keep `font-mono tabular-nums`. Buyer chat content stays Derja with `dir="auto"`; UI copy stays English.
-
-## Rules
-
-- Free components only. Do not add PRO components or another component library (no shadcn/@base-ui, no Lucide).
-- Model/domain code is unaffected by the design system: `src/lib/domain/`, `src/lib/pipeline/`, `src/lib/ai/` do not import UI components.
-- Add new components with the CLI so props stay upstream-compatible: `npx untitledui@latest add <component>`.
+- **Homepage (`/`):** Sticky `264px` desktop left rail (`src/components/home/home-experience.tsx`) with `Online Shops | Creators & Pros` segmented toggle, clean navigation, `ON THIS PAGE` jump links, and pinned bottom CTAs; collapses to a compact sticky bar + drawer on mobile.
+- **Plain language first:** Public copy explains Wassalha in everyday words (zero internal AI model names or endpoint telemetry on `/`). Technical provider details stay in `/dashboard/ai`.
+- **Workspaces (`/dashboard/*`, `/pro/*`):** Same `264px` white sticky rail, `#FAFAF9` workspace ground, sharp `#FFFFFF` cards with `1px` `#E4E4E7` hairlines, tabular `font-mono` DT amounts from `src/lib/domain/pricing.ts`, and Derja buyer chat bubbles with `dir="auto"`.
+- **Isolation:** `/courier-clone/*` pins its own `#0C4A6E` header to remain visually distinct as the simulated First Delivery portal.

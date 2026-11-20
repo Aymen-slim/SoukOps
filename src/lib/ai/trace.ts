@@ -1,9 +1,17 @@
 import { createAdminClient, hasAdminConfig } from "@/lib/supabase/admin";
 
-export type AiProvider = "meta" | "baseten";
+export type AiProvider =
+  | "meta"
+  | "baseten"
+  | "gemini"
+  | "openai"
+  | "anthropic"
+  | "elevenlabs"
+  | "voyage"
+  | "fal";
 
 export interface TraceEvent {
-  kind: string; // e.g. "spark.json", "sam.segment", "asr.transcribe", "pe.embedImage"
+  kind: string; // e.g. "spark.json", "sam.segment", "asr.transcribe", "embed.images", "vision.sam_skipped"
   model: string;
   provider: AiProvider;
   latencyMs: number;

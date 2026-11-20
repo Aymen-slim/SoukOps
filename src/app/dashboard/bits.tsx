@@ -37,7 +37,7 @@ export function RiskBadge({ level, score }: { level: string | null; score: numbe
 export function OsmThumb({ lat, lng }: { lat: number; lng: number }) {
   const pin = osmTilePin(lat, lng);
   return (
-    <div className="relative size-24 shrink-0 overflow-hidden rounded-xl border border-secondary bg-tertiary shadow-2xs">
+    <div className="relative size-24 shrink-0 overflow-hidden rounded-none border border-secondary bg-tertiary">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={pin.url} alt="" className="h-full w-full object-cover" />
       <span

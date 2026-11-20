@@ -100,10 +100,36 @@ async function storeInbound(
       body = "(unreadable photo — ask the customer to send it again)";
     }
   }
-  if (message.kind === "audio") {
-    // Messenger/IG voice clips are not WAV; ASR cannot read them yet.
+  if (message.kind === "audio" && message.attachmentUrl) {
+    try {
+      const res = await fetch(message.attachmentUrl);
+      if (!res.ok) throw new Error(`audio download ${res.status}`);
+      const bytes = Buffer.from(await res.arrayBuffer());
+      const contentType = (res.headers.get("content-type") ?? "audio/mp4").split(";")[0]!.trim().toLowerCase();
+      const ext = contentType.includes("ogg")
+        ? "ogg"
+        : contentType.includes("wav")
+          ? "wav"
+          : contentType.includes("mpeg") || contentType.includes("mp3")
+            ? "mp3"
+            : contentType.includes("aac")
+              ? "aac"
+              : "m4a";
+      mediaPath = `${conversationId}/${message.externalId}.${ext}`;
+      const { error } = await supabase.storage.from("buyer-media").upload(mediaPath, bytes, {
+        contentType,
+        upsert: true,
+      });
+      if (error) throw new Error(error.message);
+    } catch (err) {
+      console.error(`[facebook] audio ${message.externalId} failed:`, err instanceof Error ? err.message : err);
+      mediaPath = null;
+      kind = "text";
+      body = "(unreadable voice note — ask the customer to type or send again)";
+    }
+  } else if (message.kind === "audio") {
     kind = "text";
-    body = "(voice note received — ask the customer to type or send a photo)";
+    body = "(voice note unavailable — ask the customer to type or send again)";
   }
 
   const { error } = await supabase.from("messages").insert({

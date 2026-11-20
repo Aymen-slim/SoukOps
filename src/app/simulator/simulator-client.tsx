@@ -27,8 +27,13 @@ import {
 import { InstagramIcon, MessengerIcon, WhatsAppIcon } from "@/components/brand-icons";
 import { Badge } from "@/components/base/badges/badges";
 import { Button } from "@/components/base/buttons/button";
+import { WorkspaceCalendar } from "@/components/calendar/workspace-calendar";
+import { AiControlsPanel } from "@/components/context/ai-controls-panel";
+import { ContextChatPanel } from "@/components/context/context-chat-panel";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/foundations/card/card";
 import { blobToBase64, fileToBase64, WavRecorder } from "@/lib/media/wav-recorder";
+import { getProPreset, PRO_PRESETS } from "@/lib/pro/presets";
+import { PRO_CATEGORIES, type ProCategory, type WorkspaceMode } from "@/lib/pro/types";
 import { formatClock, isNearBottom, mediaExtFromMime, repairMojibake, sameMessages, stabilizeMediaUrls } from "@/lib/sim/chat-ui";
 import { getPersona, PERSONAS, type PersonaId } from "@/lib/sim/personas";
 
@@ -50,31 +55,31 @@ const PLATFORM_META: Record<
   whatsapp: {
     label: "WhatsApp",
     shortTitle: "WhatsApp Business",
-    channelTag: "Cloud API",
-    capabilityLine: "Derja voice notes (Muse Voice ASR), native reply buttons & magic-link GPS door pin.",
+    channelTag: "Voice + Map Pin",
+    capabilityLine: "Understands Tunisian Derja voice notes, replies with quick buttons, and sends a door map pin link.",
     onlineLabel: "Business Account · online",
     typingLabel: "typing...",
-    introNotice: "Messages with this business are answered by Wassalha AI. Prices are floor-locked.",
+    introNotice: "Messages with this shop are answered by Wassalha. Prices never drop below your limit.",
     askCta: "Ask on WhatsApp",
   },
   instagram: {
     label: "Instagram",
     shortTitle: "Instagram Direct",
     channelTag: "Stories + DM",
-    capabilityLine: "Story reply screenshot matching (SAM 3.1 + PE-Core), DM quick pills & instant Derja checkout.",
+    capabilityLine: "Recognizes products from Story screenshots and answers Derja DMs with quick reply buttons.",
     onlineLabel: "Active now · Instagram Shop",
     typingLabel: "typing...",
-    introNotice: "Instagram Business · Replies instantly to Story screenshots & Derja DMs",
+    introNotice: "Instagram Business · Replies right away to Story screenshots & Derja DMs",
     askCta: "Reply to Story",
   },
   messenger: {
     label: "Messenger",
     shortTitle: "Facebook Messenger",
     channelTag: "Page Inbox",
-    capabilityLine: "Facebook Page shop DMs, structured quick replies, landmark-to-GPS pin & COD waybill.",
+    capabilityLine: "Answers Facebook Page shoppers in Derja, confirms their map pin, and prepares the delivery slip.",
     onlineLabel: "Active now on Messenger",
     typingLabel: "typing...",
-    introNotice: "Typically replies instantly · Powered by Wassalha Meta AI",
+    introNotice: "Typically replies instantly · Powered by Wassalha",
     askCta: "Ask in Messenger",
   },
 };
@@ -94,6 +99,65 @@ const QUICK_SCENARIOS = [
   },
 ] as const;
 
+const PRO_QUICK_SCENARIOS: Record<ProCategory, ReadonlyArray<{ label: string; prompt: string }>> = {
+  doctor: [
+    {
+      label: "1. Book consultation (Derja)",
+      prompt: "Ahla docteur, b9addech el consultation fel cabinet? Esmi Sarra 22 123 456 ghodwa sbah",
+    },
+    {
+      label: "2. Ask prescription (Guardrail)",
+      prompt: "Docteur 3andi k7a, a3tini antibiotique fi message brabi",
+    },
+    {
+      label: "3. Red-flag emergency (190)",
+      prompt: "Docteur brabi 3andi wja3 9wi fel sder w 9at3et nfas tawa!",
+    },
+  ],
+  cameraman: [
+    {
+      label: "1. Ask Brand Reels price",
+      prompt: "Ahla khoya, b9addech pack tournage Brand Reels 4K?",
+    },
+    {
+      label: "2. Send date, venue & phone",
+      prompt: "Esmi Karim, el tournage le 15 juin fi La Marsa, num 55 123 456",
+    },
+    {
+      label: "3. Lowball offer (Floor guard)",
+      prompt: "Ghali chwaya, na3tik 400 DT bark",
+    },
+  ],
+  creator: [
+    {
+      label: "1. Lowball brand deal (Derja)",
+      prompt: "Ahla Ines! N7ebbou collaboration Reel sponsorisé, el budget 500 DT bark",
+    },
+    {
+      label: "2. Paid fintech campaign (FR)",
+      prompt: "Bonjour Ines, campagne fintech à Tunis (2 Reels Derja), budget 2400DT, le 20 juin, tel 98 111 222",
+    },
+    {
+      label: "3. Warm fan message",
+      prompt: "3aychek barcha Ines n7ebbek barcha bravo!",
+    },
+  ],
+  custom: [
+    {
+      label: "1. Discovery session",
+      prompt: "Marhba, b9addech session découverte?",
+    },
+    {
+      label: "2. Share brief & phone",
+      prompt: "Esmi Amine 22 333 444, n7eb accompagnement projet fi Tunis",
+    },
+    {
+      label: "3. Monthly retainer inquiry",
+      prompt: "Bonjour, budget 1000 DT/mois pour accompagnement sur Tunis cette semaine",
+    },
+  ],
+};
+
 const t = {
   subtitle: "Switch platforms live or pick a buyer persona to test risk scoring & floor bargaining.",
   shop: "Demo Shop",
@@ -101,7 +165,7 @@ const t = {
   placeholder: "Message...",
   captionPlaceholder: "Add text to the image...",
   traceTitle: "Behind the scenes",
-  traceSub: "Deterministic pipeline · Meta Model API + Baseten",
+  traceSub: "Live assistant steps, speed & built-in rules",
   aiActive: "AI active",
   aiPaused: "AI paused",
   slots: "Understood so far",
@@ -175,9 +239,8 @@ function VoiceNotePlayer({ src, light }: { src: string; light?: boolean }) {
           if (playing) audio.pause();
           else void audio.play().catch(() => setPlaying(false));
         }}
-        className={`flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[13px] ${
-          light ? "bg-white/25 text-white" : "bg-[#00A884] text-white"
-        }`}
+        className={`flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[13px] ${light ? "bg-white/25 text-white" : "bg-[#00A884] text-white"
+          }`}
       >
         {playing ? "❚❚" : "▶"}
       </button>
@@ -247,17 +310,26 @@ function formatPrice(millimes: number): string {
 export default function SimulatorClient({
   initialConversationId = null,
   initialPlatform = "whatsapp",
+  initialTrack = "ecommerce",
+  initialProPreset = "creator",
   products = [],
   slug = null,
   shopName,
 }: {
   initialConversationId?: string | null;
   initialPlatform?: DemoPlatform;
+  initialTrack?: WorkspaceMode;
+  initialProPreset?: ProCategory;
   products?: DemoProductCard[];
   slug?: string | null;
   shopName?: string;
 }) {
   const [platform, setPlatform] = useState<DemoPlatform>(initialPlatform);
+  const [track, setTrack] = useState<WorkspaceMode>(initialTrack);
+  const [proPreset, setProPreset] = useState<ProCategory>(initialProPreset);
+  const [rightPanelTab, setRightPanelTab] = useState<"trace" | "controls" | "context" | "calendar">("trace");
+  const [contextNoteCount, setContextNoteCount] = useState(0);
+  const [calendarCount, setCalendarCount] = useState(0);
   const [persona, setPersona] = useState<PersonaId>("new");
   const [conversationId, setConversationId] = useState<string | null>(initialConversationId);
   const [messages, setMessages] = useState<SimMessage[]>([]);
@@ -281,11 +353,17 @@ export default function SimulatorClient({
   const lastOutCount = useRef(0);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const activePersona = getPersona(persona);
-  const enteredName = typeof slots.customerName === "string" && slots.customerName.trim() ? slots.customerName.trim() : null;
-  const enteredPhone = typeof slots.phone === "string" && slots.phone.trim() ? slots.phone.trim() : null;
-  const shownName = enteredName ?? (slug ? "Your buyer" : activePersona.customerName);
-  const shownPhone = enteredPhone ?? (slug ? "Saved from what you type" : activePersona.phone);
-  const displayShopName = shopName ?? t.shop;
+  const activeProPack = getProPreset(proPreset);
+  const isProTrack = track === "pro";
+  const enteredName =
+    (typeof slots.clientName === "string" && slots.clientName.trim() ? slots.clientName.trim() : null) ??
+    (typeof slots.customerName === "string" && slots.customerName.trim() ? slots.customerName.trim() : null);
+  const enteredPhone =
+    (typeof slots.clientPhone === "string" && slots.clientPhone.trim() ? slots.clientPhone.trim() : null) ??
+    (typeof slots.phone === "string" && slots.phone.trim() ? slots.phone.trim() : null);
+  const shownName = enteredName ?? (slug || isProTrack ? "Your client" : activePersona.customerName);
+  const shownPhone = enteredPhone ?? (slug || isProTrack ? "Saved from what you type" : activePersona.phone);
+  const displayShopName = isProTrack ? activeProPack.defaultDisplayName : (shopName ?? t.shop);
   const igHandle = `@${(slug ?? displayShopName).toLowerCase().replace(/[^a-z0-9]+/g, "")}.tn`;
   const meta = PLATFORM_META[platform];
 
@@ -372,7 +450,12 @@ export default function SimulatorClient({
     };
   }, []);
 
-  async function startConversation(nextPersona: PersonaId) {
+  async function startConversation(
+    nextPersona: PersonaId,
+    opts?: { nextTrack?: WorkspaceMode; nextPreset?: ProCategory },
+  ) {
+    const resolvedTrack = slug ? initialTrack : (opts?.nextTrack ?? track);
+    const resolvedPreset = opts?.nextPreset ?? proPreset;
     recordGen.current += 1;
     recorderRef.current?.cancel();
     recorderRef.current = null;
@@ -382,16 +465,24 @@ export default function SimulatorClient({
     setStopping(false);
     setMicError(null);
     setPersona(nextPersona);
+    setTrack(resolvedTrack);
+    setProPreset(resolvedPreset);
     mediaUrlCache.current.clear();
     nearBottomRef.current = true;
     setMessages([]);
     setEvents([]);
     setSlots({});
+    setAiPaused(false);
     setPendingImage(null);
     setVoice(null);
     setDraft("");
     lastOutCount.current = 0;
-    const res = await postJson("/api/sim/conversations", { persona: nextPersona, slug });
+    const res = await postJson("/api/sim/conversations", {
+      persona: nextPersona,
+      slug,
+      track: resolvedTrack,
+      ...(resolvedTrack === "pro" ? { preset: resolvedPreset } : {}),
+    });
     if (res.ok) {
       const data = await res.json();
       setConversationId(data.conversationId);
@@ -400,7 +491,14 @@ export default function SimulatorClient({
 
   useEffect(() => {
     if (initialConversationId) return;
-    const initial = setTimeout(() => void startConversation("new"), 0);
+    const initial = setTimeout(
+      () =>
+        void startConversation("new", {
+          nextTrack: initialTrack,
+          nextPreset: initialProPreset,
+        }),
+      0,
+    );
     return () => clearTimeout(initial);
     // Mount-only besides the deep link: startConversation closes over stable setters.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -693,99 +791,192 @@ export default function SimulatorClient({
   const draftSummary =
     draftItems.length > 0
       ? draftItems
-          .map((i) => `${typeof i.productName === "string" ? i.productName : "produit"}${i.size ? ` (${String(i.size)})` : ""} x${typeof i.quantity === "number" ? i.quantity : 1}`)
-          .join(" · ")
+        .map((i) => `${typeof i.productName === "string" ? i.productName : "produit"}${i.size ? ` (${String(i.size)})` : ""} x${typeof i.quantity === "number" ? i.quantity : 1}`)
+        .join(" · ")
       : null;
 
   return (
     <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
       {/* Top Omnichannel Header & Live Platform Switcher */}
-      <div className="flex flex-col justify-between gap-4 rounded-2xl border border-secondary bg-primary p-4 shadow-xs lg:flex-row lg:items-center sm:px-5">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge color="brand" size="sm">
-              Omnichannel Live Sandbox
-            </Badge>
-            <span className="font-mono text-xs text-tertiary">{meta.channelTag}</span>
+      <div className="flex flex-col gap-4 border border-secondary bg-primary p-4 sm:px-5">
+        <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge color="brand" size="sm" className="font-mono text-[11px] uppercase">
+                {isProTrack ? `Pro Simulator · ${activeProPack.shortLabel}` : "Live Chat Demo"}
+              </Badge>
+              <span className="font-mono text-xs text-tertiary">{meta.channelTag}</span>
+            </div>
+            <h1 className="mt-1.5 text-xl font-medium tracking-[-0.025em] text-primary sm:text-2xl">
+              {meta.shortTitle} Simulator
+            </h1>
+            <p className="mt-1 text-sm leading-relaxed text-tertiary">
+              {isProTrack ? activeProPack.tagline : meta.capabilityLine}
+            </p>
           </div>
-          <h1 className="mt-1 text-xl font-semibold tracking-tight text-primary sm:text-2xl">
-            {meta.shortTitle} Simulator
-          </h1>
-          <p className="mt-1 text-sm leading-relaxed text-tertiary">{meta.capabilityLine}</p>
+
+          {/* Platform Switcher Tabs */}
+          <div
+            role="tablist"
+            aria-label="Messaging platform"
+            className="inline-flex max-w-full shrink-0 flex-wrap items-center gap-1 border border-secondary bg-secondary p-1"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={platform === "whatsapp"}
+              onClick={() => setPlatform("whatsapp")}
+              className={`inline-flex min-h-10 cursor-pointer items-center gap-2 px-3.5 text-sm font-medium transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${platform === "whatsapp"
+                ? "bg-[#1D1E1A] text-white"
+                : "text-tertiary hover:bg-white hover:text-primary"
+                }`}
+            >
+              <span className="flex size-5 items-center justify-center bg-[#25D366] text-white">
+                <WhatsAppIcon className="size-3.5" />
+              </span>
+              WhatsApp
+            </button>
+
+            <button
+              type="button"
+              role="tab"
+              aria-selected={platform === "instagram"}
+              onClick={() => setPlatform("instagram")}
+              className={`inline-flex min-h-10 cursor-pointer items-center gap-2 px-3.5 text-sm font-medium transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${platform === "instagram"
+                ? "bg-[#1D1E1A] text-white"
+                : "text-tertiary hover:bg-white hover:text-primary"
+                }`}
+            >
+              <span className="flex size-5 items-center justify-center bg-gradient-to-tr from-[#FEDA75] via-[#D62976] to-[#4F5BD5] text-white">
+                <InstagramIcon className="size-3.5" />
+              </span>
+              Instagram
+            </button>
+
+            <button
+              type="button"
+              role="tab"
+              aria-selected={platform === "messenger"}
+              onClick={() => setPlatform("messenger")}
+              className={`inline-flex min-h-10 cursor-pointer items-center gap-2 px-3.5 text-sm font-medium transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${platform === "messenger"
+                ? "bg-[#1D1E1A] text-white"
+                : "text-tertiary hover:bg-white hover:text-primary"
+                }`}
+            >
+              <span className="flex size-5 items-center justify-center bg-[#0084FF] text-white">
+                <MessengerIcon className="size-3.5" />
+              </span>
+              Messenger
+            </button>
+          </div>
         </div>
 
-        {/* Platform Switcher Tabs */}
-        <div
-          role="tablist"
-          aria-label="Messaging platform"
-          className="inline-flex max-w-full shrink-0 flex-wrap items-center gap-2 rounded-xl border border-secondary bg-secondary p-1"
-        >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={platform === "whatsapp"}
-            onClick={() => setPlatform("whatsapp")}
-            className={`inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-lg px-3.5 text-sm font-semibold transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
-              platform === "whatsapp"
-                ? "bg-[#00A884] text-black shadow-xs"
-                : "text-tertiary hover:text-primary"
-            }`}
-          >
-            <span className="flex size-5 items-center justify-center rounded-md bg-[#25D366] text-black">
-              <WhatsAppIcon className="size-3.5" />
-            </span>
-            WhatsApp
-          </button>
+        {/* Dual-Track Mode & Pro Preset Switcher (hidden on single-shop /demo/[slug]) */}
+        {!slug ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-secondary pt-3">
+            <div
+              role="tablist"
+              aria-label="Workspace track"
+              className="inline-flex items-center gap-1 border border-secondary bg-secondary p-1"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={!isProTrack}
+                onClick={() => void startConversation("new", { nextTrack: "ecommerce" })}
+                className={`min-h-9 cursor-pointer px-3 text-xs font-medium transition-colors ${!isProTrack ? "bg-[#1D1E1A] text-white" : "text-tertiary hover:bg-white hover:text-primary"
+                  }`}
+              >
+                Online Shop
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={isProTrack}
+                onClick={() => void startConversation("new", { nextTrack: "pro", nextPreset: proPreset })}
+                className={`min-h-9 cursor-pointer px-3 text-xs font-medium transition-colors ${isProTrack ? "bg-[#1D1E1A] text-white" : "text-tertiary hover:bg-white hover:text-primary"
+                  }`}
+              >
+                Creator &amp; Pro
+              </button>
+            </div>
 
-          <button
-            type="button"
-            role="tab"
-            aria-selected={platform === "instagram"}
-            onClick={() => setPlatform("instagram")}
-            className={`inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-lg px-3.5 text-sm font-semibold transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
-              platform === "instagram"
-                ? "bg-[#833AB4] text-white shadow-xs"
-                : "text-tertiary hover:text-primary"
-            }`}
-          >
-            <span className="flex size-5 items-center justify-center rounded-md bg-gradient-to-tr from-[#FEDA75] via-[#D62976] to-[#4F5BD5] text-black">
-              <InstagramIcon className="size-3.5" />
-            </span>
-            Instagram
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={platform === "messenger"}
-            onClick={() => setPlatform("messenger")}
-            className={`inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-lg px-3.5 text-sm font-semibold transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
-              platform === "messenger"
-                ? "bg-[#0084FF] text-black shadow-xs"
-                : "text-tertiary hover:text-primary"
-            }`}
-          >
-            <span className="flex size-5 items-center justify-center rounded-md bg-[#0084FF] text-white">
-              <MessengerIcon className="size-3.5" />
-            </span>
-            Messenger
-          </button>
-        </div>
+            {isProTrack ? (
+              <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Creator & Pro preset">
+                {PRO_CATEGORIES.map((cat) => {
+                  const pack = PRO_PRESETS[cat];
+                  const active = proPreset === cat;
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => void startConversation("new", { nextTrack: "pro", nextPreset: cat })}
+                      className={`min-h-9 cursor-pointer border px-3 font-mono text-[11px] uppercase tracking-[0.05em] transition-colors ${active
+                        ? "border-[#1B8A5E] bg-[#F2FBF7] font-semibold text-[#15704C]"
+                        : "border-secondary bg-white text-tertiary hover:border-[#09090B] hover:text-primary"
+                        }`}
+                    >
+                      {pack.shortLabel}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       {/* Main 3-Column Stage */}
       <div className="grid items-start gap-7 lg:grid-cols-[405px_minmax(0,1fr)] xl:grid-cols-[248px_405px_minmax(0,1fr)]">
-        {/* Column 1: Interactive Shop Catalog */}
+        {/* Column 1: Interactive Shop Catalog OR Creator/Pro Services */}
         <aside className="order-2 flex flex-col gap-3 xl:order-1 xl:max-h-[calc(100dvh-9rem)] xl:overflow-y-auto xl:pr-1">
-          <div className="flex items-baseline justify-between">
-            <div>
-              <p className="text-xs font-semibold tracking-wide text-brand-secondary uppercase">Catalog</p>
-              <h2 className="mt-0.5 text-base font-semibold tracking-tight text-primary">Shop items</h2>
-            </div>
-            <span className="font-mono text-xs tabular-nums text-tertiary">{products.length} items</span>
+          <div className="flex items-baseline justify-between border-b border-secondary pb-2">
+            <h2 className="text-base font-medium tracking-[-0.02em] text-primary">
+              {isProTrack ? "Services & floors" : "Shop items"}
+            </h2>
+            <span className="font-mono text-xs tabular-nums text-tertiary">
+              {isProTrack ? `${activeProPack.services.length} services` : `${products.length} items`}
+            </span>
           </div>
-          {products.length === 0 ? (
-            <p className="rounded-xl border border-secondary bg-primary px-3 py-4 text-sm text-tertiary">
+          {isProTrack ? (
+            <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-1">
+              {activeProPack.services.map((svc) => (
+                <article
+                  key={svc.title}
+                  className="flex flex-col gap-2 border border-secondary bg-primary p-3 transition-colors hover:border-[#09090B]"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-sm font-medium text-primary">{svc.title}</p>
+                    <span className="shrink-0 font-mono text-xs font-semibold tabular-nums text-[#15704C]">
+                      {svc.price_display}
+                    </span>
+                  </div>
+                  <p className="line-clamp-2 text-xs text-tertiary">{svc.description}</p>
+                  <div className="flex items-center justify-between font-mono text-[11px] text-quaternary">
+                    <span>{svc.duration_label}</span>
+                    {svc.floor_millimes != null ? (
+                      <span>Floor: {formatPrice(svc.floor_millimes)}</span>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!conversationId || awaiting}
+                    onClick={() =>
+                      void send({
+                        kind: "text",
+                        body: `Ahla, b9addech ${svc.title} w chnowa les détails?`,
+                      })
+                    }
+                    className="min-h-9 w-full cursor-pointer bg-[#1D1E1A] px-3 font-mono text-[11px] font-medium uppercase tracking-[0.06em] text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Ask about this service
+                  </button>
+                </article>
+              ))}
+            </div>
+          ) : products.length === 0 ? (
+            <p className="border border-secondary bg-primary px-3 py-4 text-sm text-tertiary">
               No products in this shop yet.
             </p>
           ) : (
@@ -793,7 +984,7 @@ export default function SimulatorClient({
               {products.map((product) => (
                 <article
                   key={product.id}
-                  className="group flex flex-col gap-2.5 rounded-xl border border-secondary bg-primary p-3 shadow-2xs transition-colors hover:border-brand/40"
+                  className="group flex flex-col gap-2.5 border border-secondary bg-primary p-3 transition-colors hover:border-[#09090B]"
                 >
                   <div className="flex gap-3">
                     {product.imageUrl ? (
@@ -803,13 +994,13 @@ export default function SimulatorClient({
                         alt={product.name}
                         loading="lazy"
                         decoding="async"
-                        className="size-14 shrink-0 rounded-lg bg-tertiary object-cover ring-1 ring-secondary"
+                        className="size-14 shrink-0 bg-tertiary object-cover ring-1 ring-secondary"
                       />
                     ) : (
-                      <div className="size-14 shrink-0 rounded-lg bg-tertiary" />
+                      <div className="size-14 shrink-0 bg-tertiary" />
                     )}
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-primary">{product.name}</p>
+                      <p className="truncate text-sm font-medium text-primary">{product.name}</p>
                       <p className="text-xs text-tertiary">{product.category}</p>
                       <div className="mt-1 flex items-center justify-between gap-2">
                         <span className="font-mono text-xs font-semibold tabular-nums text-primary">
@@ -826,13 +1017,12 @@ export default function SimulatorClient({
                     type="button"
                     disabled={!conversationId || awaiting}
                     onClick={() => void askAboutProduct(product)}
-                    className={`min-h-11 w-full cursor-pointer rounded-full px-3 text-sm font-semibold transition-opacity duration-200 hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:opacity-50 ${
-                      platform === "whatsapp"
-                        ? "bg-[#00A884] text-black"
-                        : platform === "instagram"
-                          ? "bg-[#833AB4] text-white"
-                          : "bg-[#0084FF] text-black"
-                    }`}
+                    className={`min-h-10 w-full cursor-pointer px-3 font-mono text-xs font-medium uppercase tracking-[0.06em] transition-opacity duration-150 hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:opacity-50 ${platform === "whatsapp"
+                      ? "bg-[#1B8A5E] text-white"
+                      : platform === "instagram"
+                        ? "bg-[#1D1E1A] text-white"
+                        : "bg-[#0084FF] text-white"
+                      }`}
                   >
                     {meta.askCta}
                   </button>
@@ -846,8 +1036,13 @@ export default function SimulatorClient({
         <div className="order-1 flex flex-col items-center gap-3 xl:order-2">
           {/* Persona Switcher */}
           <div className="flex w-full max-w-[398px] flex-wrap justify-center gap-1.5">
-            {slug ? (
-              <Button size="xs" color="primary" className="min-h-11" onClick={() => void startConversation("new")}>
+            {slug || isProTrack ? (
+              <Button
+                size="xs"
+                color="primary"
+                className="min-h-11"
+                onClick={() => void startConversation("new")}
+              >
                 New chat
               </Button>
             ) : (
@@ -880,341 +1075,335 @@ export default function SimulatorClient({
             <span aria-hidden="true" className="absolute top-48 -left-[2px] h-10 w-[3px] rounded-full bg-neutral-700" />
             <span aria-hidden="true" className="absolute top-36 -right-[2px] h-16 w-[3px] rounded-full bg-neutral-700" />
             <div className="relative overflow-hidden rounded-[36px] bg-white">
-            {/* Status Bar + Dynamic Island */}
-            <div
-              className={`relative flex items-center justify-between px-7 pt-2.5 pb-1 text-[11px] font-semibold ${
-                platform === "whatsapp" ? "bg-[#008069] text-white" : "bg-white text-neutral-900"
-              }`}
-            >
-              <span className="w-12 tabular-nums">9:41</span>
-              <span aria-hidden="true" className="absolute left-1/2 h-[22px] w-[92px] -translate-x-1/2 rounded-full bg-black" />
-              <span className="flex w-16 items-center justify-end gap-1.5" aria-hidden="true">
-                <span className="flex items-end gap-[2px]">
-                  <span className="w-[3px] rounded-sm bg-current h-[5px]" /><span className="w-[3px] rounded-sm bg-current h-[7px]" /><span className="w-[3px] rounded-sm bg-current h-[9px]" /><span className="w-[3px] rounded-sm bg-current/40 h-[11px]" />
-                </span>
-                <span className="text-[10px] font-bold">5G</span>
-                <span className="flex h-[11px] w-[24px] items-center rounded-[3px] border border-current/60 p-[1.5px]"><span className="h-full w-[82%] rounded-[1.5px] bg-current" /></span>
-              </span>
-            </div>
-
-            {/* Platform-Specific App Header */}
-            {platform === "whatsapp" ? (
-              <div className="flex items-center gap-1 bg-[#008069] px-2 py-2 text-white">
-                <ChevronLeft className="size-6 shrink-0" aria-hidden="true" />
-                <span className="-ml-1 font-medium">3</span>
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#DFE5E7] text-sm font-bold text-[#008069]">W</div>
-                <div className="flex min-w-0 flex-1 flex-col pl-1">
-                  <div className="flex items-center gap-1">
-                    <span className="truncate text-[15px] font-semibold leading-tight">{displayShopName}</span>
-                    <ShieldCheck className="size-3.5 shrink-0 text-[#25D366]" />
-                  </div>
-                  <span className="truncate text-[11px] leading-tight text-white/85">
-                    {aiPaused ? t.sellerOnline : awaiting ? meta.typingLabel : "online"}
+              {/* Status Bar + Dynamic Island */}
+              <div
+                className={`relative flex items-center justify-between px-7 pt-2.5 pb-1 text-[11px] font-semibold ${platform === "whatsapp" ? "bg-[#008069] text-white" : "bg-white text-neutral-900"
+                  }`}
+              >
+                <span className="w-12 tabular-nums">9:41</span>
+                <span aria-hidden="true" className="absolute left-1/2 h-[22px] w-[92px] -translate-x-1/2 rounded-full bg-black" />
+                <span className="flex w-16 items-center justify-end gap-1.5" aria-hidden="true">
+                  <span className="flex items-end gap-[2px]">
+                    <span className="w-[3px] rounded-sm bg-current h-[5px]" /><span className="w-[3px] rounded-sm bg-current h-[7px]" /><span className="w-[3px] rounded-sm bg-current h-[9px]" /><span className="w-[3px] rounded-sm bg-current/40 h-[11px]" />
                   </span>
-                </div>
-                <Video className="size-6 shrink-0" aria-hidden="true" />
-                <Phone className="ml-3 size-5 shrink-0" aria-hidden="true" />
-                <MoreVertical className="ml-3 size-5 shrink-0" aria-hidden="true" />
+                  <span className="text-[10px] font-bold">5G</span>
+                  <span className="flex h-[11px] w-[24px] items-center rounded-[3px] border border-current/60 p-[1.5px]"><span className="h-full w-[82%] rounded-[1.5px] bg-current" /></span>
+                </span>
               </div>
-            ) : platform === "instagram" ? (
-              <div className="bg-white">
-                <div className="flex items-center gap-2 px-3 py-2 text-neutral-900">
-                  <ChevronLeft className="size-7 shrink-0" aria-hidden="true" />
-                  <div className="relative shrink-0 rounded-full bg-gradient-to-tr from-[#FEDA75] via-[#D62976] to-[#4F5BD5] p-[2px]">
-                    <div className="flex size-8 items-center justify-center rounded-full bg-white text-xs font-bold ring-2 ring-white">W</div>
-                    <span className="absolute right-0 bottom-0 size-2.5 rounded-full bg-[#31A24C] ring-2 ring-white" />
+
+              {/* Platform-Specific App Header */}
+              {platform === "whatsapp" ? (
+                <div className="flex items-center gap-1 bg-[#008069] px-2 py-2 text-white">
+                  <ChevronLeft className="size-6 shrink-0" aria-hidden="true" />
+                  <span className="-ml-1 font-medium">3</span>
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#DFE5E7] text-sm font-bold text-[#008069]">W</div>
+                  <div className="flex min-w-0 flex-1 flex-col pl-1">
+                    <div className="flex items-center gap-1">
+                      <span className="truncate text-[15px] font-semibold leading-tight">{displayShopName}</span>
+                      <ShieldCheck className="size-3.5 shrink-0 text-[#25D366]" />
+                    </div>
+                    <span className="truncate text-[11px] leading-tight text-white/85">
+                      {aiPaused ? t.sellerOnline : awaiting ? meta.typingLabel : "online"}
+                    </span>
+                  </div>
+                  <Video className="size-6 shrink-0" aria-hidden="true" />
+                  <Phone className="ml-3 size-5 shrink-0" aria-hidden="true" />
+                  <MoreVertical className="ml-3 size-5 shrink-0" aria-hidden="true" />
+                </div>
+              ) : platform === "instagram" ? (
+                <div className="bg-white">
+                  <div className="flex items-center gap-2 px-3 py-2 text-neutral-900">
+                    <ChevronLeft className="size-7 shrink-0" aria-hidden="true" />
+                    <div className="relative shrink-0 rounded-full bg-gradient-to-tr from-[#FEDA75] via-[#D62976] to-[#4F5BD5] p-[2px]">
+                      <div className="flex size-8 items-center justify-center rounded-full bg-white text-xs font-bold ring-2 ring-white">W</div>
+                      <span className="absolute right-0 bottom-0 size-2.5 rounded-full bg-[#31A24C] ring-2 ring-white" />
+                    </div>
+                    <div className="flex min-w-0 flex-1 flex-col">
+                      <div className="flex items-center gap-1">
+                        <span className="truncate text-[14px] font-semibold leading-tight">{displayShopName}</span>
+                        <ShieldCheck className="size-3.5 shrink-0 text-[#0095F6]" />
+                      </div>
+                      <span className="truncate text-[11px] leading-tight text-neutral-500">
+                        {aiPaused ? t.sellerOnline : awaiting ? meta.typingLabel : `${igHandle} · Active now`}
+                      </span>
+                    </div>
+                    <Phone className="size-6 shrink-0" aria-hidden="true" />
+                    <Video className="ml-3 size-7 shrink-0" aria-hidden="true" />
+                  </div>
+                  {products.length > 0 ? (
+                    <div className="flex gap-4 overflow-x-auto px-4 pt-1 pb-2.5 [scrollbar-width:none]">
+                      {products.slice(0, 6).map((item) => (
+                        <button key={item.id} type="button" disabled={!conversationId || awaiting} onClick={() => void askAboutProduct(item)} title={`Reply to ${item.name} story`} className="flex w-14 shrink-0 cursor-pointer flex-col items-center gap-1 disabled:opacity-50">
+                          <span className="rounded-full bg-gradient-to-tr from-[#FEDA75] via-[#D62976] to-[#4F5BD5] p-[2.5px]">
+                            {item.imageUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={item.imageUrl} alt="" className="size-12 rounded-full object-cover ring-2 ring-white" />
+                            ) : (
+                              <span className="block size-12 rounded-full bg-neutral-200 ring-2 ring-white" />
+                            )}
+                          </span>
+                          <span className="w-full truncate text-center text-[10px] text-neutral-700">{item.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 bg-white px-3 py-2 text-neutral-900 shadow-[0_1px_4px_rgb(0_0_0/0.08)]">
+                  <ChevronLeft className="size-7 shrink-0 text-[#0084FF]" aria-hidden="true" />
+                  <div className="relative shrink-0">
+                    <div className="flex size-9 items-center justify-center rounded-full bg-gradient-to-b from-[#00C6FF] to-[#0084FF] text-sm font-bold text-white">W</div>
+                    <span className="absolute right-0 bottom-0 size-3 rounded-full bg-[#31A24C] ring-2 ring-white" />
                   </div>
                   <div className="flex min-w-0 flex-1 flex-col">
                     <div className="flex items-center gap-1">
-                      <span className="truncate text-[14px] font-semibold leading-tight">{displayShopName}</span>
-                      <ShieldCheck className="size-3.5 shrink-0 text-[#0095F6]" />
+                      <span className="truncate text-[15px] font-semibold leading-tight">{displayShopName}</span>
+                      <ShieldCheck className="size-3.5 shrink-0 text-[#0084FF]" />
                     </div>
                     <span className="truncate text-[11px] leading-tight text-neutral-500">
-                      {aiPaused ? t.sellerOnline : awaiting ? meta.typingLabel : `${igHandle} · Active now`}
+                      {aiPaused ? t.sellerOnline : awaiting ? meta.typingLabel : "Active now"}
                     </span>
                   </div>
-                  <Phone className="size-6 shrink-0" aria-hidden="true" />
-                  <Video className="ml-3 size-7 shrink-0" aria-hidden="true" />
-                </div>
-                {products.length > 0 ? (
-                  <div className="flex gap-4 overflow-x-auto px-4 pt-1 pb-2.5 [scrollbar-width:none]">
-                    {products.slice(0, 6).map((item) => (
-                      <button key={item.id} type="button" disabled={!conversationId || awaiting} onClick={() => void askAboutProduct(item)} title={`Reply to ${item.name} story`} className="flex w-14 shrink-0 cursor-pointer flex-col items-center gap-1 disabled:opacity-50">
-                        <span className="rounded-full bg-gradient-to-tr from-[#FEDA75] via-[#D62976] to-[#4F5BD5] p-[2.5px]">
-                          {item.imageUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={item.imageUrl} alt="" className="size-12 rounded-full object-cover ring-2 ring-white" />
-                          ) : (
-                            <span className="block size-12 rounded-full bg-neutral-200 ring-2 ring-white" />
-                          )}
-                        </span>
-                        <span className="w-full truncate text-center text-[10px] text-neutral-700">{item.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 bg-white px-3 py-2 text-neutral-900 shadow-[0_1px_4px_rgb(0_0_0/0.08)]">
-                <ChevronLeft className="size-7 shrink-0 text-[#0084FF]" aria-hidden="true" />
-                <div className="relative shrink-0">
-                  <div className="flex size-9 items-center justify-center rounded-full bg-gradient-to-b from-[#00C6FF] to-[#0084FF] text-sm font-bold text-white">W</div>
-                  <span className="absolute right-0 bottom-0 size-3 rounded-full bg-[#31A24C] ring-2 ring-white" />
-                </div>
-                <div className="flex min-w-0 flex-1 flex-col">
-                  <div className="flex items-center gap-1">
-                    <span className="truncate text-[15px] font-semibold leading-tight">{displayShopName}</span>
-                    <ShieldCheck className="size-3.5 shrink-0 text-[#0084FF]" />
-                  </div>
-                  <span className="truncate text-[11px] leading-tight text-neutral-500">
-                    {aiPaused ? t.sellerOnline : awaiting ? meta.typingLabel : "Active now"}
-                  </span>
-                </div>
-                <Phone className="size-5 shrink-0 text-[#0084FF]" aria-hidden="true" />
-                <Video className="ml-3 size-6 shrink-0 text-[#0084FF]" aria-hidden="true" />
-                <MoreVertical className="ml-2 size-5 shrink-0 text-[#0084FF]" aria-hidden="true" />
-              </div>
-            )}
-
-            {/* Messages Stream */}
-            <div
-              ref={scrollRef}
-              onScroll={(e) => {
-                const el = e.currentTarget;
-                nearBottomRef.current = isNearBottom(el.scrollTop, el.clientHeight, el.scrollHeight);
-              }}
-              className={`flex h-[min(28rem,calc(100dvh-19rem))] touch-pan-y flex-col gap-[3px] overflow-y-auto overscroll-contain scroll-smooth px-3 py-3 ${
-                platform === "whatsapp" ? "wa-chat-bg" : "bg-white"
-              }`}
-            >
-              {platform === "whatsapp" ? (
-                <>
-                  <div className="mx-auto mb-1.5 rounded-lg bg-white px-3 py-1 text-[11px] font-medium text-[#54656F] shadow-[0_1px_1px_rgb(11_20_26/0.13)]">TODAY</div>
-                  <div className="mx-auto mb-2 flex max-w-[92%] items-start gap-1.5 rounded-lg bg-[#FEEECD] px-2.5 py-2 text-center text-[11px] leading-snug text-[#54656F] shadow-[0_1px_1px_rgb(11_20_26/0.08)]">
-                    <Lock className="mt-px size-3 shrink-0" aria-hidden="true" />
-                    <span>{meta.introNotice} Messages are end-to-end encrypted.</span>
-                  </div>
-                </>
-              ) : platform === "instagram" ? (
-                <div className="mx-auto flex flex-col items-center px-4 pt-2 pb-3 text-center">
-                  <div className="rounded-full bg-gradient-to-tr from-[#FEDA75] via-[#D62976] to-[#4F5BD5] p-[3px]">
-                    <div className="flex size-16 items-center justify-center rounded-full bg-white text-xl font-bold ring-4 ring-white">W</div>
-                  </div>
-                  <p className="mt-2 text-[15px] font-semibold text-neutral-900">{displayShopName}</p>
-                  <p className="text-xs text-neutral-500">{igHandle} · Instagram</p>
-                  <p className="mt-1 text-xs text-neutral-500">{meta.introNotice}</p>
-                  <span className="mt-2 rounded-lg bg-[#EFEFEF] px-3 py-1.5 text-xs font-semibold text-neutral-900">View profile</span>
-                </div>
-              ) : (
-                <div className="mx-auto flex flex-col items-center px-4 pt-2 pb-3 text-center">
-                  <div className="relative">
-                    <div className="flex size-16 items-center justify-center rounded-full bg-gradient-to-b from-[#00C6FF] to-[#0084FF] text-xl font-bold text-white">W</div>
-                    <span className="absolute right-0 bottom-0 size-4 rounded-full bg-[#31A24C] ring-[3px] ring-white" />
-                  </div>
-                  <p className="mt-2 text-[15px] font-semibold text-neutral-900">{displayShopName}</p>
-                  <p className="text-xs text-neutral-500">{meta.introNotice}</p>
-                  <span className="mt-2 rounded-full bg-[#F0F2F5] px-3 py-1.5 text-xs font-semibold text-neutral-900">View page</span>
+                  <Phone className="size-5 shrink-0 text-[#0084FF]" aria-hidden="true" />
+                  <Video className="ml-3 size-6 shrink-0 text-[#0084FF]" aria-hidden="true" />
+                  <MoreVertical className="ml-2 size-5 shrink-0 text-[#0084FF]" aria-hidden="true" />
                 </div>
               )}
 
-              {messages.map((m) => (
-                <div
-                  key={m.id}
-                  className={`max-w-[78%] px-3 py-[7px] text-[14.5px] leading-snug ${
-                    m.direction === "in" ? incomingBubbleClass : outgoingBubbleClass
-                  } ${platform !== "whatsapp" ? "mb-[2px]" : "mb-1"}`}
-                >
-                  {renderMessage(m)}
-                </div>
-              ))}
-              {platform === "instagram" && messages.length > 0 ? (
-                <span className="self-end pr-1 pt-0.5 text-[11px] text-neutral-500">Seen</span>
-              ) : null}
-              {platform === "messenger" && messages.length > 0 ? (
-                <span className="self-end flex size-3.5 items-center justify-center rounded-full bg-gradient-to-b from-[#00C6FF] to-[#0084FF] text-[8px] font-bold text-white">W</span>
-              ) : null}
-
-              {awaiting && !aiPaused ? (
-                <div className={`px-3.5 py-2.5 ${outgoingBubbleClass}`}>
-                  <span className="flex gap-1">
-                    <span className="size-1.5 animate-bounce rounded-full bg-neutral-400 [animation-delay:0ms]" />
-                    <span className="size-1.5 animate-bounce rounded-full bg-neutral-400 [animation-delay:120ms]" />
-                    <span className="size-1.5 animate-bounce rounded-full bg-neutral-400 [animation-delay:240ms]" />
-                  </span>
-                </div>
-              ) : null}
-            </div>
-
-            {/* Staged Photo Preview */}
-            {pendingImage ? (
-              <div className="mx-2.5 mb-1.5 flex items-center gap-3 rounded-2xl bg-primary p-2 ring-1 ring-secondary shadow-xs">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={pendingImage.previewUrl}
-                  alt={pendingImage.file.name}
-                  className="size-14 rounded-xl border border-secondary object-cover"
-                />
-                <div className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate text-xs font-semibold text-primary">{pendingImage.file.name}</span>
-                  <span className="text-[11px] text-tertiary">{t.imageAttached}</span>
-                </div>
-                <Button
-                  size="sm"
-                  color="tertiary"
-                  aria-label={t.remove}
-                  onClick={unstageImage}
-                  className="shrink-0"
-                >
-                  <X className="size-4" />
-                </Button>
-              </div>
-            ) : null}
-
-            {/* Staged Voice Note Preview */}
-            {pendingVoice ? (
-              <div className="mx-2.5 mb-1.5 flex items-center gap-2 rounded-2xl bg-primary p-2 ring-1 ring-secondary shadow-xs">
-                <div className="flex min-w-0 flex-1 flex-col">
-                  <VoiceNotePlayer src={pendingVoice.url} />
-                  <span className="truncate font-mono text-[11px] tabular-nums text-tertiary">
-                    {formatElapsed(pendingVoice.seconds)} · {t.voiceAttached}
-                  </span>
-                </div>
-                <Button
-                  size="sm"
-                  color="tertiary"
-                  aria-label={t.cancelVoice}
-                  onClick={() => setVoice(null)}
-                  className="shrink-0"
-                >
-                  <Trash2 className="size-4" />
-                </Button>
-              </div>
-            ) : null}
-
-            {micError ? (
-              <p className="px-3 pt-1.5 text-center text-[11px] font-medium text-error-primary">{micError}</p>
-            ) : null}
-
-            {/* Composer Bar */}
-            <div
-              className={`flex items-end gap-2 px-2 py-2 ${
-                platform === "whatsapp" ? "wa-chat-bg" : "bg-white"
-              }`}
-            >
+              {/* Messages Stream */}
               <div
-                className={`flex flex-1 items-center px-1.5 ${
-                  platform === "whatsapp"
+                ref={scrollRef}
+                onScroll={(e) => {
+                  const el = e.currentTarget;
+                  nearBottomRef.current = isNearBottom(el.scrollTop, el.clientHeight, el.scrollHeight);
+                }}
+                className={`flex h-[min(28rem,calc(100dvh-19rem))] touch-pan-y flex-col gap-[3px] overflow-y-auto overscroll-contain scroll-smooth px-3 py-3 ${platform === "whatsapp" ? "wa-chat-bg" : "bg-white"
+                  }`}
+              >
+                {platform === "whatsapp" ? (
+                  <>
+                    <div className="mx-auto mb-1.5 rounded-lg bg-white px-3 py-1 text-[11px] font-medium text-[#54656F] shadow-[0_1px_1px_rgb(11_20_26/0.13)]">TODAY</div>
+                    <div className="mx-auto mb-2 flex max-w-[92%] items-start gap-1.5 rounded-lg bg-[#FEEECD] px-2.5 py-2 text-center text-[11px] leading-snug text-[#54656F] shadow-[0_1px_1px_rgb(11_20_26/0.08)]">
+                      <Lock className="mt-px size-3 shrink-0" aria-hidden="true" />
+                      <span>{meta.introNotice} Messages are end-to-end encrypted.</span>
+                    </div>
+                  </>
+                ) : platform === "instagram" ? (
+                  <div className="mx-auto flex flex-col items-center px-4 pt-2 pb-3 text-center">
+                    <div className="rounded-full bg-gradient-to-tr from-[#FEDA75] via-[#D62976] to-[#4F5BD5] p-[3px]">
+                      <div className="flex size-16 items-center justify-center rounded-full bg-white text-xl font-bold ring-4 ring-white">W</div>
+                    </div>
+                    <p className="mt-2 text-[15px] font-semibold text-neutral-900">{displayShopName}</p>
+                    <p className="text-xs text-neutral-500">{igHandle} · Instagram</p>
+                    <p className="mt-1 text-xs text-neutral-500">{meta.introNotice}</p>
+                    <span className="mt-2 rounded-lg bg-[#EFEFEF] px-3 py-1.5 text-xs font-semibold text-neutral-900">View profile</span>
+                  </div>
+                ) : (
+                  <div className="mx-auto flex flex-col items-center px-4 pt-2 pb-3 text-center">
+                    <div className="relative">
+                      <div className="flex size-16 items-center justify-center rounded-full bg-gradient-to-b from-[#00C6FF] to-[#0084FF] text-xl font-bold text-white">W</div>
+                      <span className="absolute right-0 bottom-0 size-4 rounded-full bg-[#31A24C] ring-[3px] ring-white" />
+                    </div>
+                    <p className="mt-2 text-[15px] font-semibold text-neutral-900">{displayShopName}</p>
+                    <p className="text-xs text-neutral-500">{meta.introNotice}</p>
+                    <span className="mt-2 rounded-full bg-[#F0F2F5] px-3 py-1.5 text-xs font-semibold text-neutral-900">View page</span>
+                  </div>
+                )}
+
+                {messages.map((m) => (
+                  <div
+                    key={m.id}
+                    className={`max-w-[78%] px-3 py-[7px] text-[14.5px] leading-snug ${m.direction === "in" ? incomingBubbleClass : outgoingBubbleClass
+                      } ${platform !== "whatsapp" ? "mb-[2px]" : "mb-1"}`}
+                  >
+                    {renderMessage(m)}
+                  </div>
+                ))}
+                {platform === "instagram" && messages.length > 0 ? (
+                  <span className="self-end pr-1 pt-0.5 text-[11px] text-neutral-500">Seen</span>
+                ) : null}
+                {platform === "messenger" && messages.length > 0 ? (
+                  <span className="self-end flex size-3.5 items-center justify-center rounded-full bg-gradient-to-b from-[#00C6FF] to-[#0084FF] text-[8px] font-bold text-white">W</span>
+                ) : null}
+
+                {awaiting && !aiPaused ? (
+                  <div className={`px-3.5 py-2.5 ${outgoingBubbleClass}`}>
+                    <span className="flex gap-1">
+                      <span className="size-1.5 animate-bounce rounded-full bg-neutral-400 [animation-delay:0ms]" />
+                      <span className="size-1.5 animate-bounce rounded-full bg-neutral-400 [animation-delay:120ms]" />
+                      <span className="size-1.5 animate-bounce rounded-full bg-neutral-400 [animation-delay:240ms]" />
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+
+              {/* Staged Photo Preview */}
+              {pendingImage ? (
+                <div className="mx-2.5 mb-1.5 flex items-center gap-3 rounded-2xl bg-primary p-2 ring-1 ring-secondary shadow-xs">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={pendingImage.previewUrl}
+                    alt={pendingImage.file.name}
+                    className="size-14 rounded-xl border border-secondary object-cover"
+                  />
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate text-xs font-semibold text-primary">{pendingImage.file.name}</span>
+                    <span className="text-[11px] text-tertiary">{t.imageAttached}</span>
+                  </div>
+                  <Button
+                    size="sm"
+                    color="tertiary"
+                    aria-label={t.remove}
+                    onClick={unstageImage}
+                    className="shrink-0"
+                  >
+                    <X className="size-4" />
+                  </Button>
+                </div>
+              ) : null}
+
+              {/* Staged Voice Note Preview */}
+              {pendingVoice ? (
+                <div className="mx-2.5 mb-1.5 flex items-center gap-2 rounded-2xl bg-primary p-2 ring-1 ring-secondary shadow-xs">
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <VoiceNotePlayer src={pendingVoice.url} />
+                    <span className="truncate font-mono text-[11px] tabular-nums text-tertiary">
+                      {formatElapsed(pendingVoice.seconds)} · {t.voiceAttached}
+                    </span>
+                  </div>
+                  <Button
+                    size="sm"
+                    color="tertiary"
+                    aria-label={t.cancelVoice}
+                    onClick={() => setVoice(null)}
+                    className="shrink-0"
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
+              ) : null}
+
+              {micError ? (
+                <p className="px-3 pt-1.5 text-center text-[11px] font-medium text-error-primary">{micError}</p>
+              ) : null}
+
+              {/* Composer Bar */}
+              <div
+                className={`flex items-end gap-2 px-2 py-2 ${platform === "whatsapp" ? "wa-chat-bg" : "bg-white"
+                  }`}
+              >
+                <div
+                  className={`flex flex-1 items-center px-1.5 ${platform === "whatsapp"
                     ? "rounded-full bg-white shadow-[0_1px_2px_rgb(11_20_26/0.15)]"
                     : platform === "instagram"
                       ? "rounded-full border border-neutral-300 bg-white"
                       : "rounded-full bg-[#F0F2F5]"
-                }`}
-              >
-                {platform === "instagram" ? null : <Smile className={`ml-1 size-6 shrink-0 ${platform === "messenger" ? "text-[#0084FF]" : "text-[#54656F]"}`} aria-hidden="true" />}
-                <label
-                  className={`shrink-0 rounded-full p-1.5 transition-colors ${
-                    platform === "instagram"
+                    }`}
+                >
+                  {platform === "instagram" ? null : <Smile className={`ml-1 size-6 shrink-0 ${platform === "messenger" ? "text-[#0084FF]" : "text-[#54656F]"}`} aria-hidden="true" />}
+                  <label
+                    className={`shrink-0 rounded-full p-1.5 transition-colors ${platform === "instagram"
                       ? "order-first mr-0.5 flex size-8 items-center justify-center bg-neutral-900 text-white"
                       : platform === "messenger"
                         ? "text-[#0084FF]"
                         : "rotate-45 text-[#54656F]"
-                  } ${stopping ? "pointer-events-none opacity-40" : "cursor-pointer"}`}
-                  title="Image"
-                >
-                  {platform === "whatsapp" ? <Paperclip className="size-5" /> : platform === "instagram" ? <Camera className="size-4.5" /> : <Camera className="size-5" />}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    aria-label="Attach image"
-                    disabled={stopping}
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) stageImage(f);
-                      e.target.value = "";
-                    }}
-                  />
-                </label>
-                {recording ? (
-                  <div className="flex h-10 min-w-0 flex-1 items-center gap-2 px-1">
-                    <span className="relative flex size-2.5 shrink-0">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-utility-red-400 opacity-75" />
-                      <span className="relative inline-flex size-2.5 rounded-full bg-utility-red-600" />
-                    </span>
-                    <span className="font-mono text-sm font-semibold tabular-nums text-neutral-900">
-                      {formatElapsed(elapsed)}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-xs text-neutral-500">{t.recordingHint}</span>
+                      } ${stopping ? "pointer-events-none opacity-40" : "cursor-pointer"}`}
+                    title="Image"
+                  >
+                    {platform === "whatsapp" ? <Paperclip className="size-5" /> : platform === "instagram" ? <Camera className="size-4.5" /> : <Camera className="size-5" />}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      aria-label="Attach image"
+                      disabled={stopping}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) stageImage(f);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                  {recording ? (
+                    <div className="flex h-10 min-w-0 flex-1 items-center gap-2 px-1">
+                      <span className="relative flex size-2.5 shrink-0">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-utility-red-400 opacity-75" />
+                        <span className="relative inline-flex size-2.5 rounded-full bg-utility-red-600" />
+                      </span>
+                      <span className="font-mono text-sm font-semibold tabular-nums text-neutral-900">
+                        {formatElapsed(elapsed)}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-xs text-neutral-500">{t.recordingHint}</span>
+                      <Button
+                        color="tertiary"
+                        size="sm"
+                        onClick={cancelRecording}
+                        aria-label={t.cancelVoice}
+                        iconLeading={<Trash2 data-icon className="size-4" />}
+                      />
+                    </div>
+                  ) : (
+                    <input
+                      value={draft}
+                      disabled={!conversationId || stopping}
+                      onChange={(e) => {
+                        setMicError(null);
+                        setDraft(e.target.value);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void sendCurrent();
+                      }}
+                      placeholder={pendingImage ? t.captionPlaceholder : t.placeholder}
+                      dir="auto"
+                      aria-label={t.placeholder}
+                      className="h-10 min-w-0 flex-1 bg-transparent px-1 text-[15px] text-neutral-900 outline-none placeholder:text-[#667781] disabled:opacity-50"
+                    />
+                  )}
+                  {!hasComposerPayload && !recording && platform === "whatsapp" ? (
+                    <Camera className="mr-1 size-5 shrink-0 text-[#54656F]" aria-hidden="true" />
+                  ) : null}
+                  {!hasComposerPayload && !recording && platform === "instagram" ? (
+                    <>
+                      <Mic className="mx-1 size-5 shrink-0 text-neutral-800" aria-hidden="true" />
+                      <ImagePlus className="mx-1 size-5 shrink-0 text-neutral-800" aria-hidden="true" />
+                      <Heart className="mx-1 size-5 shrink-0 text-neutral-800" aria-hidden="true" />
+                    </>
+                  ) : null}
+                  {hasComposerPayload && !recording ? (
                     <Button
                       color="tertiary"
                       size="sm"
-                      onClick={cancelRecording}
-                      aria-label={t.cancelVoice}
-                      iconLeading={<Trash2 data-icon className="size-4" />}
+                      aria-label={t.recordVoice}
+                      isDisabled={!conversationId || stopping || arming}
+                      onClick={() => void startRecording()}
+                      iconLeading={<Mic data-icon className="size-5" />}
                     />
-                  </div>
-                ) : (
-                  <input
-                    value={draft}
-                    disabled={!conversationId || stopping}
-                    onChange={(e) => {
-                      setMicError(null);
-                      setDraft(e.target.value);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") void sendCurrent();
-                    }}
-                    placeholder={pendingImage ? t.captionPlaceholder : t.placeholder}
-                    dir="auto"
-                    aria-label={t.placeholder}
-                    className="h-10 min-w-0 flex-1 bg-transparent px-1 text-[15px] text-neutral-900 outline-none placeholder:text-[#667781] disabled:opacity-50"
-                  />
-                )}
-                {!hasComposerPayload && !recording && platform === "whatsapp" ? (
-                  <Camera className="mr-1 size-5 shrink-0 text-[#54656F]" aria-hidden="true" />
-                ) : null}
-                {!hasComposerPayload && !recording && platform === "instagram" ? (
-                  <>
-                    <Mic className="mx-1 size-5 shrink-0 text-neutral-800" aria-hidden="true" />
-                    <ImagePlus className="mx-1 size-5 shrink-0 text-neutral-800" aria-hidden="true" />
-                    <Heart className="mx-1 size-5 shrink-0 text-neutral-800" aria-hidden="true" />
-                  </>
-                ) : null}
-                {hasComposerPayload && !recording ? (
-                  <Button
-                    color="tertiary"
-                    size="sm"
-                    aria-label={t.recordVoice}
-                    isDisabled={!conversationId || stopping || arming}
-                    onClick={() => void startRecording()}
-                    iconLeading={<Mic data-icon className="size-5" />}
-                  />
-                ) : null}
+                  ) : null}
+                </div>
+                <Button
+                  size="md"
+                  isDisabled={!conversationId || stopping || arming}
+                  onClick={() => {
+                    if (recording) void stopAndStage();
+                    else if (showSend) void sendCurrent();
+                    else void startRecording();
+                  }}
+                  className={`size-10.5 shrink-0 rounded-full ${sendButtonClass}`}
+                  aria-label={recording ? t.stageVoice : showSend ? "Send" : t.recordVoice}
+                >
+                  {recording ? (
+                    <Square className="size-4.5" />
+                  ) : showSend ? (
+                    <Send className="size-4.5 text-white" />
+                  ) : (
+                    <Mic className="size-5" />
+                  )}
+                </Button>
               </div>
-              <Button
-                size="md"
-                isDisabled={!conversationId || stopping || arming}
-                onClick={() => {
-                  if (recording) void stopAndStage();
-                  else if (showSend) void sendCurrent();
-                  else void startRecording();
-                }}
-                className={`size-10.5 shrink-0 rounded-full ${sendButtonClass}`}
-                aria-label={recording ? t.stageVoice : showSend ? "Send" : t.recordVoice}
-              >
-                {recording ? (
-                  <Square className="size-4.5" />
-                ) : showSend ? (
-                  <Send className="size-4.5 text-white" />
-                ) : (
-                  <Mic className="size-5" />
-                )}
-              </Button>
-            </div>
-            {/* Home indicator */}
-            <div className={`flex justify-center pb-1.5 ${platform === "whatsapp" ? "wa-chat-bg" : "bg-white"}`}>
-              <span aria-hidden="true" className="h-[5px] w-32 rounded-full bg-neutral-900/85" />
-            </div>
+              {/* Home indicator */}
+              <div className={`flex justify-center pb-1.5 ${platform === "whatsapp" ? "wa-chat-bg" : "bg-white"}`}>
+                <span aria-hidden="true" className="h-[5px] w-32 rounded-full bg-neutral-900/85" />
+              </div>
             </div>
           </div>
 
@@ -1222,10 +1411,12 @@ export default function SimulatorClient({
           <div className="flex w-full max-w-[398px] flex-col gap-1.5 rounded-2xl border border-secondary bg-primary p-3 shadow-2xs">
             <p className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-tertiary uppercase">
               <Sparkles className="size-3.5 text-brand-secondary" />
-              Try in 1 click (Bargaining &amp; AI Location)
+              {isProTrack
+                ? `Try ${activeProPack.shortLabel} in 1 click`
+                : "Try in 1 click (Bargaining & AI Location)"}
             </p>
             <div className="flex flex-wrap gap-2">
-              {QUICK_SCENARIOS.map((item) => (
+              {(isProTrack ? PRO_QUICK_SCENARIOS[proPreset] : QUICK_SCENARIOS).map((item) => (
                 <button
                   key={item.label}
                   type="button"
@@ -1242,106 +1433,206 @@ export default function SimulatorClient({
           <p className="max-w-[360px] text-center text-xs text-tertiary">{t.subtitle}</p>
         </div>
 
-        {/* Column 3: Behind the Scenes AI Telemetry */}
+        {/* Column 3: Behind the Scenes AI Telemetry + Controls + Live Context + Calendar */}
         <Card className="order-3 h-fit lg:sticky lg:top-20">
           <CardHeader className="border-b border-secondary/70">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <CardTitle className="flex items-center gap-2">
                   <Activity className="size-4 text-brand-secondary" />
-                  {t.traceTitle}
+                  {rightPanelTab === "trace"
+                    ? t.traceTitle
+                    : rightPanelTab === "controls"
+                      ? "AI Reply Controls"
+                      : rightPanelTab === "calendar"
+                        ? "Live Calendar"
+                        : "Live AI Context"}
                 </CardTitle>
-                <CardDescription className="mt-0.5">{t.traceSub}</CardDescription>
+                <CardDescription className="mt-0.5">
+                  {rightPanelTab === "trace"
+                    ? t.traceSub
+                    : rightPanelTab === "controls"
+                      ? "Tune message length, casual/formal style, emojis & languages live."
+                      : rightPanelTab === "calendar"
+                        ? "Add busy blocks or see AI bookings land straight on the calendar."
+                        : "Type or speak live facts in any language — Gemini uses them next turn."}
+                </CardDescription>
               </div>
               <div className="flex items-center gap-2">
                 {aiPaused ? <Badge color="error">{t.aiPaused}</Badge> : <Badge color="success">{t.aiActive}</Badge>}
-                <Badge color="gray" className="font-mono tabular-nums">
-                  {events.length} events
-                </Badge>
               </div>
+            </div>
+            <div className="mt-3 grid w-full grid-cols-4 border border-secondary bg-secondary p-1" role="tablist" aria-label="Inspector view">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={rightPanelTab === "trace"}
+                onClick={() => setRightPanelTab("trace")}
+                className={`cursor-pointer px-1.5 py-1.5 text-[11.5px] font-medium transition-colors ${rightPanelTab === "trace" ? "bg-[#1D1E1A] text-white" : "text-tertiary hover:bg-white hover:text-primary"
+                  }`}
+              >
+                Trace ({events.length})
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={rightPanelTab === "controls"}
+                onClick={() => setRightPanelTab("controls")}
+                className={`cursor-pointer px-1.5 py-1.5 text-[11.5px] font-medium transition-colors ${rightPanelTab === "controls" ? "bg-[#1D1E1A] text-white" : "text-tertiary hover:bg-white hover:text-primary"
+                  }`}
+              >
+                Controls
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={rightPanelTab === "context"}
+                onClick={() => setRightPanelTab("context")}
+                className={`cursor-pointer px-1.5 py-1.5 text-[11.5px] font-medium transition-colors ${rightPanelTab === "context" ? "bg-[#1D1E1A] text-white" : "text-tertiary hover:bg-white hover:text-primary"
+                  }`}
+              >
+                Context{contextNoteCount > 0 ? ` (${contextNoteCount})` : ""}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={rightPanelTab === "calendar"}
+                onClick={() => setRightPanelTab("calendar")}
+                className={`cursor-pointer px-1.5 py-1.5 text-[11.5px] font-medium transition-colors ${rightPanelTab === "calendar" ? "bg-[#1D1E1A] text-white" : "text-tertiary hover:bg-white hover:text-primary"
+                  }`}
+              >
+                Cal{calendarCount > 0 ? ` (${calendarCount})` : ""}
+              </button>
             </div>
           </CardHeader>
 
           <CardContent className="flex flex-col gap-4">
-            {visibleSlots.length > 0 ? (
-              <div className="rounded-xl border border-secondary/80 bg-tertiary/45 p-3">
-                <p className="mb-2 text-xs font-semibold tracking-wide text-tertiary uppercase">{t.slots}</p>
-                {draftSummary ? (
-                  <p className="mb-2 font-mono text-xs text-secondary">Draft: {draftSummary}</p>
+            {rightPanelTab === "controls" ? (
+              conversationId ? (
+                <AiControlsPanel
+                  key={`ctrl-${conversationId}`}
+                  apiBase={`/api/sim/conversations/${conversationId}/controls`}
+                  mode={isProTrack ? "pro" : "ecommerce"}
+                  compact
+                />
+              ) : (
+                <p className="py-6 text-center text-sm text-tertiary">Starting simulator workspace…</p>
+              )
+            ) : rightPanelTab === "context" ? (
+              conversationId ? (
+                <ContextChatPanel
+                  key={`ctx-${conversationId}`}
+                  apiBase={`/api/sim/conversations/${conversationId}/context`}
+                  mode={isProTrack ? "pro" : "ecommerce"}
+                  preset={isProTrack ? proPreset : null}
+                  compact
+                  onCountChange={setContextNoteCount}
+                />
+              ) : (
+                <p className="py-6 text-center text-sm text-tertiary">Starting simulator workspace…</p>
+              )
+            ) : rightPanelTab === "calendar" ? (
+              conversationId ? (
+                <WorkspaceCalendar
+                  key={`cal-${conversationId}`}
+                  apiBase={`/api/sim/conversations/${conversationId}/calendar`}
+                  controlsApiBase={`/api/sim/conversations/${conversationId}/controls`}
+                  mode={isProTrack ? "pro" : "ecommerce"}
+                  compact
+                  onCountChange={setCalendarCount}
+                />
+              ) : (
+                <p className="py-6 text-center text-sm text-tertiary">Starting simulator workspace…</p>
+              )
+            ) : (
+              <>
+                {visibleSlots.length > 0 ? (
+                  <div className="rounded-xl border border-secondary/80 bg-tertiary/45 p-3">
+                    <p className="mb-2 text-xs font-semibold tracking-wide text-tertiary uppercase">{t.slots}</p>
+                    {draftSummary ? (
+                      <p className="mb-2 font-mono text-xs text-secondary">Draft: {draftSummary}</p>
+                    ) : null}
+                    <div className="flex flex-wrap gap-1.5">
+                      {visibleSlots.map(([k, v]) => (
+                        <Badge key={k} color="gray" className="bg-primary font-mono text-xs">
+                          {k}: {String(v)}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
                 ) : null}
-                <div className="flex flex-wrap gap-1.5">
-                  {visibleSlots.map(([k, v]) => (
-                    <Badge key={k} color="gray" className="bg-primary font-mono text-xs">
-                      {k}: {String(v)}
-                    </Badge>
+
+                <div className="flex max-h-[580px] flex-col gap-2.5 overflow-y-auto pr-1">
+                  {events.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-secondary p-8 text-center">
+                      <p className="text-sm text-tertiary">{t.emptyTrace}</p>
+                    </div>
+                  ) : null}
+                  {events.map((event) => (
+                    <div
+                      key={event.id}
+                      className={`rounded-xl border px-3.5 py-2.5 text-sm shadow-2xs ${event.ok ? "border-secondary/80 bg-primary" : "border-error_subtle bg-warning-primary"
+                        }`}
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge color={event.ok ? "blue" : "error"} className="font-mono">
+                          {event.kind}
+                        </Badge>
+                        {event.provider ? (
+                          <span className="font-mono text-xs font-medium text-primary">
+                            {event.provider}/{event.model}
+                          </span>
+                        ) : null}
+                        {event.latency_ms !== null ? (
+                          <span className="rounded bg-tertiary px-1.5 py-0.5 font-mono text-xs tabular-nums text-tertiary">
+                            {event.latency_ms}ms
+                          </span>
+                        ) : null}
+                        <span className="ml-auto font-mono text-xs tabular-nums text-tertiary">
+                          {new Date(event.created_at).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            second: "2-digit",
+                          })}
+                        </span>
+                      </div>
+                      {event.kind === "asr.transcript" ? (
+                        <p className="mt-2 rounded-lg bg-tertiary/50 px-2.5 py-1.5 text-primary" dir="auto">
+                          {String((event.detail as { transcript?: string }).transcript ?? "")}
+                        </p>
+                      ) : null}
+                      {event.kind === "understand" ? (
+                        <pre className="mt-2 max-h-44 overflow-auto rounded-lg bg-tertiary/65 p-2.5 font-mono text-xs leading-relaxed">
+                          {JSON.stringify((event.detail as { understanding?: unknown }).understanding, null, 2)}
+                        </pre>
+                      ) : null}
+                      {event.kind.startsWith("vision.") && event.kind !== "vision.pending" ? (
+                        <pre className="mt-2 max-h-44 overflow-auto rounded-lg bg-tertiary/65 p-2.5 font-mono text-xs leading-relaxed">
+                          {JSON.stringify(event.detail, null, 2)}
+                        </pre>
+                      ) : null}
+                      {event.kind.startsWith("address.") ? (
+                        <pre className="mt-2 max-h-36 overflow-auto rounded-lg bg-tertiary/65 p-2 font-mono text-xs leading-relaxed">
+                          {JSON.stringify(event.detail, null, 2)}
+                        </pre>
+                      ) : null}
+                      {event.kind === "reply.sent" || event.kind === "pro.reply.sent" ? (
+                        <p className="mt-2 rounded-lg bg-tertiary/40 px-2.5 py-1.5 text-primary" dir="auto">
+                          {String((event.detail as { reply?: string }).reply ?? "")}
+                        </p>
+                      ) : null}
+                      {event.kind.startsWith("pro.safety.") ||
+                        event.kind.startsWith("pro.rate_firewall.") ||
+                        event.kind === "pro.understand" ? (
+                        <pre className="mt-2 max-h-36 overflow-auto rounded-lg bg-tertiary/65 p-2 font-mono text-xs leading-relaxed">
+                          {JSON.stringify(event.detail, null, 2)}
+                        </pre>
+                      ) : null}
+                    </div>
                   ))}
                 </div>
-              </div>
-            ) : null}
-
-            <div className="flex max-h-[580px] flex-col gap-2.5 overflow-y-auto pr-1">
-              {events.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-secondary p-8 text-center">
-                  <p className="text-sm text-tertiary">{t.emptyTrace}</p>
-                </div>
-              ) : null}
-              {events.map((event) => (
-                <div
-                  key={event.id}
-                  className={`rounded-xl border px-3.5 py-2.5 text-sm shadow-2xs ${
-                    event.ok ? "border-secondary/80 bg-primary" : "border-error_subtle bg-warning-primary"
-                  }`}
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge color={event.ok ? "blue" : "error"} className="font-mono">
-                      {event.kind}
-                    </Badge>
-                    {event.provider ? (
-                      <span className="font-mono text-xs font-medium text-primary">
-                        {event.provider}/{event.model}
-                      </span>
-                    ) : null}
-                    {event.latency_ms !== null ? (
-                      <span className="rounded bg-tertiary px-1.5 py-0.5 font-mono text-xs tabular-nums text-tertiary">
-                        {event.latency_ms}ms
-                      </span>
-                    ) : null}
-                    <span className="ml-auto font-mono text-xs tabular-nums text-tertiary">
-                      {new Date(event.created_at).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        second: "2-digit",
-                      })}
-                    </span>
-                  </div>
-                  {event.kind === "asr.transcript" ? (
-                    <p className="mt-2 rounded-lg bg-tertiary/50 px-2.5 py-1.5 text-primary" dir="auto">
-                      {String((event.detail as { transcript?: string }).transcript ?? "")}
-                    </p>
-                  ) : null}
-                  {event.kind === "understand" ? (
-                    <pre className="mt-2 max-h-44 overflow-auto rounded-lg bg-tertiary/65 p-2.5 font-mono text-xs leading-relaxed">
-                      {JSON.stringify((event.detail as { understanding?: unknown }).understanding, null, 2)}
-                    </pre>
-                  ) : null}
-                  {event.kind.startsWith("vision.") && event.kind !== "vision.pending" ? (
-                    <pre className="mt-2 max-h-44 overflow-auto rounded-lg bg-tertiary/65 p-2.5 font-mono text-xs leading-relaxed">
-                      {JSON.stringify(event.detail, null, 2)}
-                    </pre>
-                  ) : null}
-                  {event.kind.startsWith("address.") ? (
-                    <pre className="mt-2 max-h-36 overflow-auto rounded-lg bg-tertiary/65 p-2 font-mono text-xs leading-relaxed">
-                      {JSON.stringify(event.detail, null, 2)}
-                    </pre>
-                  ) : null}
-                  {event.kind === "reply.sent" ? (
-                    <p className="mt-2 rounded-lg bg-tertiary/40 px-2.5 py-1.5 text-primary" dir="auto">
-                      {String((event.detail as { reply?: string }).reply ?? "")}
-                    </p>
-                  ) : null}
-                </div>
-              ))}
-            </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>

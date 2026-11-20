@@ -3,9 +3,10 @@ import { cookies } from "next/headers";
 import { getServerEnv } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { LEGACY_COLUMNS, mapMerchant, SHOP_COLUMNS, type DemoMerchant } from "@/lib/dashboard/merchant";
+import { selectMerchantRow, type DemoMerchant } from "@/lib/dashboard/merchant";
 
 export const SANDBOX_COOKIE = "wassalha_sandbox";
+export { WORKSPACE_MODE_COOKIE } from "./workspace-routing";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -47,28 +48,20 @@ export function readSandboxId(token: string | undefined | null): string | null {
 }
 
 async function shopById(supabase: Admin, id: string, sandboxOnly: boolean): Promise<DemoMerchant | null> {
-  let query = supabase.from("merchants").select(SHOP_COLUMNS).eq("id", id);
-  if (sandboxOnly) query = query.eq("is_sandbox", true);
-  const { data, error } = await query.maybeSingle();
-  if (!error && data) return mapMerchant(data as Record<string, unknown>);
-  // Business columns not migrated yet: fall back so sign-in keeps working.
-  let legacy = supabase.from("merchants").select(LEGACY_COLUMNS).eq("id", id);
-  if (sandboxOnly) legacy = legacy.eq("is_sandbox", true);
-  const fallback = await legacy.maybeSingle();
-  if (fallback.error || !fallback.data) return null;
-  return mapMerchant(fallback.data as Record<string, unknown>);
-  if (error || !data) return null;
-  return mapMerchant(data as Record<string, unknown>);
+  return selectMerchantRow((cols) => {
+    let query = supabase.from("merchants").select(cols).eq("id", id);
+    if (sandboxOnly) query = query.eq("is_sandbox", true);
+    return query.maybeSingle();
+  });
 }
 
-/** Logged-in shop wins. Otherwise the signed demo-account cookie. */
+/** Logged-in workspace wins. Otherwise the signed demo-account cookie. */
 export async function resolveRequestMerchant(): Promise<DemoMerchant | null> {
   const jar = await cookies();
   const allCookies = jar.getAll();
   const sbCookies = allCookies.filter((c) => c.name.startsWith("sb-"));
   const sandboxValue = jar.get(SANDBOX_COOKIE)?.value ?? "";
 
-  // Fast path: pure guest has neither Supabase auth cookies nor sandbox cookie.
   if (sbCookies.length === 0 && !sandboxValue) {
     return null;
   }
@@ -95,13 +88,10 @@ export async function resolveRequestMerchant(): Promise<DemoMerchant | null> {
       const { data } = await supabase.auth.getUser();
       const userId = data.user?.id;
       if (userId) {
-        const { data: row, error } = await admin
-          .from("merchants")
-          .select(SHOP_COLUMNS)
-          .eq("owner_user_id", userId)
-          .maybeSingle();
-        if (!error && row) {
-          const merchant = mapMerchant(row as Record<string, unknown>);
+        const merchant = await selectMerchantRow((cols) =>
+          admin.from("merchants").select(cols).eq("owner_user_id", userId).maybeSingle(),
+        );
+        if (merchant) {
           merchantSessionCache.set(cacheKey, { merchant, expiresAt: now + SESSION_CACHE_TTL_MS });
           return merchant;
         }
@@ -133,6 +123,22 @@ export function sandboxCookieOptions(): {
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 60 * 24 * 7,
+    secure: process.env.NODE_ENV === "production",
+  };
+}
+
+export function workspaceModeCookieOptions(): {
+  httpOnly: true;
+  sameSite: "lax";
+  path: string;
+  maxAge: number;
+  secure: boolean;
+} {
+  return {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 30,
     secure: process.env.NODE_ENV === "production",
   };
 }

@@ -8,10 +8,13 @@ import "./load-env";
 import { readdir, readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { transcribeWithMeta } from "../src/lib/ai/asr";
+import { transcribeWithElevenLabs, transcribeWithMeta, transcribeWithOpenAI } from "../src/lib/ai/asr";
 import { cosineSimilarity, embedImages, embedTexts } from "../src/lib/ai/embeddings";
 import { generateImage } from "../src/lib/ai/image";
 import { getBasetenLlmClient } from "../src/lib/ai/baseten";
+import { anthropicGenerateJson } from "../src/lib/ai/providers/anthropic";
+import { geminiEmbedContents, geminiGenerateJson } from "../src/lib/ai/providers/gemini";
+import { openaiGenerateJson } from "../src/lib/ai/providers/openai";
 import { segmentImage } from "../src/lib/ai/sam";
 import { sparkJson } from "../src/lib/ai/spark";
 import { cropToBox } from "../src/lib/media/crop";
@@ -153,6 +156,70 @@ async function main(): Promise<void> {
     const { data, error } = await supabase.from("merchants").select("id").limit(1);
     if (error) throw new Error(`select merchants failed (migration applied?): ${error.message}`);
     return `merchants readable (${data.length} row(s)); migration is live`;
+  });
+
+  await check("8. Gemini 3.8 Flash JSON + Gemini Embedding 2 (1024-d)", async () => {
+    if (!env.geminiApiKey) skip("GEMINI_API_KEY");
+    const raw = await geminiGenerateJson({
+      model: env.GEMINI_FAST_MODEL,
+      jsonSchema: {
+        type: "object",
+        properties: { ok: { type: "boolean" }, dialect: { type: "string" } },
+        required: ["ok", "dialect"],
+        additionalProperties: false,
+      },
+      user: 'Return JSON: {"ok": true, "dialect": "derja"}.',
+    });
+    const parsed = z.object({ ok: z.boolean(), dialect: z.string() }).parse(JSON.parse(raw));
+    const [vec] = await geminiEmbedContents([{ parts: [{ text: "sweatshirt noir" }] }], env.GEMINI_EMBED_MODEL, 1024);
+    if (!parsed.ok || vec?.length !== 1024) throw new Error("Gemini JSON or 1024-d embed invalid");
+    return `${env.GEMINI_FAST_MODEL} + ${env.GEMINI_EMBED_MODEL} (${vec.length}-d) ready`;
+  });
+
+  await check("9. ElevenLabs Scribe v2 ASR", async () => {
+    if (!env.ELEVENLABS_API_KEY) skip("ELEVENLABS_API_KEY");
+    if (!voiceNote) skip("demo-pack/voice/*.wav");
+    const text = await transcribeWithElevenLabs({ wav: await readFile(voiceNote) });
+    return `scribe_v2: "${text.slice(0, 80)}"`;
+  });
+
+  await check("10. OpenAI GPT-6 / gpt-transcribe", async () => {
+    if (!env.OPENAI_API_KEY) skip("OPENAI_API_KEY");
+    const raw = await openaiGenerateJson({
+      model: env.OPENAI_FAST_MODEL,
+      schemaName: "smoke_openai",
+      jsonSchema: {
+        type: "object",
+        properties: { ok: { type: "boolean" } },
+        required: ["ok"],
+        additionalProperties: false,
+      },
+      user: 'Return JSON {"ok": true}.',
+    });
+    const parsed = z.object({ ok: z.boolean() }).parse(JSON.parse(raw));
+    if (!parsed.ok) throw new Error("OpenAI returned ok=false");
+    if (voiceNote) {
+      const tr = await transcribeWithOpenAI({ wav: await readFile(voiceNote) });
+      return `${env.OPENAI_FAST_MODEL} + ${env.OPENAI_ASR_MODEL}: "${tr.slice(0, 50)}"`;
+    }
+    return `${env.OPENAI_FAST_MODEL} ready`;
+  });
+
+  await check("11. Anthropic Claude Sonnet 5.5", async () => {
+    if (!env.ANTHROPIC_API_KEY) skip("ANTHROPIC_API_KEY");
+    const raw = await anthropicGenerateJson({
+      model: env.ANTHROPIC_STYLE_MODEL,
+      jsonSchema: {
+        type: "object",
+        properties: { ok: { type: "boolean" } },
+        required: ["ok"],
+        additionalProperties: false,
+      },
+      user: 'Return JSON {"ok": true}.',
+    });
+    const parsed = z.object({ ok: z.boolean() }).parse(JSON.parse(raw));
+    if (!parsed.ok) throw new Error("Anthropic returned ok=false");
+    return `${env.ANTHROPIC_STYLE_MODEL} ready`;
   });
 
   console.log("\nWassalha smoke results");

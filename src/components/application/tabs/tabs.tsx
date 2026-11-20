@@ -34,9 +34,9 @@ const getTabStyles = ({ isFocusVisible, isSelected, isHovered }: AriaTabRenderPr
         (isSelected || isHovered) && "bg-primary_alt text-secondary shadow-sm *:data-icon:text-fg-secondary_hover",
     ),
     "button-minimal": cx(
-        "rounded-lg outline-focus-ring *:data-icon:text-fg-quaternary",
+        "rounded-none outline-focus-ring *:data-icon:text-fg-quaternary",
         isFocusVisible && "outline-2 -outline-offset-2",
-        (isSelected || isHovered) && "bg-primary_alt text-secondary shadow-xs ring-1 ring-primary ring-inset *:data-icon:text-fg-secondary_hover",
+        (isSelected || isHovered) && "bg-primary_alt text-primary ring-1 ring-secondary ring-inset *:data-icon:text-fg-secondary_hover",
     ),
     underline: cx(
         "rounded-none border-b-2 border-transparent outline-focus-ring *:data-icon:text-fg-quaternary",
@@ -75,8 +75,8 @@ const sizes = {
 const getHorizontalStyles = ({ size, fullWidth }: { size?: "sm" | "md"; fullWidth?: boolean }) => ({
     "button-brand": "gap-1",
     "button-gray": "gap-1",
-    "button-border": cx("gap-1 rounded-[10px] bg-secondary_alt p-1 ring-1 ring-secondary ring-inset", size === "md" && "rounded-xl p-1.5"),
-    "button-minimal": "gap-0.5 rounded-lg bg-secondary_alt ring-1 ring-inset ring-secondary",
+    "button-border": cx("gap-1 rounded-none bg-secondary_alt p-1 ring-1 ring-secondary ring-inset", size === "md" && "p-1.5"),
+    "button-minimal": "gap-0.5 rounded-none bg-secondary_alt ring-1 ring-inset ring-secondary",
     underline: cx("gap-3", fullWidth && "w-full gap-4"),
     line: "gap-2",
 });

@@ -1,3 +1,10 @@
+import {
+  DEFAULT_AI_CONTROLS,
+  loadWorkspaceAiControls,
+  normalizeWorkspaceAiControls,
+  resolveControlledReplyLanguage,
+  type WorkspaceAiControls,
+} from "@/lib/context/ai-controls";
 import type { BuyerLanguage, TextScript } from "@/lib/domain/language";
 import type { createAdminClient } from "@/lib/supabase/admin";
 
@@ -6,9 +13,14 @@ export type ReplyLanguage = BuyerLanguage;
 export interface SellerVoice {
   language: ReplyLanguage;
   instructions: string;
+  controls?: WorkspaceAiControls;
 }
 
-export const DEFAULT_VOICE: SellerVoice = { language: "derja", instructions: "" };
+export const DEFAULT_VOICE: SellerVoice = {
+  language: "derja",
+  instructions: "",
+  controls: DEFAULT_AI_CONTROLS,
+};
 
 const bound = new Map<string, SellerVoice>();
 
@@ -17,7 +29,12 @@ export function isReplyLanguage(value: unknown): value is ReplyLanguage {
 }
 
 export function bindSellerVoice(conversationId: string, voice: SellerVoice): void {
-  bound.set(conversationId, voice);
+  bound.set(conversationId, {
+    ...voice,
+    controls: voice.controls
+      ? normalizeWorkspaceAiControls(voice.controls, voice.language)
+      : normalizeWorkspaceAiControls({ primaryLanguage: voice.language }),
+  });
 }
 
 export function clearSellerVoice(conversationId: string): void {
@@ -50,29 +67,63 @@ export function buyerLanguageBound(conversationId?: string): BuyerLanguage | nul
   return boundBuyer.get(conversationId) ?? null;
 }
 
-/** Buyer language wins; the seller template is only the starting default. */
-export function effectiveReplyLanguage(conversationId?: string): ReplyLanguage {
-  return buyerLanguageBound(conversationId) ?? sellerVoiceFor(conversationId).language;
-}
-
 export function sellerVoiceFor(conversationId?: string): SellerVoice {
   if (!conversationId) return DEFAULT_VOICE;
   return bound.get(conversationId) ?? DEFAULT_VOICE;
 }
 
+export function sellerControlsFor(conversationId?: string): WorkspaceAiControls {
+  const voice = sellerVoiceFor(conversationId);
+  return voice.controls ?? normalizeWorkspaceAiControls({ primaryLanguage: voice.language });
+}
+
+/** Resolves effective reply language honoring owner's Language Controls (`auto` vs `fixed`, allowed languages). */
+export function effectiveReplyLanguage(conversationId?: string): ReplyLanguage {
+  const controls = sellerControlsFor(conversationId);
+  return resolveControlledReplyLanguage({
+    controls,
+    detectedLanguage: buyerLanguageBound(conversationId),
+    priorLanguage: buyerLanguageBound(conversationId),
+    detectedScript: buyerScriptBound(conversationId),
+    priorScript: buyerScriptBound(conversationId),
+  }).language;
+}
+
+/** Resolves effective script honoring owner's Derja Script Control (`auto` / `latin` / `arabic`). */
+export function effectiveReplyScript(conversationId?: string): TextScript | null {
+  const controls = sellerControlsFor(conversationId);
+  if (controls.derjaScript === "auto" && !buyerScriptBound(conversationId)) {
+    return null;
+  }
+  return resolveControlledReplyLanguage({
+    controls,
+    detectedLanguage: buyerLanguageBound(conversationId),
+    priorLanguage: buyerLanguageBound(conversationId),
+    detectedScript: buyerScriptBound(conversationId),
+    priorScript: buyerScriptBound(conversationId),
+  }).script;
+}
+
 type Admin = ReturnType<typeof createAdminClient>;
 
-/** Missing columns (migration not applied yet) keep the Derja default so turns still run. */
+/** Missing columns (migration not applied yet) keep safe defaults so turns still run. */
 export async function loadSellerVoice(supabase: Admin, merchantId: string): Promise<SellerVoice> {
-  const { data, error } = await supabase
-    .from("merchants")
-    .select("reply_language, ai_instructions")
-    .eq("id", merchantId)
-    .maybeSingle();
-  if (error || !data) return DEFAULT_VOICE;
+  const [merchantRes, controls] = await Promise.all([
+    Promise.resolve(
+      supabase
+        .from("merchants")
+        .select("reply_language, ai_instructions")
+        .eq("id", merchantId)
+        .maybeSingle(),
+    ).catch(() => ({ data: null, error: null })),
+    loadWorkspaceAiControls(supabase, merchantId),
+  ]);
+  const data = merchantRes?.data as { reply_language?: unknown; ai_instructions?: unknown } | null;
+  const language = isReplyLanguage(data?.reply_language) ? data.reply_language : controls.primaryLanguage;
   return {
-    language: isReplyLanguage(data.reply_language) ? data.reply_language : "derja",
-    instructions: typeof data.ai_instructions === "string" ? data.ai_instructions : "",
+    language: controls.primaryLanguage ?? language,
+    instructions: typeof data?.ai_instructions === "string" ? data.ai_instructions : "",
+    controls: normalizeWorkspaceAiControls(controls, language),
   };
 }
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { ProCategory, WorkspaceMode } from "@/lib/pro/types";
 
 export interface ClientSessionInfo {
   authenticated: boolean;
@@ -8,6 +9,8 @@ export interface ClientSessionInfo {
   name?: string;
   slug?: string | null;
   isSandbox?: boolean;
+  workspaceMode?: WorkspaceMode;
+  proCategory?: ProCategory | null;
 }
 
 const SESSION_TTL_MS = 30_000;
@@ -50,9 +53,7 @@ export async function fetchClientSession(force = false): Promise<ClientSessionIn
 }
 
 export function useSessionInfo(): ClientSessionInfo | null {
-  // Always start empty. The module cache is filled in the browser after the
-  // first fetch, so reading it here makes the server HTML ("Seller desk")
-  // disagree with the client's first paint (the shop name).
+  // Always start empty so SSR HTML agrees with first client paint; hydrate asynchronously.
   const [session, setSession] = useState<ClientSessionInfo | null>(null);
 
   useEffect(() => {
@@ -66,8 +67,6 @@ export function useSessionInfo(): ClientSessionInfo | null {
       }
     };
     listeners.add(onUpdate);
-    const warm = cachedSession && cachedSession.expiresAt > Date.now() ? cachedSession.data : null;
-    if (warm) setSession(warm);
     void fetchClientSession().then((data) => {
       if (active) setSession(data);
     });
@@ -79,4 +78,3 @@ export function useSessionInfo(): ClientSessionInfo | null {
 
   return session;
 }
-
